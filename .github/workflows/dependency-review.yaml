@@ -1,0 +1,24 @@
+---
+name: Dependency Review
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-review:
+    name: Dependency review
+    runs-on: ubuntu-26.04-arm
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      # Fails a PR that adds a dependency with a known vulnerability of moderate severity or
+      # worse. Existing dependencies are Renovate's and govulncheck's job.
+      - name: Review dependencies
+        uses: actions/dependency-review-action@v5
+        with:
+          fail-on-severity: moderate

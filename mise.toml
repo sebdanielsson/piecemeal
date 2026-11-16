@@ -1,0 +1,30 @@
+# Tool versions for local development and CI (jdx/mise-action reads this file).
+# Renovate keeps them current.
+[tools]
+go = "1.27.4"
+node = "26.13.1"
+"npm:pnpm" = "12.20.0"
+"aqua:golangci/golangci-lint" = "2.15.0"
+"go:golang.org/x/vuln/cmd/govulncheck" = "1.9.0"
+
+[tasks.web]
+description = "Build the web UI into internal/webui/dist"
+run = "pnpm -C web install --frozen-lockfile && pnpm -C web build"
+
+[tasks.build]
+description = "Build the web UI, then the piecemeal binary with it embedded"
+depends = ["web"]
+run = "CGO_ENABLED=0 go build -trimpath -o bin/piecemeal ./cmd/piecemeal"
+
+[tasks.check]
+description = "Everything CI checks, locally"
+depends = ["web"]
+run = [
+  "pnpm -C web run fmt:check",
+  "pnpm -C web run lint",
+  "pnpm -C web run typecheck",
+  "pnpm -C web test",
+  "golangci-lint run",
+  "go test -race ./...",
+  "govulncheck ./...",
+]

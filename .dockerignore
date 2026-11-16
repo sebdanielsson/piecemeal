@@ -1,0 +1,7 @@
+.git
+.github
+bin
+internal/webui/dist
+**/node_modules
+docs
+*.md
