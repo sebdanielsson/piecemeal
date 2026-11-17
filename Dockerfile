@@ -6,7 +6,7 @@
 
 FROM --platform=$BUILDPLATFORM node:26.13.1-alpine AS web
 # renovate: datasource=npm depName=pnpm
-ARG PNPM_VERSION=12.20.0
+ARG PNPM_VERSION=12.21.0
 RUN npm install --global "pnpm@${PNPM_VERSION}"
 WORKDIR /src/web
 COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
