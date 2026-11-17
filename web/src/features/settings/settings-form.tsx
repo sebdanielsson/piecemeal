@@ -1,0 +1,322 @@
+import { useQuery } from "@tanstack/react-query";
+import { LockIcon } from "lucide-react";
+import { useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { toast } from "sonner";
+import type { Settings } from "@/api/types";
+import { LimitInput } from "@/components/form/limit-input";
+import { OptionSelect } from "@/components/form/option-select";
+import { ShareLimitInput } from "@/components/form/share-limit-input";
+import { Button } from "@/components/ui/button";
+import { Field, FieldContent, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
+import { Switch } from "@/components/ui/switch";
+import { useUpdateSettings } from "@/lib/mutations";
+import { meQuery, settingsQuery } from "@/lib/queries";
+import { PageSection } from "../shell/page";
+
+type Key = keyof Settings;
+
+export type FieldDef =
+  | { key: Key; label: string; description?: string; kind: "text" | "path" | "bool" | "limit" }
+  | { key: Key; label: string; description?: string; kind: "int"; min?: number; max?: number }
+  | { key: Key; label: string; description?: string; kind: "ratio" | "minutes" }
+  | {
+      key: Key;
+      label: string;
+      description?: string;
+      kind: "select";
+      options: { value: string; label: string }[];
+    };
+
+export interface FieldGroupDef {
+  title: string;
+  description?: string;
+  fields: FieldDef[];
+}
+
+/** The changed fields between two settings objects. */
+export function settingsDiff(base: Settings, draft: Settings): Partial<Settings> {
+  const out: Partial<Settings> = {};
+  for (const k of Object.keys(draft) as Key[]) {
+    if (draft[k] !== base[k]) {
+      (out as Record<string, unknown>)[k] = draft[k];
+    }
+  }
+  return out;
+}
+
+/**
+ * Edits groups of settings with one save bar. Settings pinned by an
+ * environment variable, and everything for non-admins, are read-only.
+ */
+export function SettingsForm({ groups, footer }: { groups: FieldGroupDef[]; footer?: ReactNode }) {
+  const { data, isPending, isError, error } = useQuery(settingsQuery);
+  const { data: me } = useQuery(meQuery);
+  const update = useUpdateSettings();
+  const base = data?.settings;
+  const [draft, setDraft] = useState<Settings | undefined>(base);
+  // New settings from the server (loaded, saved, or changed elsewhere) reset
+  // the form, unless it has unsaved edits.
+  const [seenBase, setSeenBase] = useState(base);
+  if (base !== seenBase) {
+    setSeenBase(base);
+    if (!draft || !seenBase || Object.keys(settingsDiff(seenBase, draft)).length === 0) {
+      setDraft(base);
+    }
+  }
+
+  const keysHere = useMemo(
+    () => new Set(groups.flatMap((g) => g.fields.map((f) => f.key))),
+    [groups],
+  );
+  const changes = useMemo(() => {
+    if (!base || !draft) {
+      return {};
+    }
+    const diff = settingsDiff(base, draft);
+    return Object.fromEntries(
+      Object.entries(diff).filter(([k]) => keysHere.has(k as Key)),
+    ) as Partial<Settings>;
+  }, [base, draft, keysHere]);
+  const dirty = Object.keys(changes).length > 0;
+
+  if (isPending) {
+    return (
+      <div className="flex justify-center p-6">
+        <Spinner />
+      </div>
+    );
+  }
+  if (isError || !data || !draft) {
+    return <p className="text-destructive">Couldn't load the settings: {error?.message}</p>;
+  }
+  const admin = me?.isAdmin === true;
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    update.mutate(changes, {
+      onSuccess: (res) => {
+        setDraft(res.settings);
+        toast.success("Settings saved");
+      },
+    });
+  };
+
+  return (
+    <form onSubmit={submit} className="flex flex-col gap-10">
+      {!admin && (
+        <p className="border bg-muted/50 p-3 text-sm text-muted-foreground">
+          Only admins can change settings.
+        </p>
+      )}
+      {groups.map((g) => (
+        <PageSection key={g.title} title={g.title} description={g.description}>
+          <div className="flex flex-col gap-6">
+            {g.fields.map((f) => (
+              <SettingField
+                key={f.key}
+                def={f}
+                value={draft[f.key]}
+                lockedBy={data.locked[f.key]}
+                disabled={!admin}
+                onChange={(v) => setDraft((d) => d && { ...d, [f.key]: v })}
+              />
+            ))}
+          </div>
+        </PageSection>
+      ))}
+      {footer}
+      {admin && (
+        <div className="sticky bottom-0 -mx-4 flex items-center justify-end gap-2 border-t bg-background/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
+          <span className="mr-auto text-xs text-muted-foreground" aria-live="polite">
+            {dirty
+              ? `${Object.keys(changes).length} unsaved ${Object.keys(changes).length === 1 ? "change" : "changes"}`
+              : "All changes saved"}
+          </span>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={!dirty}
+            onClick={() => setDraft(base)}
+          >
+            Reset
+          </Button>
+          <Button type="submit" size="sm" disabled={!dirty || update.isPending}>
+            {update.isPending && <Spinner />}
+            Save
+          </Button>
+        </div>
+      )}
+    </form>
+  );
+}
+
+function SettingField({
+  def,
+  value,
+  lockedBy,
+  disabled,
+  onChange,
+}: {
+  def: FieldDef;
+  value: Settings[Key];
+  lockedBy: string | undefined;
+  disabled: boolean;
+  onChange: (value: Settings[Key]) => void;
+}) {
+  const id = `setting-${def.key}`;
+  const off = disabled || lockedBy !== undefined;
+  const description = (
+    <>
+      {def.description}
+      {lockedBy && (
+        <span className="mt-1 flex items-center gap-1 text-xs">
+          <LockIcon className="size-3" />
+          Set by <code className="font-mono">{lockedBy}</code>
+        </span>
+      )}
+    </>
+  );
+
+  if (def.kind === "bool") {
+    return (
+      <Field orientation="horizontal" className="items-start justify-between gap-6">
+        <FieldContent>
+          <FieldLabel htmlFor={id}>{def.label}</FieldLabel>
+          <FieldDescription>{description}</FieldDescription>
+        </FieldContent>
+        <Switch
+          id={id}
+          checked={value === true}
+          onCheckedChange={(v) => onChange(v)}
+          disabled={off}
+        />
+      </Field>
+    );
+  }
+
+  let control: ReactNode;
+  switch (def.kind) {
+    case "limit":
+      control = (
+        <LimitInput
+          id={id}
+          value={Number(value)}
+          onChange={onChange}
+          disabled={off}
+          className="max-w-64"
+        />
+      );
+      break;
+    case "ratio":
+    case "minutes":
+      control = (
+        <ShareLimitInput
+          id={id}
+          kind={def.kind}
+          value={Number(value)}
+          onChange={onChange}
+          allowGlobal={false}
+          disabled={off}
+        />
+      );
+      break;
+    case "int":
+      control = (
+        <IntInput
+          id={id}
+          value={Number(value)}
+          onChange={onChange}
+          disabled={off}
+          min={def.min}
+          max={def.max}
+        />
+      );
+      break;
+    case "select":
+      control = (
+        <OptionSelect
+          id={id}
+          value={String(value)}
+          options={def.options}
+          onChange={onChange}
+          disabled={off}
+          className="max-w-64"
+        />
+      );
+      break;
+    default:
+      control = (
+        <Input
+          id={id}
+          value={String(value)}
+          disabled={off}
+          onChange={(e) => onChange(e.target.value)}
+          className={def.kind === "path" ? "max-w-xl font-mono text-xs" : "max-w-xl"}
+        />
+      );
+  }
+  return (
+    <Field>
+      <FieldLabel htmlFor={id}>{def.label}</FieldLabel>
+      {control}
+      {(def.description || lockedBy) && <FieldDescription>{description}</FieldDescription>}
+    </Field>
+  );
+}
+
+/** An integer field that can be cleared while typing. */
+function IntInput({
+  id,
+  value,
+  onChange,
+  disabled,
+  min,
+  max,
+}: {
+  id: string;
+  value: number;
+  onChange: (value: number) => void;
+  disabled?: boolean;
+  min?: number;
+  max?: number;
+}) {
+  const [text, setText] = useState(String(value));
+  const [seen, setSeen] = useState(value);
+  if (value !== seen) {
+    setSeen(value);
+    if (Number(text) !== value || text === "") {
+      setText(String(value));
+    }
+  }
+  const n = Number(text);
+  const invalid =
+    text === "" ||
+    !Number.isInteger(n) ||
+    (min !== undefined && n < min) ||
+    (max !== undefined && n > max);
+  return (
+    <Input
+      id={id}
+      inputMode="numeric"
+      value={text}
+      disabled={disabled}
+      aria-invalid={invalid || undefined}
+      className="max-w-40 tabular"
+      onChange={(e) => {
+        setText(e.target.value);
+        const v = Number(e.target.value);
+        if (
+          e.target.value !== "" &&
+          Number.isInteger(v) &&
+          (min === undefined || v >= min) &&
+          (max === undefined || v <= max)
+        ) {
+          onChange(v);
+        }
+      }}
+    />
+  );
+}
