@@ -84,3 +84,19 @@ func TestBadEnvValue(t *testing.T) {
 		t.Fatal("no error for a bad boolean")
 	}
 }
+
+func TestEmptyEnvIsUnset(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	m, err := Load(ctx, st, Defaults("/d"), []string{"PIECEMEAL_DOWNLOAD_LIMIT="})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Locked()) != 0 {
+		t.Fatalf("locked: %v", m.Locked())
+	}
+}

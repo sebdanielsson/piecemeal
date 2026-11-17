@@ -32,7 +32,7 @@ func Handler() http.Handler {
 			name = "index.html"
 		}
 		if st, err := fs.Stat(sub, name); err != nil || st.IsDir() {
-			if path.Ext(name) != "" && name != "index.html" {
+			if (path.Ext(name) != "" && name != "index.html") || strings.HasPrefix(name, "api/") {
 				// A missing asset, not a client-side route.
 				http.NotFound(w, r)
 				return

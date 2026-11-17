@@ -782,7 +782,11 @@ export interface components {
        * @description Payload bytes from the peer this session.
        */
       downloaded: number;
-      encrypted: boolean;
+      /**
+       * @description header: obfuscated handshake only; rc4: the whole connection.
+       * @enum {string}
+       */
+      encryption: "none" | "header" | "rc4";
       /** @description tcp, utp, webrtc or webseed. */
       network: string;
       /**

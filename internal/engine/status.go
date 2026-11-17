@@ -147,6 +147,9 @@ func (e *Engine) tick(now time.Time) {
 	for _, m := range e.torrents {
 		e.updateRates(m, now)
 		e.updateTimes(m, now)
+		if m.rec.Sequential && m.t != nil {
+			e.applyPiecePrioritiesLocked(m)
+		}
 		st := e.statusLocked(m)
 		next.list = append(next.list, st)
 		next.byHash[st.Hash] = st
@@ -165,6 +168,13 @@ func (e *Engine) tick(now time.Time) {
 	for _, st := range next.list {
 		if old, ok := prev.byHash[st.Hash]; !ok || !st.equal(old) {
 			e.bus.publish(Event{Type: EventTorrent, Torrent: st})
+		}
+	}
+	// Remove publishes its own event, unless a tick dropped the torrent
+	// from the snapshot first.
+	for h := range prev.byHash {
+		if _, ok := next.byHash[h]; !ok {
+			e.bus.publish(Event{Type: EventTorrentRemoved, Hash: h})
 		}
 	}
 	if next.transfer != prev.transfer {
@@ -397,26 +407,33 @@ func (e *Engine) transferLocked(down, up float64, n int) TransferStatus {
 
 // refreshLocked recomputes one torrent's status right after a change, so
 // the API returns it updated without waiting for the next tick.
-func (e *Engine) refreshLocked(m *managed) {
-	st := e.statusLocked(m)
+func (e *Engine) refreshLocked(ms ...*managed) {
+	if len(ms) == 0 {
+		return
+	}
+	fresh := make(map[string]*Torrent, len(ms))
+	for _, m := range ms {
+		fresh[m.rec.InfoHash] = e.statusLocked(m)
+	}
 	prev := e.snap.Load()
-	next := &snapshot{byHash: make(map[string]*Torrent, len(prev.byHash)+1), transfer: prev.transfer}
-	found := false
+	next := &snapshot{byHash: make(map[string]*Torrent, len(prev.byHash)+len(ms)), transfer: prev.transfer}
 	for _, s := range prev.list {
-		if s.Hash == st.Hash {
+		if st, ok := fresh[s.Hash]; ok {
 			s = st
-			found = true
+			delete(fresh, s.Hash)
 		}
 		next.list = append(next.list, s)
 		next.byHash[s.Hash] = s
 	}
-	if !found {
+	for _, st := range fresh { // new torrents
 		next.list = append(next.list, st)
 		next.byHash[st.Hash] = st
 		next.transfer.Torrents++
 	}
 	e.snap.Store(next)
-	e.bus.publish(Event{Type: EventTorrent, Torrent: st})
+	for _, m := range ms {
+		e.bus.publish(Event{Type: EventTorrent, Torrent: next.byHash[m.rec.InfoHash]})
+	}
 }
 
 // refreshTransferLocked recomputes the transfer status after a change to

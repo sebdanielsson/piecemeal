@@ -83,6 +83,8 @@ func (a *API) stream(ctx context.Context, send sse.Sender) {
 		select {
 		case <-ctx.Done():
 			return
+		case <-a.done:
+			return
 		case <-heartbeat.C:
 			if err := send.Comment("ping"); err != nil {
 				return

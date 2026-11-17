@@ -140,6 +140,11 @@ func FromEnv(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, fmt.Errorf("PIECEMEAL_METRICS: %q is not public, auth or off", c.Metrics))
 	}
+	switch strings.ToLower(c.LogLevel) {
+	case "debug", "info", "warn", "error":
+	default:
+		errs = append(errs, fmt.Errorf("PIECEMEAL_LOG_LEVEL: %q is not debug, info, warn or error", c.LogLevel))
+	}
 	switch c.LogFormat {
 	case "json", "text":
 	default:

@@ -3,6 +3,7 @@ package engine
 import (
 	"bytes"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/anacrolix/torrent"
@@ -29,7 +30,7 @@ func (e *Engine) Files(hash string) ([]File, error) {
 		e.mu.Unlock()
 		return nil, err
 	}
-	info, t, prio, h := m.info, m.t, m.filePrio, m.hash
+	info, t, prio, h := m.info, m.t, slices.Clone(m.filePrio), m.hash
 	e.mu.Unlock()
 	if info == nil {
 		return []File{}, nil
@@ -110,7 +111,7 @@ type Peer struct {
 	Client     string  `json:"client"`
 	Network    string  `json:"network" doc:"tcp, utp, webrtc or webseed."`
 	Source     string  `json:"source" doc:"How the peer was found."`
-	Encrypted  bool    `json:"encrypted"`
+	Encryption string  `json:"encryption" enum:"none,header,rc4" doc:"header: obfuscated handshake only; rc4: the whole connection."`
 	Progress   float64 `json:"progress" doc:"How much of the torrent the peer has, 0 to 1."`
 	DownRate   int64   `json:"downloadRate" doc:"Bytes per second from the peer."`
 	UpRate     int64   `json:"uploadRate" doc:"Bytes per second to the peer."`
@@ -132,7 +133,10 @@ func (e *Engine) Peers(hash string) ([]Peer, error) {
 		return []Peer{}, nil
 	}
 	conns := t.PeerConns()
-	n := t.NumPieces()
+	n := 0
+	if t.Info() != nil {
+		n = t.NumPieces()
+	}
 	out := make([]Peer, 0, len(conns))
 	for _, pc := range conns {
 		st := pc.Stats()
@@ -142,7 +146,7 @@ func (e *Engine) Peers(hash string) ([]Peer, error) {
 			Client:     name,
 			Network:    pc.Network,
 			Source:     sourceName(pc.Discovery),
-			Encrypted:  pc.PeerPrefersEncryption,
+			Encryption: encryption(pc),
 			DownRate:   int64(st.DownloadRate),
 			UpRate:     int64(st.LastWriteUploadRate),
 			Downloaded: st.BytesReadUsefulData.Int64(),
@@ -154,6 +158,28 @@ func (e *Engine) Peers(hash string) ([]Peer, error) {
 		out = append(out, p)
 	}
 	return out, nil
+}
+
+// encryption reads a connection's encryption from its description:
+// anacrolix exports it only there, as the E (RC4) and e (header only)
+// connection flags. Both are set at the handshake, before the connection
+// is listed.
+func encryption(pc *torrent.PeerConn) string {
+	s := pc.String()
+	i := strings.Index(s, "flags=")
+	if i < 0 {
+		return "none"
+	}
+	flags, _, _ := strings.Cut(s[i+len("flags="):], " ")
+	for _, f := range strings.Split(flags, ",") {
+		switch f {
+		case "E":
+			return "rc4"
+		case "e":
+			return "header"
+		}
+	}
+	return "none"
 }
 
 func sourceName(s torrent.PeerSource) string {

@@ -122,10 +122,15 @@ func (s Settings) Validate() error {
 type Manager struct {
 	store *store.Store
 
-	mu     sync.RWMutex
-	cur    Settings
-	locked map[string]string // JSON name -> environment variable
-	subs   []func(old, cur Settings)
+	// update serialises changes, including the subscriber calls, so
+	// subscribers see them in the order they were stored.
+	update sync.Mutex
+
+	mu         sync.RWMutex
+	cur        Settings
+	locked     map[string]string // JSON name -> environment variable
+	subs       []func(old, cur Settings)
+	validators []func(Settings) error
 }
 
 // Load reads stored settings over the defaults and applies environment
@@ -165,7 +170,8 @@ func Load(ctx context.Context, st *store.Store, defaults Settings, environ []str
 	for name, f := range fieldsByName {
 		envName := EnvName(name)
 		v, ok := env[envName]
-		if !ok {
+		if !ok || v == "" {
+			// Empty means unset, as for the startup configuration.
 			continue
 		}
 		if err := setFromString(rv.FieldByIndex(f.Index), v); err != nil {
@@ -190,6 +196,14 @@ func (m *Manager) Get() Settings {
 // mapped to the variable.
 func (m *Manager) Locked() map[string]string {
 	return maps.Clone(m.locked)
+}
+
+// AddValidator adds a check that changes must pass, for constraints from
+// outside this package such as the allowed save roots.
+func (m *Manager) AddValidator(fn func(Settings) error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.validators = append(m.validators, fn)
 }
 
 // Subscribe registers fn to run after every change, with the old and new
@@ -235,6 +249,8 @@ func (m *Manager) Set(ctx context.Context, values map[string]any) (Settings, err
 }
 
 func (m *Manager) apply(ctx context.Context, fields map[string]json.RawMessage) (Settings, error) {
+	m.update.Lock()
+	defer m.update.Unlock()
 	m.mu.Lock()
 	old := m.cur
 	next := m.cur
@@ -260,6 +276,12 @@ func (m *Manager) apply(ctx context.Context, fields map[string]json.RawMessage) 
 	if err := next.Validate(); err != nil {
 		m.mu.Unlock()
 		return Settings{}, &ValidationError{err}
+	}
+	for _, v := range m.validators {
+		if err := v(next); err != nil {
+			m.mu.Unlock()
+			return Settings{}, &ValidationError{err}
+		}
 	}
 
 	nextJSON := toFields(next)

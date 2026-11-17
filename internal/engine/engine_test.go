@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 	"github.com/anacrolix/torrent/bencode"
 	"github.com/anacrolix/torrent/metainfo"
 	"github.com/anacrolix/torrent/storage"
+	"github.com/anacrolix/torrent/types"
 
 	"github.com/sebdanielsson/piecemeal/internal/settings"
 	"github.com/sebdanielsson/piecemeal/internal/store"
@@ -345,3 +347,115 @@ func TestBusDropsSlowSubscribers(t *testing.T) {
 }
 
 func falseOption() g.Option[bool] { return g.Some(false) }
+
+func TestPiecePriorities(t *testing.T) {
+	ctx := context.Background()
+	s := newSeeder(t, map[string]int{"a.bin": 200 << 10, "b.bin": 200 << 10})
+	h := newHarness(t)
+	// No peers: the torrent runs but never gets data, so priorities stay put.
+	hash, err := h.engine.Add(ctx, AddParams{Metainfo: s.metainfo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := func() *managed {
+		h.engine.mu.Lock()
+		defer h.engine.mu.Unlock()
+		mm, _ := h.engine.get(hash)
+		return mm
+	}()
+	boosted := func() map[int]types.PiecePriority {
+		h.engine.mu.Lock()
+		defer h.engine.mu.Unlock()
+		return maps.Clone(m.boosted)
+	}
+
+	if err := h.engine.SetFirstLastPiece(ctx, true, hash); err != nil {
+		t.Fatal(err)
+	}
+	// 400 KiB in 32 KiB pieces: a.bin is pieces 0-6, b.bin 6-12; piece 6
+	// is the last of one and the first of the other.
+	if b := boosted(); len(b) != 3 || b[0] != types.PiecePriorityHigh || b[12] != types.PiecePriorityHigh {
+		t.Fatalf("first/last on: %v", b)
+	}
+	// Skipping a file drops its boost.
+	if err := h.engine.SetFilePriority(ctx, hash, []int{1}, PrioritySkip); err != nil {
+		t.Fatal(err)
+	}
+	if b := boosted(); len(b) != 2 || b[12] != 0 {
+		t.Fatalf("after skipping b.bin: %v", b)
+	}
+	if err := h.engine.SetFirstLastPiece(ctx, false, hash); err != nil {
+		t.Fatal(err)
+	}
+	if b := boosted(); len(b) != 0 {
+		t.Fatalf("first/last off: %v", b)
+	}
+	if p := m.t.Piece(0).State().Priority; p != types.PiecePriorityNormal {
+		t.Fatalf("piece 0 priority after turning first/last off: %v, want normal", p)
+	}
+
+	// Sequential raises the first missing wanted pieces.
+	if err := h.engine.SetSequential(ctx, true, hash); err != nil {
+		t.Fatal(err)
+	}
+	if b := boosted(); b[0] != types.PiecePriorityNext || b[1] != types.PiecePriorityReadahead || b[7] != 0 {
+		t.Fatalf("sequential: %v", b)
+	}
+	if err := h.engine.SetSequential(ctx, false, hash); err != nil {
+		t.Fatal(err)
+	}
+	if b := boosted(); len(b) != 0 {
+		t.Fatalf("sequential off: %v", b)
+	}
+}
+
+func TestRemovedTorrentStaysRemoved(t *testing.T) {
+	ctx := context.Background()
+	s := newSeeder(t, map[string]int{"x.bin": 64 << 10})
+	h := newHarness(t)
+	sub := h.engine.Events().Subscribe(1000)
+	defer sub.Close()
+	hash, err := h.engine.Add(ctx, AddParams{Metainfo: s.metainfo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.engine.Remove(ctx, false, hash); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.engine.checkpoint(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := h.store.ListTorrents(ctx)
+	if err != nil || len(rows) != 0 {
+		t.Fatalf("rows after remove and checkpoint: %v, %v", rows, err)
+	}
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Type == EventTorrentRemoved && ev.Hash == hash {
+				return
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("no removal event")
+		}
+	}
+}
+
+func TestAddRejectsBadTags(t *testing.T) {
+	h := newHarness(t)
+	_, err := h.engine.Add(context.Background(), AddParams{
+		Magnet: "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567", Tags: []string{"a,b"},
+	})
+	if !errors.Is(err, ErrInvalid) {
+		t.Fatalf("tag with a comma: %v, want ErrInvalid", err)
+	}
+}
+
+func TestDefaultSavePathMustBeAllowed(t *testing.T) {
+	h := newHarness(t)
+	_, err := h.settings.Set(context.Background(), map[string]any{"defaultSavePath": "/etc"})
+	var ve *settings.ValidationError
+	if !errors.As(err, &ve) {
+		t.Fatalf("default save path outside the roots: %v, want a ValidationError", err)
+	}
+}

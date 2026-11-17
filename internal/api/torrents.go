@@ -177,6 +177,9 @@ func (a *API) registerTorrents() {
 	op := a.operation(http.MethodPost, "/torrents", "addTorrent", "Add a torrent", tag, accessUser)
 	op.DefaultStatus = http.StatusCreated
 	op.Errors = append(op.Errors, http.StatusConflict, http.StatusUnprocessableEntity)
+	// Room for a 16 MiB torrent file in base64, the size adding by URL
+	// allows.
+	op.MaxBodyBytes = 24 << 20
 	huma.Register(a.huma, op, func(ctx context.Context, in *addTorrentInput) (*addTorrentOutput, error) {
 		return a.addTorrent(ctx, in.Body)
 	})

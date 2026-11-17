@@ -18,6 +18,7 @@ import (
 	g "github.com/anacrolix/generics"
 	"github.com/anacrolix/torrent"
 	"github.com/anacrolix/torrent/metainfo"
+	"github.com/anacrolix/torrent/tracker"
 	"github.com/anacrolix/torrent/types"
 
 	"github.com/sebdanielsson/piecemeal/internal/store"
@@ -39,6 +40,11 @@ type managed struct {
 	completed int64
 	// filePrio holds the per-file priorities, nil for all normal.
 	filePrio []Priority
+	// boosted holds the piece priorities applyPiecePrioritiesLocked set.
+	boosted map[int]types.PiecePriority
+	// seqFrom is where the search for the next missing piece starts, for
+	// sequential download.
+	seqFrom  int
 	checking bool
 	dirty    bool
 	rates    rates
@@ -233,6 +239,11 @@ func (e *Engine) Add(ctx context.Context, p AddParams) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	for _, tag := range p.Tags {
+		if err := validName("tag", tag); err != nil {
+			return "", err
+		}
+	}
 	tags := slices.Clone(p.Tags)
 	slices.Sort(tags)
 	tags = slices.Compact(tags)
@@ -347,6 +358,7 @@ func (e *Engine) attachLocked(m *managed, opts ...attachOpts) error {
 	}
 	m.t = t
 	m.seenDown, m.seenUp = 0, 0
+	m.boosted, m.seqFrom = nil, 0
 	m.rec.Error = ""
 	t.SetMaxEstablishedConns(e.settings.Get().MaxConnectionsPerTorrent)
 	if t.Info() != nil {
@@ -427,22 +439,90 @@ func (e *Engine) onInfoLocked(m *managed) {
 	e.applyPiecePrioritiesLocked(m)
 }
 
-// applyPiecePrioritiesLocked raises the first and last piece of every wanted
-// file when firstLastPiece is on.
+// applyPiecePrioritiesLocked sets the piece-level priorities piecemeal
+// manages on top of file priorities: the first and last piece of each
+// wanted file with firstLastPiece, and a window ahead of the first missing
+// piece with sequential. anacrolix uses the higher of a piece's own
+// priority and its files', so pieces that no longer need a boost are reset
+// to none.
 func (e *Engine) applyPiecePrioritiesLocked(m *managed) {
-	if m.t == nil || m.info == nil || !m.rec.FirstLastPiece {
+	if m.t == nil || m.info == nil || m.t.Info() == nil {
 		return
 	}
-	for _, f := range m.t.Files() {
-		if f.Priority() == types.PiecePriorityNone || f.Length() == 0 {
+	want := map[int]types.PiecePriority{}
+	raise := func(i int, p types.PiecePriority) {
+		if p > want[i] {
+			want[i] = p
+		}
+	}
+	files := m.t.Files()
+	if m.rec.FirstLastPiece {
+		for i, f := range files {
+			if f.Length() == 0 || !m.fileWanted(i) {
+				continue
+			}
+			raise(f.BeginPieceIndex(), types.PiecePriorityHigh)
+			raise(f.EndPieceIndex()-1, types.PiecePriorityHigh)
+		}
+	}
+	if m.rec.Sequential {
+		e.sequentialWindowLocked(m, raise)
+	}
+	for i := range m.boosted {
+		if _, ok := want[i]; !ok {
+			m.t.Piece(i).SetPriority(types.PiecePriorityNone)
+		}
+	}
+	for i, p := range want {
+		if m.boosted[i] != p {
+			m.t.Piece(i).SetPriority(p)
+		}
+	}
+	m.boosted = want
+}
+
+// fileWanted reports whether file i isn't skipped.
+func (m *managed) fileWanted(i int) bool {
+	return m.filePrio == nil || i >= len(m.filePrio) || m.filePrio[i] != PrioritySkip
+}
+
+// pieceWanted reports whether piece i belongs to a file that isn't skipped.
+func (m *managed) pieceWanted(i int) bool {
+	if m.filePrio == nil {
+		return true
+	}
+	var offset int64
+	start, end := int64(i)*m.info.PieceLength, int64(i+1)*m.info.PieceLength
+	for fi, f := range m.info.UpvertedFiles() {
+		if offset < end && offset+f.Length > start && m.fileWanted(fi) {
+			return true
+		}
+		offset += f.Length
+	}
+	return false
+}
+
+// sequentialWindowLocked raises the next missing wanted pieces in order:
+// the first one most, then a window after it, so pieces arrive roughly
+// front to back.
+func (e *Engine) sequentialWindowLocked(m *managed, raise func(int, types.PiecePriority)) {
+	n := m.info.NumPieces()
+	window := int(min(max((32<<20)/max(m.info.PieceLength, 1), 4), 64))
+	i := m.seqFrom
+	for i < n && (m.t.PieceState(i).Complete || !m.pieceWanted(i)) {
+		i++
+	}
+	m.seqFrom = i
+	for k := 0; i < n && k < window; i++ {
+		if m.t.PieceState(i).Complete || !m.pieceWanted(i) {
 			continue
 		}
-		for _, i := range []int{f.BeginPieceIndex(), f.EndPieceIndex() - 1} {
-			p := m.t.Piece(i)
-			if p.State().Priority < types.PiecePriorityHigh {
-				p.SetPriority(types.PiecePriorityHigh)
-			}
+		if k == 0 {
+			raise(i, types.PiecePriorityNext)
+		} else {
+			raise(i, types.PiecePriorityReadahead)
 		}
+		k++
 	}
 }
 
@@ -511,9 +591,7 @@ func (e *Engine) each(ctx context.Context, hashes []string, fn func(m *managed) 
 	if err != nil {
 		errs = append(errs, fmt.Errorf("save torrents: %w", err))
 	}
-	for _, m := range targets {
-		e.refreshLocked(m)
-	}
+	e.refreshLocked(targets...)
 	return errors.Join(errs...)
 }
 
@@ -563,32 +641,83 @@ func (e *Engine) Recheck(ctx context.Context, hashes ...string) error {
 			e.mu.Lock()
 			defer e.mu.Unlock()
 			m.checking = false
+			if e.torrents[m.hash] != m {
+				return // removed meanwhile
+			}
 			if err != nil && m.t == t {
 				e.log.Warn("recheck", "hash", m.rec.InfoHash, "error", err)
 			}
+			m.seqFrom = 0
 			e.refreshLocked(m)
 		}()
 		return nil
 	})
 }
 
-// Reannounce asks for more peers now. anacrolix announces on its own
-// schedule; adding the known trackers again triggers an announce to them.
+// Reannounce asks the trackers and the DHT for peers now, in the
+// background. anacrolix keeps announcing on its own schedule; it has no way
+// to bring that forward, so these are extra announces whose peers are
+// handed to the torrent.
 func (e *Engine) Reannounce(ctx context.Context, hashes ...string) error {
 	return e.each(ctx, hashes, func(m *managed) error {
 		if m.t == nil {
 			return nil
 		}
-		mi := m.t.Metainfo()
-		m.t.AddTrackers(mi.UpvertedAnnounceList())
+		t := m.t
+		mi := t.Metainfo()
+		var trackers []string
+		for _, tier := range mi.UpvertedAnnounceList() {
+			trackers = append(trackers, tier...)
+		}
+		left := int64(-1)
+		if m.info != nil {
+			size, done := m.wanted()
+			left = max(size-done, 0)
+		}
+		req := tracker.AnnounceRequest{
+			InfoHash: m.hash, PeerId: e.client.PeerID(), Port: uint16(e.port), //nolint:gosec // ports fit in uint16
+			Left: left, Uploaded: m.rec.Uploaded, Downloaded: m.rec.Downloaded, NumWant: 200,
+		}
+		dhts := e.client.DhtServers()
+		e.wg.Go(func() { e.announce(t, trackers, req, dhts) })
 		return nil
 	})
+}
+
+func (e *Engine) announce(t *torrent.Torrent, trackers []string, req tracker.AnnounceRequest, dhts []torrent.DhtServer) {
+	ctx, cancel := context.WithTimeout(e.ctxOrBackground(), 30*time.Second)
+	defer cancel()
+	for _, s := range dhts {
+		if _, stop, err := t.AnnounceToDht(s); err == nil {
+			context.AfterFunc(ctx, stop)
+		}
+	}
+	for _, u := range trackers {
+		if !strings.HasPrefix(u, "http") && !strings.HasPrefix(u, "udp") {
+			continue
+		}
+		res, err := tracker.Announce{TrackerUrl: u, Request: req, Context: ctx, UserAgent: "piecemeal"}.Do()
+		if err != nil {
+			e.log.Debug("reannounce", "tracker", u, "error", err)
+			continue
+		}
+		peers := make([]torrent.PeerInfo, 0, len(res.Peers))
+		for _, p := range res.Peers {
+			if ap, ok := p.ToNetipAddrPort(); ok {
+				peers = append(peers, torrent.PeerInfo{Addr: net.TCPAddrFromAddrPort(ap), Source: torrent.PeerSourceTracker})
+			}
+		}
+		t.AddPeers(peers)
+	}
+	<-ctx.Done()
 }
 
 // SetSequential turns sequential download on or off.
 func (e *Engine) SetSequential(ctx context.Context, on bool, hashes ...string) error {
 	return e.each(ctx, hashes, func(m *managed) error {
 		m.rec.Sequential = on
+		m.seqFrom = 0
+		e.applyPiecePrioritiesLocked(m)
 		return nil
 	})
 }
@@ -597,13 +726,7 @@ func (e *Engine) SetSequential(ctx context.Context, on bool, hashes ...string) e
 func (e *Engine) SetFirstLastPiece(ctx context.Context, on bool, hashes ...string) error {
 	return e.each(ctx, hashes, func(m *managed) error {
 		m.rec.FirstLastPiece = on
-		if m.t != nil && m.info != nil {
-			if on {
-				e.applyPiecePrioritiesLocked(m)
-			} else {
-				e.onInfoLocked(m)
-			}
-		}
+		e.applyPiecePrioritiesLocked(m)
 		return nil
 	})
 }

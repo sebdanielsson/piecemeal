@@ -182,6 +182,9 @@ func New(ctx context.Context, cfg Config, st *store.Store, sm *settings.Manager,
 	}
 
 	s := sm.Get()
+	if _, err := e.confine(s.DefaultSavePath); err != nil {
+		return nil, errors.Join(fmt.Errorf("defaultSavePath: %w", err), e.closeStorage())
+	}
 	port := s.PeerPort
 	if cfg.PortForwarded {
 		port = cfg.InitialPort
@@ -195,6 +198,12 @@ func New(ctx context.Context, cfg Config, st *store.Store, sm *settings.Manager,
 
 	e.ctx, e.cancel = context.WithCancel(context.Background())
 	sm.Subscribe(e.onSettingsChanged)
+	sm.AddValidator(func(s settings.Settings) error {
+		if _, err := e.confine(s.DefaultSavePath); err != nil {
+			return fmt.Errorf("defaultSavePath: %w", err)
+		}
+		return nil
+	})
 	e.tick(time.Now())
 	e.wg.Go(e.loop)
 	return e, nil
@@ -413,26 +422,33 @@ func (e *Engine) loop() {
 // checkpoint writes the records of torrents whose counters changed since the
 // last checkpoint, or all of them with all set.
 func (e *Engine) checkpoint(ctx context.Context, all bool) error {
+	// The write happens under the lock too, so a torrent removed meanwhile
+	// can't have its row written back after Remove deleted it.
 	e.mu.Lock()
-	var dirty []store.UpsertTorrentParams
+	defer e.mu.Unlock()
+	var dirty []*managed
 	for _, m := range e.torrents {
 		if all || m.dirty {
-			dirty = append(dirty, m.params())
-			m.dirty = false
+			dirty = append(dirty, m)
 		}
 	}
-	e.mu.Unlock()
 	if len(dirty) == 0 {
 		return nil
 	}
-	return e.store.Tx(ctx, func(q *store.Queries) error {
-		for _, p := range dirty {
-			if err := q.UpsertTorrent(ctx, p); err != nil {
+	err := e.store.Tx(ctx, func(q *store.Queries) error {
+		for _, m := range dirty {
+			if err := q.UpsertTorrent(ctx, m.params()); err != nil {
 				return err
 			}
 		}
 		return nil
 	})
+	if err == nil {
+		for _, m := range dirty {
+			m.dirty = false
+		}
+	}
+	return err
 }
 
 type nopClosePieceCompletion struct{ storage.PieceCompletion }

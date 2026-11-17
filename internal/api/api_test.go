@@ -152,6 +152,8 @@ func TestAPIKeyScopes(t *testing.T) {
 	anon.do(http.MethodGet, "/torrents", nil, http.StatusOK, nil, bearer(ro.Key)...)
 	anon.do(http.MethodPut, "/tags/x", nil, http.StatusForbidden, nil, bearer(ro.Key)...)
 	anon.do(http.MethodGet, "/torrents", nil, http.StatusForbidden, nil, bearer(qb.Key)...)
+	// Admin endpoints need a full-scope key, even for reads.
+	anon.do(http.MethodGet, "/log", nil, http.StatusForbidden, nil, bearer(ro.Key)...)
 	// Keys can't mint keys.
 	anon.do(http.MethodPost, "/api-keys", CreateAPIKeyRequest{Name: "x", Scope: auth.ScopeFull}, http.StatusForbidden, nil, bearer(ro.Key)...)
 
@@ -212,8 +214,16 @@ func TestTorrentLifecycle(t *testing.T) {
 	if updated.Category != "" {
 		t.Fatalf("category not cleared: %+v", updated)
 	}
+	// A running magnet without metadata has no peers and no pieces yet.
+	s.do(http.MethodPost, "/torrents/"+testHash+"/start", nil, http.StatusOK, nil, csrf...)
+	var peers struct{ Items []engine.Peer }
+	s.do(http.MethodGet, "/torrents/"+testHash+"/peers", nil, http.StatusOK, &peers)
+	s.do(http.MethodGet, "/torrents/"+testHash+"/pieces", nil, http.StatusOK, nil)
+	s.do(http.MethodPost, "/torrents/"+testHash+"/reannounce", nil, http.StatusOK, nil, csrf...)
+
 	s.do(http.MethodDelete, "/torrents/"+testHash, nil, http.StatusNoContent, nil, csrf...)
 	s.do(http.MethodGet, "/torrents/"+testHash, nil, http.StatusNotFound, nil)
+	s.do(http.MethodPost, "/torrents", AddTorrentRequest{Magnet: "magnet:?xt=urn:btih:" + testHash, Tags: []string{" padded"}}, http.StatusUnprocessableEntity, nil, csrf...)
 }
 
 func TestSettings(t *testing.T) {
@@ -229,6 +239,7 @@ func TestSettings(t *testing.T) {
 		t.Fatalf("after patch: %+v", got)
 	}
 	s.do(http.MethodPatch, "/settings", map[string]any{"uploadLimit": 1}, http.StatusUnprocessableEntity, nil, csrf...)
+	s.do(http.MethodPatch, "/settings", map[string]any{"defaultSavePath": "/etc"}, http.StatusUnprocessableEntity, nil, csrf...)
 	var tr engine.TransferStatus
 	s.do(http.MethodGet, "/transfer", nil, http.StatusOK, &tr)
 	if tr.DownloadLimit != 5000 || tr.UploadLimit != 100 {

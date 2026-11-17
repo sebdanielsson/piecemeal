@@ -1,12 +1,15 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -155,5 +158,51 @@ func TestClientIP(t *testing.T) {
 		if got := s.ClientIP(r); got != tc.want {
 			t.Errorf("ClientIP(%s, %q) = %s, want %s", tc.remote, tc.xff, got, tc.want)
 		}
+	}
+}
+
+func TestParallelGuessesCountTowardLockout(t *testing.T) {
+	s, _ := newService(t)
+	ctx := context.Background()
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	verified := 0
+	for range 12 {
+		wg.Go(func() {
+			_, _, err := s.Login(ctx, httptest.NewRequest(http.MethodPost, "/", nil), "admin", "wrong", KindWeb)
+			if errors.Is(err, ErrBadCredentials) {
+				mu.Lock()
+				verified++
+				mu.Unlock()
+			}
+		})
+	}
+	wg.Wait()
+	if verified > 5 {
+		t.Fatalf("%d parallel guesses were verified, want at most 5", verified)
+	}
+	if _, _, err := s.Login(ctx, httptest.NewRequest(http.MethodPost, "/", nil), "admin", "secret", KindWeb); !errors.Is(err, ErrLockedOut) {
+		t.Fatalf("after the burst: %v, want ErrLockedOut", err)
+	}
+}
+
+func TestTemporaryPasswordGoesToItsWriterOnly(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	var out, logs bytes.Buffer
+	_, err = New(ctx, Config{LocalLogin: true, TempPasswordOut: &out}, st, slog.New(slog.NewTextHandler(&logs, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "temporary admin password") {
+		t.Fatalf("no password written: %q", out.String())
+	}
+	pw := strings.TrimSpace(out.String()[strings.LastIndex(out.String(), ":")+1:])
+	if pw == "" || strings.Contains(logs.String(), pw) {
+		t.Fatalf("password %q leaked into the log: %s", pw, logs.String())
 	}
 }

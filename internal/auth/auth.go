@@ -13,10 +13,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/netip"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -92,6 +94,9 @@ type Config struct {
 	IdleTTL    time.Duration
 	// TrustedProxies may set X-Forwarded-For.
 	TrustedProxies []netip.Prefix
+	// TempPasswordOut receives the temporary password when no hash is
+	// configured. Default: stderr.
+	TempPasswordOut io.Writer
 }
 
 // Service authenticates requests.
@@ -100,7 +105,9 @@ type Service struct {
 	store   *store.Store
 	log     *slog.Logger
 	limiter *loginLimiter
-	now     func() time.Time
+	// verifying bounds concurrent password verifications.
+	verifying chan struct{}
+	now       func() time.Time
 
 	adminID int64
 
@@ -135,9 +142,15 @@ func New(ctx context.Context, cfg Config, st *store.Store, log *slog.Logger) (*S
 			return nil, err
 		}
 		cfg.AdminPasswordHash = h
-		log.Warn("no admin password hash is configured; using a temporary password until restart. "+
-			"Set PIECEMEAL_ADMIN_PASSWORD_HASH (see `piecemeal hash-password`).",
-			"username", cfg.AdminUsername, "password", pw)
+		// Straight to stderr, not through the logger: log records are kept
+		// in memory and served by the log endpoints.
+		out := cfg.TempPasswordOut
+		if out == nil {
+			out = os.Stderr
+		}
+		_, _ = fmt.Fprintf(out, "\npiecemeal: temporary admin password for %q until restart: %s\n\n", cfg.AdminUsername, pw)
+		log.Warn("no admin password hash is configured; a temporary password was printed to stderr. " +
+			"Set PIECEMEAL_ADMIN_PASSWORD_HASH (see `piecemeal hash-password`).")
 	} else if cfg.AdminPasswordHash != "" {
 		if _, err := VerifyPassword(cfg.AdminPasswordHash, ""); errors.Is(err, ErrBadHash) {
 			return nil, fmt.Errorf("admin password hash: %w", err)
@@ -145,7 +158,8 @@ func New(ctx context.Context, cfg Config, st *store.Store, log *slog.Logger) (*S
 	}
 	s := &Service{
 		cfg: cfg, store: st, log: log, limiter: newLoginLimiter(5, 15*time.Minute), now: time.Now,
-		touched: map[string]time.Time{},
+		verifying: make(chan struct{}, 2),
+		touched:   map[string]time.Time{},
 	}
 	u, err := st.GetUserByUsername(ctx, cfg.AdminUsername)
 	switch {
@@ -179,17 +193,25 @@ func (s *Service) Login(ctx context.Context, r *http.Request, username, password
 	if !s.cfg.LocalLogin {
 		return "", nil, ErrLocalDisabled
 	}
-	if !s.limiter.allowed(ip, s.now()) {
+	// The attempt counts as a failure until it succeeds, so parallel
+	// guesses can't all pass the check before any of them is recorded.
+	if !s.limiter.begin(ip, s.now()) {
 		s.audit(ctx, username, "login.lockedOut", "ip="+ip)
 		return "", nil, ErrLockedOut
 	}
+	// Each verification takes 64 MiB; bound how many run at once.
+	select {
+	case s.verifying <- struct{}{}:
+	case <-ctx.Done():
+		return "", nil, ctx.Err()
+	}
 	userOK := subtle.ConstantTimeCompare([]byte(username), []byte(s.cfg.AdminUsername)) == 1
 	pwOK, err := VerifyPassword(s.cfg.AdminPasswordHash, password)
+	<-s.verifying
 	if err != nil {
 		return "", nil, err
 	}
 	if !userOK || !pwOK {
-		s.limiter.fail(ip, s.now())
 		s.audit(ctx, username, "login.failed", "ip="+ip)
 		return "", nil, ErrBadCredentials
 	}
@@ -592,19 +614,19 @@ func (l *loginLimiter) recent(ip string, now time.Time) []time.Time {
 	return f
 }
 
-func (l *loginLimiter) allowed(ip string, now time.Time) bool {
+// begin records an attempt and reports whether it may go ahead.
+func (l *loginLimiter) begin(ip string, now time.Time) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return len(l.recent(ip, now)) < l.max
-}
-
-func (l *loginLimiter) fail(ip string, now time.Time) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.fails[ip] = append(l.recent(ip, now), now)
+	f := l.recent(ip, now)
+	if len(f) >= l.max {
+		return false
+	}
+	l.fails[ip] = append(f, now)
 	if len(l.fails) > 100000 {
 		clear(l.fails)
 	}
+	return true
 }
 
 func (l *loginLimiter) reset(ip string) {

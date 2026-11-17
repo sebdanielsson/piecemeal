@@ -220,7 +220,7 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, logs *logbuf.
 		}
 		mux.Handle("GET /metrics", h)
 	}
-	api.New(mux, api.Deps{
+	nativeAPI := api.New(mux, api.Deps{
 		Version: version, StartedAt: time.Now(), Engine: e, Settings: sm, Auth: authSvc,
 		Fetcher: fetch.New(cfg.FetchAllowedNetworks), Logs: logs, NATPMP: mapper, Log: log.With("component", "api"),
 		System: api.SystemInfo{
@@ -233,10 +233,12 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, logs *logbuf.
 		Addr:              cfg.Addr,
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       5 * time.Minute,
 		IdleTimeout:       2 * time.Minute,
-		// No WriteTimeout: the event stream stays open.
+		// No ReadTimeout or WriteTimeout: either would cut the event stream
+		// (net/http cancels the request context at the read deadline). Huma
+		// bounds request bodies itself.
 	}
+	srv.RegisterOnShutdown(nativeAPI.Close)
 	errc := make(chan error, 1)
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

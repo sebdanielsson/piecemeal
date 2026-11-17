@@ -667,8 +667,14 @@
             "format": "int64",
             "type": "integer"
           },
-          "encrypted": {
-            "type": "boolean"
+          "encryption": {
+            "description": "header: obfuscated handshake only; rc4: the whole connection.",
+            "enum": [
+              "none",
+              "header",
+              "rc4"
+            ],
+            "type": "string"
           },
           "network": {
             "description": "tcp, utp, webrtc or webseed.",
@@ -699,7 +705,7 @@
           "client",
           "network",
           "source",
-          "encrypted",
+          "encryption",
           "progress",
           "downloadRate",
           "uploadRate",

@@ -59,3 +59,12 @@ func TestErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestLogLevel(t *testing.T) {
+	if _, err := FromEnv(env(map[string]string{"PIECEMEAL_LOG_LEVEL": "verbose"})); err == nil {
+		t.Fatal("no error for an unknown log level")
+	}
+	if _, err := FromEnv(env(map[string]string{"PIECEMEAL_LOG_LEVEL": "DEBUG"})); err != nil {
+		t.Fatal(err)
+	}
+}

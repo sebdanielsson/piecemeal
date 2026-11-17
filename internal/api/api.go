@@ -7,10 +7,12 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -52,6 +54,16 @@ type Deps struct {
 type API struct {
 	Deps
 	huma huma.API
+	// done ends the event streams, which would otherwise keep a graceful
+	// HTTP shutdown waiting.
+	done      chan struct{}
+	closeOnce sync.Once
+}
+
+// Close ends open event streams. Call it when the HTTP server starts
+// shutting down (http.Server.RegisterOnShutdown).
+func (a *API) Close() {
+	a.closeOnce.Do(func() { close(a.done) })
 }
 
 type access int
@@ -87,7 +99,7 @@ func New(mux *http.ServeMux, d Deps) *API {
 		"bearer":  {Type: "http", Scheme: "bearer", Description: "An API key, `pm_...`."},
 		"session": {Type: "apiKey", In: "cookie", Name: auth.CookieWeb},
 	}
-	a := &API{Deps: d}
+	a := &API{Deps: d, done: make(chan struct{})}
 	a.huma = humago.NewWithPrefix(mux, Prefix, cfg)
 	a.huma.UseMiddleware(a.authMiddleware)
 
@@ -150,8 +162,8 @@ func (a *API) authMiddleware(ctx huma.Context, next func(huma.Context)) {
 	case p.Scope == auth.ScopeReadOnly && !safe:
 		_ = huma.WriteErr(a.huma, ctx, http.StatusForbidden, "this API key is read-only")
 		return
-	case acc == accessAdmin && !p.IsAdmin:
-		_ = huma.WriteErr(a.huma, ctx, http.StatusForbidden, "admins only")
+	case acc == accessAdmin && (!p.IsAdmin || p.Scope != auth.ScopeFull):
+		_ = huma.WriteErr(a.huma, ctx, http.StatusForbidden, "admins only, signed in or with a full-scope key")
 		return
 	}
 	if p.Method == "session" && !safe {
@@ -206,8 +218,8 @@ func apiError(err error) error {
 
 func actor(ctx context.Context) string {
 	if p := Principal(ctx); p != nil {
-		if p.APIKeyName != "" {
-			return p.Username + " (key " + p.APIKeyName + ")"
+		if p.APIKeyID != 0 {
+			return fmt.Sprintf("%s (API key %d)", p.Username, p.APIKeyID)
 		}
 		return p.Username
 	}
