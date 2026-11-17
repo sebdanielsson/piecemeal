@@ -6,6 +6,7 @@ node = "26.13.1"
 "npm:pnpm" = "12.21.0"
 "aqua:golangci/golangci-lint" = "2.15.0"
 "go:golang.org/x/vuln/cmd/govulncheck" = "1.9.0"
+"aqua:sqlc-dev/sqlc" = "1.31.1"
 
 [tasks.web]
 description = "Build the web UI into internal/webui/dist"
@@ -16,6 +17,14 @@ description = "Build the web UI, then the piecemeal binary with it embedded"
 depends = ["web"]
 run = "CGO_ENABLED=0 go build -trimpath -o bin/piecemeal ./cmd/piecemeal"
 
+[tasks.generate]
+description = "Regenerate the store's queries, the OpenAPI document and the web API client"
+run = [
+  "sqlc generate",
+  "go run ./cmd/piecemeal openapi > api/openapi.json",
+  "pnpm -C web gen:api",
+]
+
 [tasks.check]
 description = "Everything CI checks, locally"
 depends = ["web"]
@@ -25,6 +34,8 @@ run = [
   "pnpm -C web run typecheck",
   "pnpm -C web test",
   "golangci-lint run",
+  "sqlc diff",
+  "go run ./cmd/piecemeal openapi | diff -u api/openapi.json -",
   "go test -race ./...",
   "govulncheck ./...",
 ]

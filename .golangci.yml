@@ -12,6 +12,14 @@ linters:
     - revive
     - unconvert
     - usestdlibvars
+  exclusions:
+    rules:
+      # Tests write fixtures and read files they made; their cleanup errors
+      # don't matter.
+      - path: _test\.go
+        linters:
+          - gosec
+          - errcheck
 
 formatters:
   enable:

@@ -1,0 +1,26 @@
+# Generates internal/store's query code from its migrations and queries.
+# Run `sqlc generate` after changing either; CI fails if the output is stale.
+version: "2"
+sql:
+  - engine: sqlite
+    schema: internal/store/migrations
+    queries: internal/store/queries
+    gen:
+      go:
+        package: store
+        out: internal/store
+        output_db_file_name: queries.go
+        output_models_file_name: models.go
+        emit_empty_slices: true
+        # STRICT tables have no boolean type; these INTEGER columns hold 0 or 1.
+        overrides:
+          - column: users.is_admin
+            go_type: bool
+          - column: torrents.stopped
+            go_type: bool
+          - column: torrents.forced
+            go_type: bool
+          - column: torrents.sequential
+            go_type: bool
+          - column: torrents.first_last_piece
+            go_type: bool

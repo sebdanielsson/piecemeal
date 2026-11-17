@@ -4,7 +4,7 @@ piecemeal is a self-hosted BitTorrent client: a single Go binary built on [anacr
 
 It grows out of the test daemon in [`sebdanielsson/infra` `docker/transmission-wireguard/anacrolix`](https://github.com/sebdanielsson/infra/tree/main/docker/transmission-wireguard/anacrolix), which proved the library on the target host: NAT-PMP port forwarding through a WireGuard VPN, a responsive API under heavy disk load, and 9.7 MiB/s onto a ZFS RAID-Z1 pool once mmap storage was turned off.
 
-Status: planning. Phase 0 (this repository, CI/CD and a skeleton binary) is the only work done so far.
+Status: Phase 0 is done (v0.1.0). Phase 1 is in progress: the engine, store, settings, NAT-PMP, watch folder, metrics, local auth and the native API with its event stream.
 
 ## Goals
 
@@ -30,7 +30,7 @@ Status: planning. Phase 0 (this repository, CI/CD and a skeleton binary) is the 
 | qBittorrent API | WebAPI v2 as in qBittorrent 5.3.0 (WebAPI 2.16.2), 121 endpoints, everything except search | Radarr, Sonarr and Prowlarr use 15 of them; third-party UIs such as VueTorrent and tools such as qbit_manage use most of the rest. |
 | Native API | Huma v2, code-first, OpenAPI 3.1, errors as RFC 9457 problem details | The spec is generated from the Go handlers, committed, and turned into the UI's TypeScript client, with a CI check that both are in sync. |
 | App data | SQLite through `modernc.org/sqlite`, goose migrations, sqlc queries | Embedded, CGO-free and type-safe. Piece completion stays in anacrolix's bolt store. |
-| Storage | anacrolix file storage with mmap off by default | On the target RAID-Z1, mmap page writes caused about 13x write amplification (about 530 KiB/s). With pwrite, ZFS merges chunks per transaction group. |
+| Storage | anacrolix file storage with mmap off by default, and without part files | On the target RAID-Z1, mmap page writes caused about 13x write amplification (about 530 KiB/s). With pwrite, ZFS merges chunks per transaction group. Incomplete files keep their final names, as in qBittorrent by default; anacrolix v1.63.0 also has a data race between part-file promotion and the piece hasher in its non-mmap I/O. |
 | Tooling | Go from `go.mod`; Node 26 and pnpm 12 pinned in `mise.toml`; oxfmt and oxlint; vitest; golangci-lint | Same conventions as the author's other repositories. |
 | Releases | release-please on conventional commits; images on GHCR | Squash-merged PR titles drive versions and the changelog. |
 | License | MIT | anacrolix/torrent is MPL-2.0, which is file-level copyleft and fine to depend on unmodified. No qBittorrent code (GPL) is copied: the compatibility layer is written from the API documentation and observed behaviour only. |
@@ -86,7 +86,8 @@ Everything is served on one port (default 8080), so the client can live in a VPN
 
 ```text
 cmd/piecemeal/          main: flags, config, wiring
-internal/config/        env vars and config file; env values win and are read-only in the UI
+internal/config/        startup configuration from env vars
+internal/settings/      runtime settings in SQLite; an env var pins a setting and makes it read-only
 internal/engine/        anacrolix lifecycle, storage, queueing, limits, seed goals, events
 internal/natpmp/        port mapping
 internal/store/         SQLite, migrations (goose), queries (sqlc)
@@ -95,6 +96,9 @@ internal/api/           native API (Huma), SSE
 internal/qbit/          qBittorrent WebAPI v2
 internal/webui/         embedded SPA handler; `pnpm -C web build` writes its dist/
 internal/metrics/       Prometheus collectors
+internal/watch/         watch folder
+internal/fetch/         SSRF-safe download of .torrent URLs
+internal/logbuf/        recent log entries for the log endpoints
 web/                    the SPA (Vite + React)
 api/openapi.json        generated native API spec, committed
 docs/                   this plan, architecture notes, the compatibility matrix
@@ -214,3 +218,4 @@ piecemeal's own CD ends at a signed image on GHCR. Deploying is GitOps in `sebda
 - **ZFS and old disks.** The target pool is three ageing 2 TB WD Green drives in RAID-Z1 at 80% full. Performance tests must run there, not only on SSDs in CI.
 - **Running in a VPN network namespace.** NAT-PMP, the bound port and the single HTTP port all have to work inside the WireGuard container's namespace, as the test daemon does today.
 - **Pocket ID availability.** If the IdP is down, the local admin still gets in.
+- **openapi-typescript and TypeScript 7.** openapi-typescript 7.13 needs TypeScript 5's compiler API ([openapi-ts/openapi-typescript#2841](https://github.com/openapi-ts/openapi-typescript/issues/2841)). It runs from `web/tools/openapi-gen`, a workspace package with its own TypeScript 5, until a release supports 7.

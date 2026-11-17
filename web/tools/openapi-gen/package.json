@@ -1,0 +1,10 @@
+{
+  "name": "openapi-gen",
+  "private": true,
+  "description": "Generates src/api/schema.d.ts. A separate package because openapi-typescript 7.13 needs TypeScript 5's compiler API (openapi-ts/openapi-typescript#2841) while the app uses TypeScript 7. Fold back into web/ once a release supports TypeScript 7.",
+  "type": "module",
+  "devDependencies": {
+    "openapi-typescript": "^7.13.0",
+    "typescript": "5.9.3"
+  }
+}
