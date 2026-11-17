@@ -551,7 +551,6 @@ func (s *Service) audit(ctx context.Context, actor, action, detail string) {
 	}); err != nil {
 		s.log.Warn("writing audit log", "error", err)
 	}
-	s.log.Info("audit", "actor", actor, "action", action, "detail", detail)
 }
 
 // AuditEntry is one audit log entry.
