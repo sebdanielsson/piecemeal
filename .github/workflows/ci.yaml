@@ -45,6 +45,12 @@ jobs:
       - name: Run tests
         run: pnpm -C web test
 
+      # src/api/schema.d.ts is generated from api/openapi.json and committed.
+      - name: Check generated API client
+        run: |
+          pnpm -C web gen:api
+          git diff --exit-code -- web/src/api/schema.d.ts
+
       - name: Build
         run: pnpm -C web build
 
@@ -62,7 +68,7 @@ jobs:
       - name: Setup tools
         uses: jdx/mise-action@v5
         with:
-          install_args: go aqua:golangci/golangci-lint go:golang.org/x/vuln/cmd/govulncheck
+          install_args: go aqua:golangci/golangci-lint go:golang.org/x/vuln/cmd/govulncheck aqua:sqlc-dev/sqlc
 
       # The web job builds and checks the UI. Go only needs the embed directory to exist.
       - name: Create empty web UI embed directory
@@ -70,6 +76,14 @@ jobs:
 
       - name: Run golangci-lint
         run: golangci-lint run
+
+      # Generated code is committed: the store's queries (sqlc) and the native
+      # API's OpenAPI document, which the web client is generated from.
+      - name: Check generated code
+        run: |
+          sqlc diff
+          go run ./cmd/piecemeal openapi > api/openapi.json
+          git diff --exit-code -- api/openapi.json
 
       - name: Run tests
         run: go test -race ./...

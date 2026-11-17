@@ -1,0 +1,347 @@
+package engine
+
+import (
+	"bytes"
+	"context"
+	"crypto/rand"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net/url"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	g "github.com/anacrolix/generics"
+	"github.com/anacrolix/torrent"
+	"github.com/anacrolix/torrent/bencode"
+	"github.com/anacrolix/torrent/metainfo"
+	"github.com/anacrolix/torrent/storage"
+
+	"github.com/sebdanielsson/piecemeal/internal/settings"
+	"github.com/sebdanielsson/piecemeal/internal/store"
+)
+
+// offline keeps a client off the network: loopback only, no DHT, UPnP,
+// local service discovery or trackers.
+func offline(tc *torrent.ClientConfig) {
+	tc.ListenHost = func(string) string { return "127.0.0.1" }
+	tc.ListenPort = 0
+	tc.NoDHT = true
+	tc.NoDefaultPortForwarding = true
+	tc.DisableIPv6 = true
+	tc.DisableTrackers = true
+	tc.LocalServiceDiscovery = nil
+	tc.DisableWebtorrent = true
+}
+
+// seeder is an anacrolix client seeding one generated torrent.
+type seeder struct {
+	client   *torrent.Client
+	metainfo []byte
+	hash     string
+	addr     string
+	content  map[string][]byte
+}
+
+func newSeeder(t *testing.T, files map[string]int) *seeder {
+	t.Helper()
+	dir := t.TempDir()
+	root := filepath.Join(dir, "payload")
+	content := map[string][]byte{}
+	for name, size := range files {
+		b := make([]byte, size)
+		_, _ = rand.Read(b)
+		p := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		content[name] = b
+	}
+	info := metainfo.Info{PieceLength: 32 << 10}
+	if err := info.BuildFromFilePath(root); err != nil {
+		t.Fatal(err)
+	}
+	infoBytes, err := bencode.Marshal(info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mi := metainfo.MetaInfo{InfoBytes: infoBytes, Comment: "piecemeal test"}
+	var buf bytes.Buffer
+	if err := mi.Write(&buf); err != nil {
+		t.Fatal(err)
+	}
+
+	tc := torrent.NewDefaultClientConfig()
+	offline(tc)
+	tc.Seed = true
+	tc.DataDir = dir
+	tc.DefaultStorage = storage.NewFileOpts(storage.NewFileClientOpts{
+		ClientBaseDir:   dir,
+		PieceCompletion: storage.NewMapPieceCompletion(),
+		UsePartFiles:    falseOption(),
+	})
+	tc.Slogger = slog.New(slog.DiscardHandler)
+	cl, err := torrent.NewClient(tc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cl.Close() })
+	tor, err := cl.AddTorrent(&mi)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := tor.VerifyDataContext(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if !tor.Complete().Bool() {
+		t.Fatal("seeder is not complete after verifying")
+	}
+	return &seeder{
+		client:   cl,
+		metainfo: buf.Bytes(),
+		hash:     mi.HashInfoBytes().HexString(),
+		addr:     fmt.Sprintf("127.0.0.1:%d", cl.LocalPort()),
+		content:  content,
+	}
+}
+
+type harness struct {
+	t        *testing.T
+	dataDir  string
+	saveDir  string
+	store    *store.Store
+	settings *settings.Manager
+	engine   *Engine
+}
+
+func newHarness(t *testing.T) *harness {
+	t.Helper()
+	h := &harness{t: t, dataDir: t.TempDir(), saveDir: t.TempDir()}
+	var err error
+	h.store, err = store.Open(context.Background(), h.dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { h.store.Close() })
+	defaults := settings.Defaults(h.saveDir)
+	defaults.PeerPort = 0
+	defaults.DHT = false
+	h.settings, err = settings.Load(context.Background(), h.store, defaults, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.start()
+	return h
+}
+
+func (h *harness) start() {
+	h.t.Helper()
+	var err error
+	h.engine, err = New(context.Background(), Config{
+		DataDir:            h.dataDir,
+		AllowedRoots:       []string{h.saveDir},
+		TickInterval:       50 * time.Millisecond,
+		CheckpointInterval: time.Second,
+		ClientConfig:       offline,
+	}, h.store, h.settings, slog.New(slog.DiscardHandler))
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	h.t.Cleanup(func() { _ = h.engine.Close() })
+}
+
+func (h *harness) waitFor(hash string, what string, cond func(Torrent) bool) Torrent {
+	h.t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		st, ok := h.engine.Get(hash)
+		if ok && cond(st) {
+			return st
+		}
+		if time.Now().After(deadline) {
+			h.t.Fatalf("timed out waiting for %s; last status: %+v", what, st)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+func (h *harness) checkContent(s *seeder, root string) {
+	h.t.Helper()
+	for name, want := range s.content {
+		got, err := os.ReadFile(filepath.Join(h.saveDir, root, name))
+		if err != nil {
+			h.t.Fatal(err)
+		}
+		if !bytes.Equal(got, want) {
+			h.t.Fatalf("%s: content differs", name)
+		}
+	}
+}
+
+func TestDownloadStopStartRestartRemove(t *testing.T) {
+	ctx := context.Background()
+	s := newSeeder(t, map[string]int{"a.bin": 300 << 10, "sub/b.bin": 100 << 10})
+	h := newHarness(t)
+
+	if err := h.engine.PutCategory(ctx, Category{Name: "movies"}, true); err != nil {
+		t.Fatal(err)
+	}
+	hash, err := h.engine.Add(ctx, AddParams{Metainfo: s.metainfo, Category: "movies", Tags: []string{"test"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hash != s.hash {
+		t.Fatalf("hash %s, want %s", hash, s.hash)
+	}
+	if _, err := h.engine.Add(ctx, AddParams{Metainfo: s.metainfo}); !errors.Is(err, ErrExists) {
+		t.Fatalf("adding twice: %v, want ErrExists", err)
+	}
+	if err := h.engine.AddPeers(ctx, []string{s.addr}, hash); err != nil {
+		t.Fatal(err)
+	}
+	st := h.waitFor(hash, "download", func(st Torrent) bool { return st.Complete })
+	if st.Size != 400<<10 || st.Progress != 1 || st.Category != "movies" || len(st.Tags) != 1 {
+		t.Fatalf("status after download: %+v", st)
+	}
+	if st.Comment != "piecemeal test" || st.ContentPath != filepath.Join(h.saveDir, "payload") {
+		t.Fatalf("metadata fields: %+v", st)
+	}
+	h.checkContent(s, "payload")
+	h.waitFor(hash, "completion time", func(st Torrent) bool { return st.CompletedAt > 0 && st.Downloaded >= 400<<10 })
+
+	if err := h.engine.Stop(ctx, hash); err != nil {
+		t.Fatal(err)
+	}
+	st, _ = h.engine.Get(hash)
+	if st.State != StateStopped || !st.Complete || st.Completed != 400<<10 {
+		t.Fatalf("status after stop: %+v", st)
+	}
+
+	// A restart keeps the record, counters and completion: nothing is
+	// downloaded again, there's no peer to download from anyway.
+	if err := h.engine.Close(); err != nil {
+		t.Fatal(err)
+	}
+	h.start()
+	st, ok := h.engine.Get(hash)
+	if !ok || st.State != StateStopped || !st.Complete || st.Downloaded < 400<<10 || st.Category != "movies" {
+		t.Fatalf("status after restart: %+v", st)
+	}
+	if err := h.engine.Start(ctx, hash); err != nil {
+		t.Fatal(err)
+	}
+	h.waitFor(hash, "seeding after start", func(st Torrent) bool {
+		return st.State == StateStalledSeeding || st.State == StateSeeding
+	})
+
+	if err := h.engine.Remove(ctx, true, hash); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := h.engine.Get(hash); ok {
+		t.Fatal("torrent still listed after removal")
+	}
+	if _, err := os.Stat(filepath.Join(h.saveDir, "payload")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("content still on disk after removal with data: %v", err)
+	}
+}
+
+func TestMagnetFetchesMetadata(t *testing.T) {
+	ctx := context.Background()
+	s := newSeeder(t, map[string]int{"single.bin": 200 << 10})
+	h := newHarness(t)
+
+	magnet := fmt.Sprintf("magnet:?xt=urn:btih:%s&dn=%s&x.pe=%s", s.hash, "single", url.QueryEscape(s.addr))
+	hash, err := h.engine.Add(ctx, AddParams{Magnet: magnet})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := h.waitFor(hash, "download", func(st Torrent) bool { return st.Complete })
+	if st.Name != "payload" || !st.HasMetadata {
+		t.Fatalf("status: %+v", st)
+	}
+	h.checkContent(s, "payload")
+
+	// The metadata was stored, so a restart doesn't need peers to know the
+	// files.
+	h.waitFor(hash, "checkpoint", func(Torrent) bool {
+		rows, _ := h.store.ListTorrents(ctx)
+		return len(rows) == 1 && rows[0].Metainfo != nil
+	})
+	if err := h.engine.Close(); err != nil {
+		t.Fatal(err)
+	}
+	h.start()
+	files, err := h.engine.Files(hash)
+	if err != nil || len(files) != 1 || files[0].Size != 200<<10 {
+		t.Fatalf("files after restart: %+v, %v", files, err)
+	}
+}
+
+func TestSeedGoalStops(t *testing.T) {
+	ctx := context.Background()
+	s := newSeeder(t, map[string]int{"x.bin": 64 << 10})
+	h := newHarness(t)
+	if _, err := h.settings.Set(ctx, map[string]any{"seedingTimeLimit": 0}); err != nil {
+		t.Fatal(err)
+	}
+	hash, err := h.engine.Add(ctx, AddParams{Metainfo: s.metainfo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.engine.AddPeers(ctx, []string{s.addr}, hash); err != nil {
+		t.Fatal(err)
+	}
+	h.waitFor(hash, "stop at the seeding goal", func(st Torrent) bool { return st.Complete && st.State == StateStopped })
+}
+
+func TestConfine(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(root, "escape")); err != nil {
+		t.Fatal(err)
+	}
+	e := &Engine{cfg: Config{AllowedRoots: []string{root}}}
+	for path, ok := range map[string]bool{
+		root:                                   true,
+		filepath.Join(root, "a/b"):             true,
+		filepath.Join(root, "../x"):            false,
+		outside:                                false,
+		filepath.Join(root, "escape"):          false,
+		filepath.Join(root, "escape/new/path"): false,
+		"relative":                             false,
+	} {
+		_, err := e.confine(path)
+		if (err == nil) != ok {
+			t.Errorf("confine(%q): %v, want ok=%v", path, err, ok)
+		}
+	}
+}
+
+func TestBusDropsSlowSubscribers(t *testing.T) {
+	b := newBus()
+	slow := b.Subscribe(1)
+	fast := b.Subscribe(10)
+	for range 3 {
+		b.publish(Event{Type: EventTags})
+	}
+	n := 0
+	for range slow.C {
+		n++
+	}
+	if n != 1 {
+		t.Fatalf("slow subscriber got %d events before being dropped, want 1", n)
+	}
+	if len(fast.C) != 3 {
+		t.Fatalf("fast subscriber has %d events, want 3", len(fast.C))
+	}
+	fast.Close()
+}
+
+func falseOption() g.Option[bool] { return g.Some(false) }

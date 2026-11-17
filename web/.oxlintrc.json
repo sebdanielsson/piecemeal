@@ -7,5 +7,6 @@
   },
   "rules": {
     "react/react-in-jsx-scope": "off"
-  }
+  },
+  "ignorePatterns": ["src/api/schema.d.ts"]
 }

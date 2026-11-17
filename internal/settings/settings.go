@@ -1,0 +1,352 @@
+// Package settings holds piecemeal's runtime settings: the ones that can be
+// changed through the API while it runs.
+//
+// Values come from three places, highest priority first:
+//
+//  1. Environment variables. A setting set this way is pinned: the API
+//     reports it as read-only and refuses to change it.
+//  2. The settings table in the store, written when the API changes a value.
+//  3. The defaults below.
+//
+// Each setting's environment variable is PIECEMEAL_ followed by its JSON name
+// in upper snake case: downloadLimit is PIECEMEAL_DOWNLOAD_LIMIT.
+package settings
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"maps"
+	"reflect"
+	"slices"
+	"strconv"
+	"strings"
+	"sync"
+	"unicode"
+
+	"github.com/sebdanielsson/piecemeal/internal/store"
+)
+
+// Settings are the runtime settings. Rates are in bytes per second, where 0
+// means unlimited. Seed goals use -1 for unlimited.
+type Settings struct {
+	// Downloads
+	DefaultSavePath string `json:"defaultSavePath" doc:"Where torrents are saved when neither the request nor its category names a path."`
+	AddStopped      bool   `json:"addStopped" doc:"Add new torrents stopped."`
+
+	// Speed
+	DownloadLimit    int64 `json:"downloadLimit" minimum:"0" doc:"Global download limit in bytes per second, 0 for unlimited."`
+	UploadLimit      int64 `json:"uploadLimit" minimum:"0" doc:"Global upload limit in bytes per second, 0 for unlimited."`
+	AltDownloadLimit int64 `json:"altDownloadLimit" minimum:"0" doc:"Alternative download limit, used while altSpeedEnabled is on."`
+	AltUploadLimit   int64 `json:"altUploadLimit" minimum:"0" doc:"Alternative upload limit, used while altSpeedEnabled is on."`
+	AltSpeedEnabled  bool  `json:"altSpeedEnabled" doc:"Use the alternative limits."`
+
+	// Connection
+	PeerPort                 int  `json:"peerPort" minimum:"0" maximum:"65535" doc:"Port to accept peers on. NAT-PMP, when configured, overrides it. 0 picks a random port."`
+	MaxConnectionsPerTorrent int  `json:"maxConnectionsPerTorrent" minimum:"1" doc:"Established peer connections per torrent."`
+	MaxHalfOpenConnections   int  `json:"maxHalfOpenConnections" minimum:"1" doc:"Outgoing connection attempts in progress, across all torrents."`
+	UTP                      bool `json:"utp" doc:"Use uTP as well as TCP for peer connections."`
+
+	// BitTorrent
+	DHT        bool   `json:"dht" doc:"Use the DHT to find peers."`
+	PEX        bool   `json:"pex" doc:"Exchange peers with other peers."`
+	Encryption string `json:"encryption" enum:"prefer,require,disable" doc:"Peer connection encryption: prefer, require or disable."`
+
+	// Seeding goals. A torrent's own limits override these.
+	RatioLimit               float64 `json:"ratioLimit" doc:"Stop seeding at this upload ratio, -1 for unlimited."`
+	SeedingTimeLimit         int64   `json:"seedingTimeLimit" doc:"Stop seeding after this many minutes, -1 for unlimited."`
+	InactiveSeedingTimeLimit int64   `json:"inactiveSeedingTimeLimit" doc:"Stop seeding after this many minutes without upload, -1 for unlimited."`
+	SeedGoalAction           string  `json:"seedGoalAction" enum:"stop,remove,removeWithData" doc:"What to do once a torrent reaches a seeding goal."`
+}
+
+// Defaults returns the built-in defaults. defaultSavePath is the configured
+// download directory.
+func Defaults(defaultSavePath string) Settings {
+	return Settings{
+		DefaultSavePath:          defaultSavePath,
+		PeerPort:                 6881,
+		MaxConnectionsPerTorrent: 50,
+		MaxHalfOpenConnections:   100,
+		UTP:                      true,
+		DHT:                      true,
+		PEX:                      true,
+		Encryption:               "prefer",
+		RatioLimit:               -1,
+		SeedingTimeLimit:         -1,
+		InactiveSeedingTimeLimit: -1,
+		SeedGoalAction:           "stop",
+	}
+}
+
+// Validate checks values the JSON schema can't express.
+func (s Settings) Validate() error {
+	var errs []error
+	if s.DefaultSavePath == "" {
+		errs = append(errs, errors.New("defaultSavePath: must not be empty"))
+	}
+	for name, v := range map[string]int64{
+		"downloadLimit": s.DownloadLimit, "uploadLimit": s.UploadLimit,
+		"altDownloadLimit": s.AltDownloadLimit, "altUploadLimit": s.AltUploadLimit,
+	} {
+		if v < 0 {
+			errs = append(errs, fmt.Errorf("%s: must not be negative", name))
+		}
+	}
+	if s.PeerPort < 0 || s.PeerPort > 65535 {
+		errs = append(errs, errors.New("peerPort: must be between 0 and 65535"))
+	}
+	if s.MaxConnectionsPerTorrent < 1 {
+		errs = append(errs, errors.New("maxConnectionsPerTorrent: must be at least 1"))
+	}
+	if s.MaxHalfOpenConnections < 1 {
+		errs = append(errs, errors.New("maxHalfOpenConnections: must be at least 1"))
+	}
+	if !slices.Contains([]string{"prefer", "require", "disable"}, s.Encryption) {
+		errs = append(errs, errors.New("encryption: must be prefer, require or disable"))
+	}
+	if s.RatioLimit < 0 && s.RatioLimit != -1 {
+		errs = append(errs, errors.New("ratioLimit: must be -1 or at least 0"))
+	}
+	if s.SeedingTimeLimit < -1 || s.InactiveSeedingTimeLimit < -1 {
+		errs = append(errs, errors.New("seeding time limits: must be -1 or at least 0"))
+	}
+	if !slices.Contains([]string{"stop", "remove", "removeWithData"}, s.SeedGoalAction) {
+		errs = append(errs, errors.New("seedGoalAction: must be stop, remove or removeWithData"))
+	}
+	return errors.Join(errs...)
+}
+
+// Manager holds the current settings and persists changes.
+type Manager struct {
+	store *store.Store
+
+	mu     sync.RWMutex
+	cur    Settings
+	locked map[string]string // JSON name -> environment variable
+	subs   []func(old, cur Settings)
+}
+
+// Load reads stored settings over the defaults and applies environment
+// overrides from environ (os.Environ's format).
+func Load(ctx context.Context, st *store.Store, defaults Settings, environ []string) (*Manager, error) {
+	cur := defaults
+	rows, err := st.ListSettings(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load settings: %w", err)
+	}
+	stored := map[string]json.RawMessage{}
+	for _, r := range rows {
+		stored[r.Key] = json.RawMessage(r.Value)
+	}
+	if len(stored) > 0 {
+		// Settings that no longer exist are ignored rather than fatal, so a
+		// downgrade keeps working.
+		for k := range stored {
+			if _, ok := fieldsByName[k]; !ok {
+				delete(stored, k)
+			}
+		}
+		b, _ := json.Marshal(stored)
+		if err := json.Unmarshal(b, &cur); err != nil {
+			return nil, fmt.Errorf("stored settings: %w", err)
+		}
+	}
+
+	env := map[string]string{}
+	for _, kv := range environ {
+		if k, v, ok := strings.Cut(kv, "="); ok {
+			env[k] = v
+		}
+	}
+	locked := map[string]string{}
+	rv := reflect.ValueOf(&cur).Elem()
+	for name, f := range fieldsByName {
+		envName := EnvName(name)
+		v, ok := env[envName]
+		if !ok {
+			continue
+		}
+		if err := setFromString(rv.FieldByIndex(f.Index), v); err != nil {
+			return nil, fmt.Errorf("%s: %w", envName, err)
+		}
+		locked[name] = envName
+	}
+	if err := cur.Validate(); err != nil {
+		return nil, fmt.Errorf("settings: %w", err)
+	}
+	return &Manager{store: st, cur: cur, locked: locked}, nil
+}
+
+// Get returns the current settings.
+func (m *Manager) Get() Settings {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.cur
+}
+
+// Locked returns the JSON names of settings pinned by environment variables,
+// mapped to the variable.
+func (m *Manager) Locked() map[string]string {
+	return maps.Clone(m.locked)
+}
+
+// Subscribe registers fn to run after every change, with the old and new
+// settings. It runs synchronously in Update's caller.
+func (m *Manager) Subscribe(fn func(old, cur Settings)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.subs = append(m.subs, fn)
+}
+
+// ErrLocked is returned when a change touches a setting pinned by an
+// environment variable.
+var ErrLocked = errors.New("set by an environment variable")
+
+// ValidationError wraps errors in the requested values.
+type ValidationError struct{ Err error }
+
+func (e *ValidationError) Error() string { return e.Err.Error() }
+func (e *ValidationError) Unwrap() error { return e.Err }
+
+// Update applies a partial JSON object of settings, persists the changed
+// values and returns the result. Unknown and pinned settings are rejected.
+func (m *Manager) Update(ctx context.Context, patch json.RawMessage) (Settings, error) {
+	var fields map[string]json.RawMessage
+	dec := json.NewDecoder(bytes.NewReader(patch))
+	if err := dec.Decode(&fields); err != nil {
+		return Settings{}, &ValidationError{fmt.Errorf("settings must be a JSON object: %w", err)}
+	}
+	return m.apply(ctx, fields)
+}
+
+// Set changes settings from Go values keyed by JSON name.
+func (m *Manager) Set(ctx context.Context, values map[string]any) (Settings, error) {
+	fields := map[string]json.RawMessage{}
+	for k, v := range values {
+		b, err := json.Marshal(v)
+		if err != nil {
+			return Settings{}, &ValidationError{fmt.Errorf("%s: %w", k, err)}
+		}
+		fields[k] = b
+	}
+	return m.apply(ctx, fields)
+}
+
+func (m *Manager) apply(ctx context.Context, fields map[string]json.RawMessage) (Settings, error) {
+	m.mu.Lock()
+	old := m.cur
+	next := m.cur
+	var errs []error
+	for name := range fields {
+		if _, ok := fieldsByName[name]; !ok {
+			errs = append(errs, fmt.Errorf("%s: unknown setting", name))
+			continue
+		}
+		if env, ok := m.locked[name]; ok {
+			errs = append(errs, fmt.Errorf("%s: %w %s", name, ErrLocked, env))
+		}
+	}
+	if len(errs) > 0 {
+		m.mu.Unlock()
+		return Settings{}, &ValidationError{errors.Join(errs...)}
+	}
+	b, _ := json.Marshal(fields)
+	if err := json.Unmarshal(b, &next); err != nil {
+		m.mu.Unlock()
+		return Settings{}, &ValidationError{err}
+	}
+	if err := next.Validate(); err != nil {
+		m.mu.Unlock()
+		return Settings{}, &ValidationError{err}
+	}
+
+	nextJSON := toFields(next)
+	err := m.store.Tx(ctx, func(q *store.Queries) error {
+		for name := range fields {
+			if err := q.UpsertSetting(ctx, store.UpsertSettingParams{Key: name, Value: string(nextJSON[name])}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		m.mu.Unlock()
+		return Settings{}, fmt.Errorf("save settings: %w", err)
+	}
+	m.cur = next
+	subs := slices.Clone(m.subs)
+	m.mu.Unlock()
+
+	if old != next {
+		for _, fn := range subs {
+			fn(old, next)
+		}
+	}
+	return next, nil
+}
+
+// EnvName is the environment variable for a setting's JSON name.
+func EnvName(jsonName string) string {
+	var b strings.Builder
+	b.WriteString("PIECEMEAL_")
+	for i, r := range jsonName {
+		if unicode.IsUpper(r) && i > 0 {
+			b.WriteByte('_')
+		}
+		b.WriteRune(unicode.ToUpper(r))
+	}
+	return b.String()
+}
+
+// Names returns every setting's JSON name.
+func Names() []string {
+	return slices.Sorted(maps.Keys(fieldsByName))
+}
+
+var fieldsByName = func() map[string]reflect.StructField {
+	m := map[string]reflect.StructField{}
+	t := reflect.TypeFor[Settings]()
+	for i := range t.NumField() {
+		f := t.Field(i)
+		name, _, _ := strings.Cut(f.Tag.Get("json"), ",")
+		m[name] = f
+	}
+	return m
+}()
+
+func toFields(s Settings) map[string]json.RawMessage {
+	b, _ := json.Marshal(s)
+	var m map[string]json.RawMessage
+	_ = json.Unmarshal(b, &m)
+	return m
+}
+
+func setFromString(v reflect.Value, s string) error {
+	switch v.Kind() {
+	case reflect.String:
+		v.SetString(s)
+	case reflect.Bool:
+		b, err := strconv.ParseBool(s)
+		if err != nil {
+			return err
+		}
+		v.SetBool(b)
+	case reflect.Int, reflect.Int64:
+		n, err := strconv.ParseInt(s, 10, 64)
+		if err != nil {
+			return err
+		}
+		v.SetInt(n)
+	case reflect.Float64:
+		f, err := strconv.ParseFloat(s, 64)
+		if err != nil {
+			return err
+		}
+		v.SetFloat(f)
+	default:
+		return fmt.Errorf("unsupported setting type %s", v.Kind())
+	}
+	return nil
+}

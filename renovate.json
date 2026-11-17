@@ -22,6 +22,16 @@
         "github.com/pion/**"
       ],
       "groupName": "pion"
+    },
+    {
+      "description": "openapi-typescript 7.13 needs TypeScript 5's compiler API (openapi-ts/openapi-typescript#2841), so the generator package stays on TypeScript 5.",
+      "matchFileNames": [
+        "web/tools/openapi-gen/package.json"
+      ],
+      "matchPackageNames": [
+        "typescript"
+      ],
+      "allowedVersions": "<6"
     }
   ]
 }
