@@ -30,6 +30,10 @@ const (
 	StateError              State = "error"
 )
 
+// stallGrace is how long after the last payload a torrent still counts as
+// downloading or seeding rather than stalled.
+const stallGrace = 30 * time.Second
+
 // Torrent is a torrent as the API reports it.
 type Torrent struct {
 	Hash        string   `json:"hash" doc:"SHA-1 infohash, hex."`
@@ -43,6 +47,10 @@ type Torrent struct {
 	Completed   int64    `json:"completed" doc:"Wanted bytes downloaded and verified."`
 	Downloaded  int64    `json:"downloaded" doc:"Payload bytes downloaded, all time."`
 	Uploaded    int64    `json:"uploaded" doc:"Payload bytes uploaded, all time."`
+	SessionDown int64    `json:"sessionDownloaded" doc:"Payload bytes downloaded since piecemeal started."`
+	SessionUp   int64    `json:"sessionUploaded" doc:"Payload bytes uploaded since piecemeal started."`
+	MultiFile   bool     `json:"multiFile" doc:"The torrent has a root folder with several files in it."`
+	Trackers    int      `json:"trackers" doc:"Number of trackers."`
 	DownRate    int64    `json:"downloadRate" doc:"Bytes per second."`
 	UpRate      int64    `json:"uploadRate" doc:"Bytes per second."`
 	ETA         int64    `json:"eta" doc:"Seconds until complete, -1 when unknown."`
@@ -203,9 +211,18 @@ func (e *Engine) updateRates(m *managed, now time.Time) {
 			}
 			if m.rec.Downloaded > r.down || m.rec.Uploaded > r.up {
 				m.rec.LastActivityAt = now.Unix()
+				dd, du := max(m.rec.Downloaded-r.down, 0), max(m.rec.Uploaded-r.up, 0)
+				m.sessionDown += dd
+				m.sessionUp += du
+				if dd > 0 {
+					m.lastDownAt = now
+				}
+				if du > 0 {
+					m.lastUpAt = now
+				}
 				e.session.mu.Lock()
-				e.session.downloaded += max(m.rec.Downloaded-r.down, 0)
-				e.session.uploaded += max(m.rec.Uploaded-r.up, 0)
+				e.session.downloaded += dd
+				e.session.uploaded += du
 				e.session.mu.Unlock()
 			}
 		}
@@ -287,7 +304,8 @@ func (e *Engine) statusLocked(m *managed) *Torrent {
 	r := m.rec
 	st := &Torrent{
 		Hash: r.InfoHash, Name: r.Name, HasMetadata: m.info != nil, Downloaded: r.Downloaded,
-		Uploaded: r.Uploaded, DownRate: int64(m.rates.downR), UpRate: int64(m.rates.upR), ETA: -1,
+		Uploaded: r.Uploaded, SessionDown: m.sessionDown, SessionUp: m.sessionUp,
+		DownRate: int64(m.rates.downR), UpRate: int64(m.rates.upR), ETA: -1, Trackers: m.meta.trackers,
 		SavePath: r.SavePath, Category: r.Category, Tags: m.tags, AddedAt: r.AddedAt,
 		CompletedAt: r.CompletedAt, LastActive: r.LastActivityAt, SeedingTime: r.SeedingSeconds,
 		ActiveTime: r.ActiveSeconds, Stopped: r.Stopped, Forced: r.Forced, Sequential: r.Sequential,
@@ -300,6 +318,7 @@ func (e *Engine) statusLocked(m *managed) *Torrent {
 	}
 	if m.info != nil {
 		st.TotalSize = m.info.TotalLength()
+		st.MultiFile = m.info.IsDir()
 		st.PieceSize = m.info.PieceLength
 		st.Pieces = m.info.NumPieces()
 		st.Private = m.info.Private != nil && *m.info.Private
@@ -343,11 +362,14 @@ func (e *Engine) statusLocked(m *managed) *Torrent {
 		st.State = StateChecking
 	case m.info == nil:
 		st.State = StateMetadata
-	case st.Complete && st.UpRate > 0:
+	// A torrent counts as transferring for a while after the last payload,
+	// so a pause between pieces doesn't flip it to stalled: the *arrs show
+	// a stalled download as a warning.
+	case st.Complete && (st.UpRate > 0 || time.Since(m.lastUpAt) < stallGrace):
 		st.State = StateSeeding
 	case st.Complete:
 		st.State = StateStalledSeeding
-	case st.DownRate > 0:
+	case st.DownRate > 0 || time.Since(m.lastDownAt) < stallGrace:
 		st.State = StateDownloading
 	case hashing(m):
 		st.State = StateChecking

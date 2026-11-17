@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -40,6 +41,7 @@ import (
 	"github.com/sebdanielsson/piecemeal/internal/logbuf"
 	"github.com/sebdanielsson/piecemeal/internal/metrics"
 	"github.com/sebdanielsson/piecemeal/internal/natpmp"
+	"github.com/sebdanielsson/piecemeal/internal/qbit"
 	"github.com/sebdanielsson/piecemeal/internal/settings"
 	"github.com/sebdanielsson/piecemeal/internal/store"
 	"github.com/sebdanielsson/piecemeal/internal/watch"
@@ -244,6 +246,10 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, logs *logbuf.
 			DataDir: cfg.DataDir, DownloadDir: cfg.DownloadDir, WatchDir: cfg.WatchDir, AllowedRoots: cfg.AllowedRoots,
 		},
 	})
+	mux.Handle(qbit.Prefix, qbit.New(qbit.Deps{
+		Engine: e, Settings: sm, Auth: authSvc, Fetcher: fetch.New(cfg.FetchAllowedNetworks),
+		Log: log.With("component", "qbit"), HTTPPort: httpPort(cfg.Addr),
+	}))
 	mux.Handle("GET /", webui.Handler())
 
 	srv := &http.Server{
@@ -277,6 +283,19 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, logs *logbuf.
 		log.Warn("http shutdown", "error", err)
 	}
 	return nil
+}
+
+// httpPort is the port of a listen address such as ":8080", or 8080.
+func httpPort(addr string) int {
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return 8080
+	}
+	p, err := strconv.Atoi(port)
+	if err != nil {
+		return 8080
+	}
+	return p
 }
 
 // requireAuth lets through sessions and API keys with the full or read-only

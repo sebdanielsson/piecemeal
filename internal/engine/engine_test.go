@@ -3,7 +3,6 @@ package engine
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -14,104 +13,20 @@ import (
 	"testing"
 	"time"
 
-	g "github.com/anacrolix/generics"
-	"github.com/anacrolix/torrent"
-	"github.com/anacrolix/torrent/bencode"
-	"github.com/anacrolix/torrent/metainfo"
-	"github.com/anacrolix/torrent/storage"
 	"github.com/anacrolix/torrent/types"
 
+	"github.com/sebdanielsson/piecemeal/internal/engine/enginetest"
 	"github.com/sebdanielsson/piecemeal/internal/settings"
 	"github.com/sebdanielsson/piecemeal/internal/store"
 )
 
-// offline keeps a client off the network: loopback only, no DHT, UPnP,
-// local service discovery or trackers.
-func offline(tc *torrent.ClientConfig) {
-	tc.ListenHost = func(string) string { return "127.0.0.1" }
-	tc.ListenPort = 0
-	tc.NoDHT = true
-	tc.NoDefaultPortForwarding = true
-	tc.DisableIPv6 = true
-	tc.DisableTrackers = true
-	tc.LocalServiceDiscovery = nil
-	tc.DisableWebtorrent = true
-}
+var offline = enginetest.Offline
 
-// seeder is an anacrolix client seeding one generated torrent.
-type seeder struct {
-	client   *torrent.Client
-	metainfo []byte
-	hash     string
-	addr     string
-	content  map[string][]byte
-}
+// seeder wraps enginetest.Seeder; its files live under "payload".
+type seeder struct{ *enginetest.Seeder }
 
 func newSeeder(t *testing.T, files map[string]int) *seeder {
-	t.Helper()
-	dir := t.TempDir()
-	root := filepath.Join(dir, "payload")
-	content := map[string][]byte{}
-	for name, size := range files {
-		b := make([]byte, size)
-		_, _ = rand.Read(b)
-		p := filepath.Join(root, name)
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(p, b, 0o644); err != nil {
-			t.Fatal(err)
-		}
-		content[name] = b
-	}
-	info := metainfo.Info{PieceLength: 32 << 10}
-	if err := info.BuildFromFilePath(root); err != nil {
-		t.Fatal(err)
-	}
-	infoBytes, err := bencode.Marshal(info)
-	if err != nil {
-		t.Fatal(err)
-	}
-	mi := metainfo.MetaInfo{InfoBytes: infoBytes, Comment: "piecemeal test"}
-	var buf bytes.Buffer
-	if err := mi.Write(&buf); err != nil {
-		t.Fatal(err)
-	}
-
-	tc := torrent.NewDefaultClientConfig()
-	offline(tc)
-	tc.Seed = true
-	tc.DataDir = dir
-	tc.DefaultStorage = storage.NewFileOpts(storage.NewFileClientOpts{
-		ClientBaseDir:   dir,
-		PieceCompletion: storage.NewMapPieceCompletion(),
-		UsePartFiles:    falseOption(),
-	})
-	tc.Slogger = slog.New(slog.DiscardHandler)
-	cl, err := torrent.NewClient(tc)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { cl.Close() })
-	tor, err := cl.AddTorrent(&mi)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	if err := tor.VerifyDataContext(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if !tor.Complete().Bool() {
-		t.Fatal("seeder is not complete after verifying")
-	}
-	return &seeder{
-		client:   cl,
-		metainfo: buf.Bytes(),
-		hash:     mi.HashInfoBytes().HexString(),
-		addr:     fmt.Sprintf("127.0.0.1:%d", cl.LocalPort()),
-		content:  content,
-	}
+	return &seeder{enginetest.NewSeeder(t, "payload", files)}
 }
 
 type harness struct {
@@ -176,7 +91,7 @@ func (h *harness) waitFor(hash string, what string, cond func(Torrent) bool) Tor
 
 func (h *harness) checkContent(s *seeder, root string) {
 	h.t.Helper()
-	for name, want := range s.content {
+	for name, want := range s.Content {
 		got, err := os.ReadFile(filepath.Join(h.saveDir, root, name))
 		if err != nil {
 			h.t.Fatal(err)
@@ -195,17 +110,17 @@ func TestDownloadStopStartRestartRemove(t *testing.T) {
 	if err := h.engine.PutCategory(ctx, Category{Name: "movies"}, true); err != nil {
 		t.Fatal(err)
 	}
-	hash, err := h.engine.Add(ctx, AddParams{Metainfo: s.metainfo, Category: "movies", Tags: []string{"test"}})
+	hash, err := h.engine.Add(ctx, AddParams{Metainfo: s.Metainfo, Category: "movies", Tags: []string{"test"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if hash != s.hash {
-		t.Fatalf("hash %s, want %s", hash, s.hash)
+	if hash != s.Hash {
+		t.Fatalf("hash %s, want %s", hash, s.Hash)
 	}
-	if _, err := h.engine.Add(ctx, AddParams{Metainfo: s.metainfo}); !errors.Is(err, ErrExists) {
+	if _, err := h.engine.Add(ctx, AddParams{Metainfo: s.Metainfo}); !errors.Is(err, ErrExists) {
 		t.Fatalf("adding twice: %v, want ErrExists", err)
 	}
-	if err := h.engine.AddPeers(ctx, []string{s.addr}, hash); err != nil {
+	if err := h.engine.AddPeers(ctx, []string{s.Addr}, hash); err != nil {
 		t.Fatal(err)
 	}
 	st := h.waitFor(hash, "download", func(st Torrent) bool { return st.Complete })
@@ -259,7 +174,7 @@ func TestMagnetFetchesMetadata(t *testing.T) {
 	s := newSeeder(t, map[string]int{"single.bin": 200 << 10})
 	h := newHarness(t)
 
-	magnet := fmt.Sprintf("magnet:?xt=urn:btih:%s&dn=%s&x.pe=%s", s.hash, "single", url.QueryEscape(s.addr))
+	magnet := fmt.Sprintf("magnet:?xt=urn:btih:%s&dn=%s&x.pe=%s", s.Hash, "single", url.QueryEscape(s.Addr))
 	hash, err := h.engine.Add(ctx, AddParams{Magnet: magnet})
 	if err != nil {
 		t.Fatal(err)
@@ -293,11 +208,11 @@ func TestSeedGoalStops(t *testing.T) {
 	if _, err := h.settings.Set(ctx, map[string]any{"seedingTimeLimit": 0}); err != nil {
 		t.Fatal(err)
 	}
-	hash, err := h.engine.Add(ctx, AddParams{Metainfo: s.metainfo})
+	hash, err := h.engine.Add(ctx, AddParams{Metainfo: s.Metainfo})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := h.engine.AddPeers(ctx, []string{s.addr}, hash); err != nil {
+	if err := h.engine.AddPeers(ctx, []string{s.Addr}, hash); err != nil {
 		t.Fatal(err)
 	}
 	h.waitFor(hash, "stop at the seeding goal", func(st Torrent) bool { return st.Complete && st.State == StateStopped })
@@ -346,14 +261,12 @@ func TestBusDropsSlowSubscribers(t *testing.T) {
 	fast.Close()
 }
 
-func falseOption() g.Option[bool] { return g.Some(false) }
-
 func TestPiecePriorities(t *testing.T) {
 	ctx := context.Background()
 	s := newSeeder(t, map[string]int{"a.bin": 200 << 10, "b.bin": 200 << 10})
 	h := newHarness(t)
 	// No peers: the torrent runs but never gets data, so priorities stay put.
-	hash, err := h.engine.Add(ctx, AddParams{Metainfo: s.metainfo})
+	hash, err := h.engine.Add(ctx, AddParams{Metainfo: s.Metainfo})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -428,7 +341,7 @@ func TestRemovedTorrentStaysRemoved(t *testing.T) {
 	h := newHarness(t)
 	sub := h.engine.Events().Subscribe(1000)
 	defer sub.Close()
-	hash, err := h.engine.Add(ctx, AddParams{Metainfo: s.metainfo})
+	hash, err := h.engine.Add(ctx, AddParams{Metainfo: s.Metainfo})
 	if err != nil {
 		t.Fatal(err)
 	}
