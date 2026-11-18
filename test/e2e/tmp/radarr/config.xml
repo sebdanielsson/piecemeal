@@ -1,0 +1,21 @@
+<Config>
+  <BindAddress>*</BindAddress>
+  <Port>7878</Port>
+  <ApiKey>e2e00000000000000000000000007878</ApiKey>
+  <AuthenticationMethod>External</AuthenticationMethod>
+  <AuthenticationRequired>DisabledForLocalAddresses</AuthenticationRequired>
+  <AnalyticsEnabled>False</AnalyticsEnabled>
+  <LogLevel>debug</LogLevel>
+  <UrlBase></UrlBase>
+  <AllowedHosts></AllowedHosts>
+  <TrustedNetworks></TrustedNetworks>
+  <SslPort>9898</SslPort>
+  <EnableSsl>False</EnableSsl>
+  <LaunchBrowser>True</LaunchBrowser>
+  <Branch>master</Branch>
+  <SslCertPath></SslCertPath>
+  <SslKeyPath></SslKeyPath>
+  <SslCertPassword></SslCertPassword>
+  <InstanceName>Radarr</InstanceName>
+  <UpdateMechanism>Docker</UpdateMechanism>
+</Config>

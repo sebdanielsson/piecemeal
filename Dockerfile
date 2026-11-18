@@ -30,13 +30,16 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
 
 FROM gcr.io/distroless/static-debian13:nonroot
 COPY --from=build /out/piecemeal /piecemeal
-# Writable by the nonroot user (65532) when no volume is mounted over them.
-COPY --from=build --chown=65532:65532 /out/data /data
-COPY --from=build --chown=65532:65532 /out/downloads /downloads
+# Writable by any user (sticky, like /tmp), so the container can run as the
+# user that owns the downloads (compose `user:`), and a new named volume,
+# which starts as a copy of these, is writable too.
+COPY --from=build --chown=65532:65532 --chmod=1777 /out/data /data
+COPY --from=build --chown=65532:65532 --chmod=1777 /out/downloads /downloads
 ENV PIECEMEAL_DATA_DIR=/data \
     PIECEMEAL_DOWNLOAD_DIR=/downloads
 VOLUME ["/data"]
 # 8080 serves the APIs and web UI; 6881 is the default peer port.
 EXPOSE 8080 6881/tcp 6881/udp
 USER nonroot:nonroot
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s CMD ["/piecemeal", "healthcheck"]
 ENTRYPOINT ["/piecemeal"]

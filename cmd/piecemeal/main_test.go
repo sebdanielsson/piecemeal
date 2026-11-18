@@ -3,8 +3,12 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/sebdanielsson/piecemeal/internal/auth"
@@ -42,5 +46,23 @@ func TestOpenAPIIsValidJSON(t *testing.T) {
 	}
 	if doc["openapi"] != "3.1.0" {
 		t.Fatalf("openapi version %v", doc["openapi"])
+	}
+}
+
+func TestHealthcheck(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/healthz" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = io.WriteString(w, "ok\n")
+	}))
+	defer srv.Close()
+	if err := healthcheck(strings.TrimPrefix(srv.URL, "http://")); err != nil {
+		t.Fatal(err)
+	}
+	srv.Close()
+	if err := healthcheck(strings.TrimPrefix(srv.URL, "http://")); err == nil {
+		t.Fatal("no error with nothing listening")
 	}
 }
