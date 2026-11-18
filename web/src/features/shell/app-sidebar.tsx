@@ -372,7 +372,8 @@ function FilterItem({
         className={muted ? "text-sidebar-foreground/70 italic" : undefined}
       >
         <Icon />
-        <span>{label}</span>
+        {/* Truncation hides overflow, which clips an italic label's last letter. */}
+        <span className={muted ? "pe-0.5" : undefined}>{label}</span>
       </SidebarMenuButton>
       {count !== undefined && (
         <SidebarMenuBadge className="tabular">{count.toLocaleString()}</SidebarMenuBadge>

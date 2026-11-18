@@ -26,7 +26,31 @@ When piecemeal sees the directory under another path, as in a container, pass th
 
 ## Results
 
-1,000 torrents of 1 MiB, 256 KiB pieces, on an Apple M5 with an SSD (APFS), DHT off, no peers:
+Two machines, with DHT off and no peers, 256 KiB pieces and 8 adds at a time.
+
+### An old server with a ZFS pool
+
+An Intel Core i7-2600 from 2011 with 15 GB of RAM, of which ZFS's cache (ARC) takes 8 GB, and the data on three ageing 2 TB WD Green drives in RAID-Z1, 80% full. 1,000 torrents of 1 MiB, then 1,000 torrents of 16 MiB: 16 GB, twice the ARC, so verifying reads the disks.
+
+| Measure | 1,000 × 1 MiB | 1,000 × 16 MiB |
+| --- | --- | --- |
+| Adding | 2.6 s, 384 torrents/s | 3.5 s, 284 torrents/s |
+| Add request | p50 8.4 ms, p95 42 ms | p50 20 ms, p95 60 ms |
+| Until all are verified and seeding | 9 s after the last add | 4 min 10 s (65 MB/s) |
+| Resident memory | 83 MiB | 118 MiB |
+| Go heap in use | 44 MiB | 74 MiB |
+| Idle CPU | 2.1% of one core | 2.4% of one core |
+| `GET /api/piecemeal/v1/torrents` | p50 14 ms, 1.0 MiB | p50 11 ms, 1.0 MiB |
+| `GET /api/v2/torrents/info` | p50 18 ms, 1.4 MiB | p50 15 ms, 1.4 MiB |
+| `GET /api/v2/sync/maindata`, full | p50 53 ms, 1.5 MiB | p50 54 ms, 1.5 MiB |
+| `GET /api/v2/sync/maindata`, incremental | p50 18 ms, 78 KiB | p50 15 ms, 80 KiB |
+| Removing them with their data | 235 ms | 294 ms |
+
+On the same server, 254 GiB in 20 torrents imported from Transmission verified at about 30 MB/s, slower than above because piecemeal checks every torrent at once and the drives seek between them. Meanwhile it seeded the pieces it had checked and answered API requests in about 45 ms.
+
+### A laptop
+
+An Apple M5 with an SSD (APFS), 1,000 torrents of 1 MiB:
 
 | Measure | Result |
 | --- | --- |
@@ -46,4 +70,4 @@ The resident set size isn't reported on macOS; the Go runtime held 148 MiB from 
 
 Web UIs such as VueTorrent poll `sync/maindata` every one or two seconds, and the \*arrs poll `torrents/info`. Both cost every torrent's state on each poll, so their cost grows with the number of torrents: at 1,000 torrents a web UI open in a browser costs about 1% of a core here.
 
-The target deployment, three ageing 2 TB WD Green drives in RAID-Z1, will be slower to verify data and add torrents. Run the load test there with `DIR` on the pool before relying on these numbers.
+Verifying data is bound by the disks: on drives like the ones above, plan on two to three hours per 250 GB when importing a library or after losing the piece completion state.
