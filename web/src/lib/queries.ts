@@ -4,7 +4,14 @@
 
 import { queryOptions, skipToken, type QueryClient } from "@tanstack/react-query";
 import { api } from "@/api/client";
-import type { Category, Principal, SettingsResponse, TransferStatus } from "@/api/types";
+import type {
+  Category,
+  Principal,
+  RSSRule,
+  RSSTree,
+  SettingsResponse,
+  TransferStatus,
+} from "@/api/types";
 import { ApiError, unwrap } from "./api";
 import type { TorrentMap, TransferSample } from "./live/reducer";
 
@@ -29,6 +36,10 @@ export const keys = {
   users: ["users"] as const,
   audit: ["audit"] as const,
   log: ["log"] as const,
+  rss: ["rss"] as const,
+  rssFeed: (uid: string) => ["rss", "feed", uid] as const,
+  rssRules: ["rss", "rules"] as const,
+  rssMatches: (name: string) => ["rss", "rules", name, "matches"] as const,
 };
 
 /** Who is signed in, or null. */
@@ -95,6 +106,19 @@ export const settingsQuery = queryOptions({
   queryKey: keys.settings,
   queryFn: (): Promise<SettingsResponse> => unwrap(api.GET("/settings")),
   staleTime: Infinity,
+});
+
+/** RSS folders and feeds; polled faster while a feed is loading. */
+export const rssQuery = queryOptions({
+  queryKey: keys.rss,
+  queryFn: (): Promise<RSSTree> => unwrap(api.GET("/rss")),
+  refetchInterval: (q) => ((q.state.data?.feeds ?? []).some((f) => f.loading) ? 2_000 : 30_000),
+});
+
+export const rssRulesQuery = queryOptions({
+  queryKey: keys.rssRules,
+  queryFn: async (): Promise<Record<string, RSSRule>> =>
+    (await unwrap(api.GET("/rss/rules"))).items ?? {},
 });
 
 export const systemQuery = queryOptions({

@@ -277,6 +277,16 @@ func preferencesToSettings(in map[string]any, cur settings.Settings) (map[string
 	str("ip_filter_path", "ipFilterPath")
 	str("banned_IPs", "bannedIPs")
 
+	boolean("rss_processing_enabled", "rssEnabled")
+	boolean("rss_auto_downloading_enabled", "rssAutoDownload")
+	boolean("rss_download_repack_proper_episodes", "rssDownloadRepacks")
+	str("rss_smart_episode_filters", "rssSmartEpisodeFilters")
+	// qBittorrent stores what it's given; piecemeal keeps the values in
+	// range instead of failing a client's whole save.
+	integer("rss_refresh_interval", "rssRefreshInterval", func(n int64) int64 { return max(n, 1) })
+	integer("rss_fetch_delay", "rssFetchDelay", func(n int64) int64 { return max(n, 0) })
+	integer("rss_max_articles_per_feed", "rssMaxArticles", func(n int64) int64 { return max(n, 0) })
+
 	boolean("scheduler_enabled", "altSpeedSchedule")
 	clock := func(hourKey, minKey, setting, current string) {
 		h, hasH := in[hourKey]

@@ -23,6 +23,7 @@ import (
 	"github.com/sebdanielsson/piecemeal/internal/engine"
 	"github.com/sebdanielsson/piecemeal/internal/fetch"
 	"github.com/sebdanielsson/piecemeal/internal/logbuf"
+	"github.com/sebdanielsson/piecemeal/internal/rss"
 	"github.com/sebdanielsson/piecemeal/internal/settings"
 	"github.com/sebdanielsson/piecemeal/internal/store"
 )
@@ -42,6 +43,7 @@ type Server struct {
 	auth     *auth.Service
 	fetcher  *fetch.Fetcher
 	store    *store.Store
+	rss      *rss.Manager
 	logs     *logbuf.Buffer
 	log      *slog.Logger
 	// port is the HTTP listen port, which qBittorrent puts in its session
@@ -64,6 +66,7 @@ type Deps struct {
 	Auth     *auth.Service
 	Fetcher  *fetch.Fetcher
 	Store    *store.Store
+	RSS      *rss.Manager
 	Logs     *logbuf.Buffer
 	Log      *slog.Logger
 	// HTTPPort is the port piecemeal serves HTTP on.
@@ -88,7 +91,7 @@ const Prefix = "/api/v2/"
 // New creates the API.
 func New(d Deps) *Server {
 	s := &Server{
-		engine: d.Engine, settings: d.Settings, auth: d.Auth, fetcher: d.Fetcher, store: d.Store, logs: d.Logs, log: d.Log,
+		engine: d.Engine, settings: d.Settings, auth: d.Auth, fetcher: d.Fetcher, store: d.Store, rss: d.RSS, logs: d.Logs, log: d.Log,
 		port: d.HTTPPort, altWebUI: d.AltWebUI, started: time.Now(),
 	}
 	if err := s.loadCookies(context.Background()); err != nil {
@@ -116,6 +119,24 @@ func New(d Deps) *Server {
 		"app/networkInterfaceList":        {get, false, s.networkInterfaceList},
 		"app/networkInterfaceAddressList": {get, false, s.networkInterfaceAddressList},
 		"app/getDirectoryContent":         {post, false, s.getDirectoryContent},
+
+		"rss/addFolder":              {post, false, s.rssAddFolder},
+		"rss/addFeed":                {post, false, s.rssAddFeed},
+		"rss/removeItem":             {post, false, s.rssRemoveItem},
+		"rss/moveItem":               {post, false, s.rssMoveItem},
+		"rss/items":                  {get, false, s.rssItems},
+		"rss/markAsRead":             {post, false, s.rssMarkAsRead},
+		"rss/refreshItem":            {post, false, s.rssRefreshItem},
+		"rss/setFeedURL":             {post, false, s.rssSetFeedURL},
+		"rss/setFeedRefreshInterval": {post, false, s.rssSetFeedRefreshInterval},
+		"rss/setRule":                {post, false, s.rssSetRule},
+		"rss/renameRule":             {post, false, s.rssRenameRule},
+		"rss/removeRule":             {post, false, s.rssRemoveRule},
+		"rss/cloneRule":              {post, false, s.rssCloneRule},
+		"rss/rules":                  {get, false, s.rssRules},
+		"rss/exportRules":            {get, false, s.rssExportRules},
+		"rss/importRules":            {post, false, s.rssImportRules},
+		"rss/matchingArticles":       {get, false, s.rssMatchingArticles},
 
 		"clientdata/load":  {get, false, s.clientDataLoad},
 		"clientdata/store": {post, false, s.clientDataStore},

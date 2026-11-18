@@ -115,8 +115,21 @@ Status: **yes** is implemented, **partial** works with the differences noted, **
 | --- | --- | --- |
 | `clientdata` | yes | `load` and `store`, kept across restarts, up to 1 MiB in all; a `store` past that gets 409. |
 | `torrentcreator` | yes | `addTask`, `status`, `torrentFile`, `deleteTask`. Sources must be inside the allowed roots. |
-| `rss` | no | Phase 5. |
 | `search` | never | Prowlarr covers search. |
+
+### rss
+
+Feeds and download rules work as in qBittorrent 5.3.0: paths join names with `\`, feed `uid`s are stable, and actions answer 200, or 204 for `setFeedRefreshInterval`, `importRules` and `markAsRead` on an unknown path. Reading needs any user; changing feeds and rules needs an admin, since rules add torrents.
+
+| Endpoint | Status | Notes |
+| --- | --- | --- |
+| `items` | yes | With `withData`, feeds carry `title`, `lastBuildDate`, `isLoading`, `hasError` and their articles, newest first. |
+| `addFolder`, `addFeed`, `removeItem`, `moveItem`, `setFeedURL`, `setFeedRefreshInterval` | yes | A feed added with an empty `path` is named after its title once fetched. Feed URLs are fetched with the same SSRF protection and cookies as torrent URLs. |
+| `markAsRead`, `refreshItem` | yes | |
+| `setRule`, `renameRule`, `removeRule`, `cloneRule`, `rules`, `exportRules`, `importRules` | yes | Rules take `torrentParams` or the legacy `addPaused`, `assignedCategory`, `savePath` and `torrentContentLayout`; a bad definition makes a rule with the defaults, as in qBittorrent. Options piecemeal doesn't use, such as `download_path` and per-torrent limits, are kept and returned. |
+| `matchingArticles` | yes | Keyed by feed name, as in qBittorrent. |
+
+Matching follows qBittorrent: wildcard terms (`*`, `?`, `[…]`) that must all match, `|` between alternatives, or one regular expression each with `useRegex`; the episode filter (`1x2;8-15;20-;`); the smart episode filter with REPACK and PROPER handling; `ignoreDays` from `lastMatch`; and rules tried in `priority` order, the first taking the article. Regular expressions are PCRE-like (lookahead and inline flags work), with a time limit per match. Only unread articles are downloaded, newest first, and an article is marked read once its torrent is added. Unlike qBittorrent, new articles are taken even when a feed's `lastBuildDate` didn't change. The seven `rss_*` preferences map to piecemeal's RSS settings.
 
 ## VueTorrent and other qBittorrent web UIs
 

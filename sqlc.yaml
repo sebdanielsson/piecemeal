@@ -24,3 +24,7 @@ sql:
             go_type: bool
           - column: torrents.first_last_piece
             go_type: bool
+          - column: rss_articles.is_read
+            go_type: bool
+          - column: rss_articles.hidden
+            go_type: bool

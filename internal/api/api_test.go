@@ -20,6 +20,7 @@ import (
 	"github.com/sebdanielsson/piecemeal/internal/engine"
 	"github.com/sebdanielsson/piecemeal/internal/fetch"
 	"github.com/sebdanielsson/piecemeal/internal/logbuf"
+	"github.com/sebdanielsson/piecemeal/internal/rss"
 	"github.com/sebdanielsson/piecemeal/internal/settings"
 	"github.com/sebdanielsson/piecemeal/internal/store"
 )
@@ -71,10 +72,15 @@ func newTestServer(t *testing.T) *testServer {
 	if err != nil {
 		t.Fatal(err)
 	}
+	fetcher := fetch.New(nil)
+	feeds, err := rss.New(ctx, rss.Deps{Store: st, Settings: sm, Fetcher: fetcher, Engine: e, Log: log})
+	if err != nil {
+		t.Fatal(err)
+	}
 	mux := http.NewServeMux()
 	New(mux, Deps{
-		Version: "test", StartedAt: time.Now(), Engine: e, Settings: sm, Auth: a, Fetcher: fetch.New(nil),
-		Logs: logbuf.New(10), Log: log,
+		Version: "test", StartedAt: time.Now(), Engine: e, Settings: sm, Auth: a, Fetcher: fetcher,
+		Logs: logbuf.New(10), RSS: feeds, Log: log,
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)

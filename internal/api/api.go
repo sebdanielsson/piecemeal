@@ -23,6 +23,7 @@ import (
 	"github.com/sebdanielsson/piecemeal/internal/fetch"
 	"github.com/sebdanielsson/piecemeal/internal/logbuf"
 	"github.com/sebdanielsson/piecemeal/internal/natpmp"
+	"github.com/sebdanielsson/piecemeal/internal/rss"
 	"github.com/sebdanielsson/piecemeal/internal/settings"
 )
 
@@ -47,6 +48,7 @@ type Deps struct {
 	NATPMP *natpmp.Mapper
 	// OIDC is nil when OIDC sign-in isn't configured.
 	OIDC *auth.OIDC
+	RSS  *rss.Manager
 	Log  *slog.Logger
 	// System is static information for GET /system.
 	System SystemInfo
@@ -109,6 +111,7 @@ func New(mux *http.ServeMux, d Deps) *API {
 	a.registerOIDC(mux)
 	a.registerTorrents()
 	a.registerCategories()
+	a.registerRSS()
 	a.registerSystem()
 	a.registerAdmin()
 	a.registerEvents()

@@ -187,7 +187,16 @@ func (s *Server) mappedPreferences() map[string]any {
 		"bypass_auth_subnet_whitelist_enabled":   false,
 		"bypass_auth_subnet_whitelist":           "",
 		"alternative_webui_enabled":              s.altWebUI,
-		"use_https":                              false,
+
+		// RSS
+		"rss_processing_enabled":              st.RSSEnabled,
+		"rss_refresh_interval":                st.RSSRefreshInterval,
+		"rss_fetch_delay":                     st.RSSFetchDelay,
+		"rss_max_articles_per_feed":           st.RSSMaxArticles,
+		"rss_auto_downloading_enabled":        st.RSSAutoDownload,
+		"rss_download_repack_proper_episodes": st.RSSDownloadRepacks,
+		"rss_smart_episode_filters":           st.RSSSmartEpisodeFilters,
+		"use_https":                           false,
 	}
 	return p
 }

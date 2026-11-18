@@ -47,6 +47,47 @@ export const scheduleGroup: FieldGroupDef = {
   ],
 };
 
+export const rssGroup: FieldGroupDef = {
+  title: "RSS",
+  description: "Feeds and download rules are on the RSS page.",
+  fields: [
+    {
+      key: "rssEnabled",
+      label: "Fetch feeds",
+      description: "On their schedule; refreshing by hand works either way.",
+      kind: "bool",
+    },
+    {
+      key: "rssRefreshInterval",
+      label: "Refresh every (minutes)",
+      description: "For feeds without their own interval.",
+      kind: "int",
+      min: 1,
+    },
+    {
+      key: "rssAutoDownload",
+      label: "Run download rules",
+      description: "Add the torrents of new articles that rules match.",
+      kind: "bool",
+    },
+    { key: "rssMaxArticles", label: "Articles kept per feed", kind: "int", min: 0 },
+    { key: "rssFetchDelay", label: "Seconds between requests to a host", kind: "int", min: 0 },
+    {
+      key: "rssDownloadRepacks",
+      label: "Take REPACK and PROPER releases",
+      description: "Of episodes the smart filter already took.",
+      kind: "bool",
+    },
+    {
+      key: "rssSmartEpisodeFilters",
+      label: "Smart episode filters",
+      description:
+        "Regular expressions, one per line, that find the episode in a title: two groups for season and episode, or one for a date.",
+      kind: "lines",
+    },
+  ],
+};
+
 export const settingsGroups: FieldGroupDef[] = [
   {
     title: "Downloads",
@@ -93,6 +134,7 @@ export const settingsGroups: FieldGroupDef[] = [
       },
     ],
   },
+  rssGroup,
   {
     title: "IP filtering",
     fields: [

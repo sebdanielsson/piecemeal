@@ -81,7 +81,22 @@ type Settings struct {
 	AltSpeedScheduleFrom string `json:"altSpeedScheduleFrom" pattern:"^([01][0-9]|2[0-3]):[0-5][0-9]$" doc:"When the alternative limits start, HH:MM local time."`
 	AltSpeedScheduleTo   string `json:"altSpeedScheduleTo" pattern:"^([01][0-9]|2[0-3]):[0-5][0-9]$" doc:"When they end, HH:MM local time; earlier than the start means the next day."`
 	AltSpeedScheduleDays string `json:"altSpeedScheduleDays" enum:"everyDay,weekdays,weekends,monday,tuesday,wednesday,thursday,friday,saturday,sunday" doc:"The days the schedule applies, by the day it starts."`
+
+	// RSS
+	RSSEnabled             bool   `json:"rssEnabled" doc:"Fetch RSS feeds on their schedule."`
+	RSSRefreshInterval     int    `json:"rssRefreshInterval" minimum:"1" doc:"Minutes between fetches of a feed without its own interval."`
+	RSSFetchDelay          int    `json:"rssFetchDelay" minimum:"0" doc:"Seconds between requests to the same host."`
+	RSSMaxArticles         int    `json:"rssMaxArticles" minimum:"0" doc:"Articles kept per feed; older ones are dropped."`
+	RSSAutoDownload        bool   `json:"rssAutoDownload" doc:"Add torrents from new articles that RSS rules match."`
+	RSSDownloadRepacks     bool   `json:"rssDownloadRepacks" doc:"With the smart episode filter, also take a REPACK or PROPER of an episode already downloaded."`
+	RSSSmartEpisodeFilters string `json:"rssSmartEpisodeFilters" doc:"Regular expressions, one per line, that find the episode in a title for the smart episode filter: two groups for season and episode, or one for a date."`
 }
+
+// DefaultSmartEpisodeFilters recognise SxxEyy, NxNN and dates.
+const DefaultSmartEpisodeFilters = `s(\d+)e(\d+)
+(\d+)x(\d+)
+(\d{4}[.\-]\d{1,2}[.\-]\d{1,2})
+(\d{1,2}[.\-]\d{1,2}[.\-]\d{4})`
 
 // Defaults returns the built-in defaults. defaultSavePath is the configured
 // download directory.
@@ -108,6 +123,11 @@ func Defaults(defaultSavePath string) Settings {
 		AltSpeedScheduleFrom:     "08:00",
 		AltSpeedScheduleTo:       "20:00",
 		AltSpeedScheduleDays:     "everyDay",
+		RSSRefreshInterval:       30,
+		RSSFetchDelay:            2,
+		RSSMaxArticles:           50,
+		RSSDownloadRepacks:       true,
+		RSSSmartEpisodeFilters:   DefaultSmartEpisodeFilters,
 	}
 }
 
@@ -163,6 +183,12 @@ func (s Settings) Validate() error {
 	}
 	if !slices.Contains(scheduleDays, s.AltSpeedScheduleDays) {
 		errs = append(errs, errors.New("altSpeedScheduleDays: unknown value"))
+	}
+	if s.RSSRefreshInterval < 1 {
+		errs = append(errs, errors.New("rssRefreshInterval: must be at least 1"))
+	}
+	if s.RSSFetchDelay < 0 || s.RSSMaxArticles < 0 {
+		errs = append(errs, errors.New("rssFetchDelay and rssMaxArticles: must not be negative"))
 	}
 	return errors.Join(errs...)
 }

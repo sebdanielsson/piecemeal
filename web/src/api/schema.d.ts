@@ -202,6 +202,216 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/rss": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List RSS folders and feeds */
+    get: operations["getRSS"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/rss/feeds": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Add an RSS feed
+     * @description Admins only.
+     */
+    post: operations["addRSSFeed"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/rss/feeds/{uid}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get an RSS feed with its articles */
+    get: operations["getRSSFeed"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Change an RSS feed
+     * @description Admins only.
+     */
+    patch: operations["updateRSSFeed"];
+    trace?: never;
+  };
+  "/rss/folders": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Add an RSS folder
+     * @description Admins only.
+     */
+    post: operations["addRSSFolder"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/rss/items": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * Remove an RSS feed, or a folder with everything in it
+     * @description Admins only.
+     */
+    delete: operations["removeRSSItem"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/rss/read": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Mark RSS articles read */
+    post: operations["markRSSRead"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/rss/refresh": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Fetch RSS feeds now */
+    post: operations["refreshRSS"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/rss/rules": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List RSS download rules */
+    get: operations["listRSSRules"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/rss/rules/{name}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Create or replace an RSS download rule
+     * @description Admins only.
+     */
+    put: operations["putRSSRule"];
+    post?: never;
+    /**
+     * Remove an RSS download rule
+     * @description Admins only.
+     */
+    delete: operations["removeRSSRule"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/rss/rules/{name}/matches": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List the articles an RSS rule accepts */
+    get: operations["listRSSRuleMatches"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/rss/rules/{name}/rename": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Rename an RSS download rule
+     * @description Admins only.
+     */
+    post: operations["renameRSSRule"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/sessions": {
     parameters: {
       query?: never;
@@ -622,9 +832,40 @@ export interface components {
       /** @description The owner's username. */
       username: string;
     };
+    AddOptions: {
+      category?: string;
+      /** @enum {string} */
+      contentLayout?: "Original" | "Subfolder" | "NoSubfolder";
+      /** @description qBittorrent options piecemeal keeps but doesn't use. */
+      extra?: {
+        [key: string]: unknown;
+      };
+      forced?: boolean;
+      /** Format: int64 */
+      inactiveSeedingTimeLimit: number;
+      /** Format: double */
+      ratioLimit: number;
+      savePath?: string;
+      /** Format: int64 */
+      seedingTimeLimit: number;
+      skipChecking?: boolean;
+      /** @description Add stopped; absent follows the addStopped setting. */
+      stopped?: boolean;
+      tags?: string[] | null;
+    };
     AddPeersInputBody: {
       /** @description host:port, IP addresses only. */
       addresses: string[] | null;
+    };
+    AddRSSFeedInputBody: {
+      /** @description Folder and name. Empty names the feed after its title once fetched. */
+      path?: string;
+      /**
+       * Format: int64
+       * @description Seconds; 0 follows the rssRefreshInterval setting.
+       */
+      refreshInterval?: number;
+      url: string;
     };
     AddTorrentRequest: {
       category?: string;
@@ -668,6 +909,23 @@ export interface components {
     };
     ApiKeysOutputBody: {
       items: components["schemas"]["APIKey"][] | null;
+    };
+    Article: {
+      author?: string;
+      category?: string;
+      /**
+       * Format: date-time
+       * @description From the feed, or when it was first seen.
+       */
+      date: string;
+      /** @description HTML from the feed; sanitise before showing it. */
+      description?: string;
+      id: string;
+      link?: string;
+      read: boolean;
+      title: string;
+      /** @description What a rule adds: an enclosure, a magnet URI, or the link. */
+      torrentURL?: string;
     };
     AuditEntry: {
       action: string;
@@ -792,6 +1050,29 @@ export interface components {
        */
       type: string;
     };
+    FeedInfo: {
+      articles?: components["schemas"]["Article"][] | null;
+      /** @description Why the last fetch failed. */
+      error?: string;
+      /** Format: date-time */
+      fetchedAt?: string;
+      lastBuildDate: string;
+      loading: boolean;
+      /** @description Folder names and the feed's name, separated by backslashes. */
+      path: string;
+      /**
+       * Format: int64
+       * @description Seconds; 0 follows the rssRefreshInterval setting.
+       */
+      refreshInterval: number;
+      /** @description The feed's own title, once fetched. */
+      title: string;
+      /** @description Stable across renames and moves. */
+      uid: string;
+      /** Format: int64 */
+      unread: number;
+      url: string;
+    };
     File: {
       /** Format: int64 */
       index: number;
@@ -850,6 +1131,17 @@ export interface components {
       port: number;
       /** Format: date-time */
       renewedAt: string;
+    };
+    MarkReadInputBody: {
+      /** @description One article; empty marks them all. */
+      articleId?: string;
+      /** @description A feed, a folder, or empty for every feed. */
+      path: string;
+    };
+    Match: {
+      feedPath: string;
+      feedUid: string;
+      titles: string[] | null;
     };
     Peer: {
       address: string;
@@ -913,10 +1205,51 @@ export interface components {
       /** @description Where torrents in this category are saved; empty uses the default save path. */
       savePath: string;
     };
+    RSSTree: {
+      /** @description Without articles. */
+      feeds: components["schemas"]["FeedInfo"][] | null;
+      /** @description Folder paths; names are separated by backslashes. */
+      folders: string[] | null;
+    };
     RenamePathInputBody: {
       newPath: string;
       /** @description A file's or folder's path as listTorrentFiles reports it. */
       oldPath: string;
+    };
+    RenameRSSRuleInputBody: {
+      newName: string;
+    };
+    RssFolderInputBody: {
+      path: string;
+    };
+    RssMatchesOutputBody: {
+      items: components["schemas"]["Match"][] | null;
+    };
+    RssRulesOutputBody: {
+      items: {
+        [key: string]: components["schemas"]["Rule"];
+      };
+    };
+    Rule: {
+      add: components["schemas"]["AddOptions"];
+      /** @description URLs of the feeds the rule applies to. */
+      affectedFeeds: string[] | null;
+      enabled: boolean;
+      /** @description Season and episodes to take, such as 1x2;8-15;20-; (an open range continues into later seasons). */
+      episodeFilter: string;
+      /** Format: int64 */
+      ignoreDays: number;
+      /** Format: date-time */
+      lastMatch?: string;
+      mustContain: string;
+      mustNotContain: string;
+      previouslyMatchedEpisodes: string[] | null;
+      /** Format: int64 */
+      priority: number;
+      /** @description Take each episode once, recognised by the smart episode filters setting. */
+      smartFilter: boolean;
+      /** @description MustContain and MustNotContain are regular expressions instead of wildcard terms. */
+      useRegex: boolean;
     };
     Session: {
       /** Format: date-time */
@@ -1054,6 +1387,29 @@ export interface components {
        * @description Stop seeding at this upload ratio, -1 for unlimited.
        */
       ratioLimit: number;
+      /** @description Add torrents from new articles that RSS rules match. */
+      rssAutoDownload: boolean;
+      /** @description With the smart episode filter, also take a REPACK or PROPER of an episode already downloaded. */
+      rssDownloadRepacks: boolean;
+      /** @description Fetch RSS feeds on their schedule. */
+      rssEnabled: boolean;
+      /**
+       * Format: int64
+       * @description Seconds between requests to the same host.
+       */
+      rssFetchDelay: number;
+      /**
+       * Format: int64
+       * @description Articles kept per feed; older ones are dropped.
+       */
+      rssMaxArticles: number;
+      /**
+       * Format: int64
+       * @description Minutes between fetches of a feed without its own interval.
+       */
+      rssRefreshInterval: number;
+      /** @description Regular expressions, one per line, that find the episode in a title for the smart episode filter: two groups for season and episode, or one for a date. */
+      rssSmartEpisodeFilters: string;
       /**
        * @description What to do once a torrent reaches a seeding goal.
        * @enum {string}
@@ -1452,6 +1808,13 @@ export interface components {
        * @description Bytes per second.
        */
       uploadRate: number;
+    };
+    UpdateRSSFeedInputBody: {
+      /** @description Moves or renames the feed. */
+      path?: string;
+      /** Format: int64 */
+      refreshInterval?: number;
+      url?: string;
     };
     UpdateTorrentRequest: {
       /** @description Empty removes the category. */
@@ -2257,6 +2620,744 @@ export interface operations {
       };
     };
   };
+  getRSS: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RSSTree"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+    };
+  };
+  addRSSFeed: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AddRSSFeedInputBody"];
+      };
+    };
+    responses: {
+      /** @description Created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["FeedInfo"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Unprocessable Entity */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+    };
+  };
+  getRSSFeed: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        uid: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["FeedInfo"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Unprocessable Entity */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+    };
+  };
+  updateRSSFeed: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        uid: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateRSSFeedInputBody"];
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["FeedInfo"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Unprocessable Entity */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+    };
+  };
+  addRSSFolder: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RssFolderInputBody"];
+      };
+    };
+    responses: {
+      /** @description No Content */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Unprocessable Entity */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+    };
+  };
+  removeRSSItem: {
+    parameters: {
+      query?: {
+        /** @description A feed or folder; empty for every feed. */
+        path?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description No Content */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Unprocessable Entity */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+    };
+  };
+  markRSSRead: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MarkReadInputBody"];
+      };
+    };
+    responses: {
+      /** @description No Content */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Unprocessable Entity */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+    };
+  };
+  refreshRSS: {
+    parameters: {
+      query?: {
+        /** @description A feed or folder; empty for every feed. */
+        path?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description No Content */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Unprocessable Entity */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+    };
+  };
+  listRSSRules: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RssRulesOutputBody"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+    };
+  };
+  putRSSRule: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["Rule"];
+      };
+    };
+    responses: {
+      /** @description No Content */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Unprocessable Entity */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+    };
+  };
+  removeRSSRule: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description No Content */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Unprocessable Entity */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+    };
+  };
+  listRSSRuleMatches: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        name: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RssMatchesOutputBody"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Unprocessable Entity */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+    };
+  };
+  renameRSSRule: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        name: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RenameRSSRuleInputBody"];
+      };
+    };
+    responses: {
+      /** @description No Content */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Unprocessable Entity */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+    };
+  };
   listSessions: {
     parameters: {
       query?: never;
@@ -2518,6 +3619,29 @@ export interface operations {
            * @description Stop seeding at this upload ratio, -1 for unlimited.
            */
           ratioLimit?: number;
+          /** @description Add torrents from new articles that RSS rules match. */
+          rssAutoDownload?: boolean;
+          /** @description With the smart episode filter, also take a REPACK or PROPER of an episode already downloaded. */
+          rssDownloadRepacks?: boolean;
+          /** @description Fetch RSS feeds on their schedule. */
+          rssEnabled?: boolean;
+          /**
+           * Format: int64
+           * @description Seconds between requests to the same host.
+           */
+          rssFetchDelay?: number;
+          /**
+           * Format: int64
+           * @description Articles kept per feed; older ones are dropped.
+           */
+          rssMaxArticles?: number;
+          /**
+           * Format: int64
+           * @description Minutes between fetches of a feed without its own interval.
+           */
+          rssRefreshInterval?: number;
+          /** @description Regular expressions, one per line, that find the episode in a title for the smart episode filter: two groups for season and episode, or one for a date. */
+          rssSmartEpisodeFilters?: string;
           /**
            * @description What to do once a torrent reaches a seeding goal.
            * @enum {string}
