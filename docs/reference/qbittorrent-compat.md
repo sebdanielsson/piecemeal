@@ -86,16 +86,17 @@ Status: **yes** is implemented, **partial** works with the differences noted, **
 | `info` | yes | `filter`, `category`, `tag`, `hashes`, `private`, `sort`, `reverse`, `limit` and `offset`. Not yet `includeFiles` and `includeTrackers`. `availability` is 0. `priority` is the queue position, 0 outside the queue, and -1 with queueing off. |
 | `properties` | yes | 404 for unknown hashes, 200 for magnets still fetching metadata. |
 | `files` | yes | `availability` is 0. |
-| `trackers` | partial | Trackers and their tiers, with status "not contacted" and -1 counts: anacrolix doesn't expose announce results. DHT, PeX and LSD rows as in qBittorrent. |
+| `trackers` | partial | Trackers and their tiers, with status "not contacted" and -1 counts: anacrolix doesn't expose announce results ([#44](https://github.com/sebdanielsson/piecemeal/issues/44)). DHT, PeX and LSD rows as in qBittorrent. |
 | `pieceStates`, `pieceHashes` | yes | |
-| `add` | partial | `urls` (magnets, and http(s) links fetched with SSRF protection and the cookie jar), `torrents`, `savepath`, `category` (created if missing), `tags`, `stopped`/`paused`, `skip_checking`/`seedMode`, `rename`, `contentLayout`, `upLimit`, `dlLimit`, `ratioLimit`, `seedingTimeLimit`, `inactiveSeedingTimeLimit`, `sequentialDownload`, `firstLastPiecePrio`, `forced`. Synchronous. Answers 200 with qBittorrent 5.2's JSON counts, 409 when every torrent was already there, 415 for invalid torrent files. `autoTMM` is ignored. |
+| `add` | partial | `urls` (magnets, and http(s) links fetched with SSRF protection and the cookie jar), `torrents`, `savepath`, `category` (created if missing), `tags`, `stopped`/`paused`, `skip_checking`/`seedMode`, `rename`, `contentLayout`, `ratioLimit`, `seedingTimeLimit`, `inactiveSeedingTimeLimit`, `sequentialDownload`, `firstLastPiecePrio`, `forced`. Synchronous. Answers 200 with qBittorrent 5.2's JSON counts, 409 when every torrent was already there, 415 for invalid torrent files. `autoTMM`, `upLimit` and `dlLimit` are ignored. |
 | `delete` | yes | Unknown hashes are ignored. |
 | `start`, `stop` | yes | |
 | `pause`, `resume` | yes | Aliases of `stop` and `start`, for WebAPI before 2.11. |
 | `recheck`, `reannounce` | yes | `reannounce` announces to every tracker; it doesn't take `trackers`/`urls`. |
 | `setForceStart` | yes | |
 | `setShareLimits` | partial | `ratioLimit`, `seedingTimeLimit`, `inactiveSeedingTimeLimit`; missing ones default to -2. `shareLimitAction` and `shareLimitsMode` are ignored: the global seed goal action applies, and any limit reached ends seeding. qBittorrent 5.3.0 requires those two; piecemeal doesn't, for older clients. |
-| `setDownloadLimit`, `setUploadLimit`, `downloadLimit`, `uploadLimit` | partial | Stored and reported, not enforced (anacrolix has only client-wide limits). |
+| `downloadLimit`, `uploadLimit` | yes | 0 for every torrent: piecemeal has no per-torrent speed limits, so none applies. `dl_limit` and `up_limit` in `info` and `properties` are -1. |
+| `setDownloadLimit`, `setUploadLimit` | never | anacrolix/torrent only limits the whole client; tracked in [#43](https://github.com/sebdanielsson/piecemeal/issues/43). The global limits work. |
 | `toggleSequentialDownload`, `toggleFirstLastPiecePrio`, `filePrio`, `rename` | yes | |
 | `topPrio`, `bottomPrio`, `increasePrio`, `decreasePrio` | yes | 409 "Torrent queueing must be enabled" with queueing off, as in qBittorrent. |
 | `categories`, `createCategory`, `editCategory`, `removeCategories`, `setCategory` | yes | A category's `savePath` is used for torrents added to it without a save path. Changing a category doesn't move data, as in qBittorrent without automatic torrent management. |
@@ -110,7 +111,7 @@ Status: **yes** is implemented, **partial** works with the differences noted, **
 | `count` | yes | |
 | `SSLParameters` | partial | Empty strings: piecemeal has no SSL torrents. |
 | `setAutoManagement`, `setDownloadPath` | partial | Accepted and ignored: piecemeal has no automatic torrent management or incomplete folder. |
-| `setSuperSeeding`, `setSSLParameters` | never | anacrolix has no super seeding or SSL torrents. |
+| `setSuperSeeding`, `setSSLParameters` | never | anacrolix has no super seeding or SSL torrents ([#46](https://github.com/sebdanielsson/piecemeal/issues/46), [#48](https://github.com/sebdanielsson/piecemeal/issues/48)). |
 | `setComment`, `pieceAvailability`, `fetchMetadata`, `parseMetadata`, `saveMetadata` | no | |
 
 ### Other groups

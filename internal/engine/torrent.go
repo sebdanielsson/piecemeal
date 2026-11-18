@@ -167,8 +167,7 @@ func (m *managed) params() store.UpsertTorrentParams {
 		QueuePosition: r.QueuePosition, Uploaded: r.Uploaded, Downloaded: r.Downloaded,
 		SeedingSeconds: r.SeedingSeconds, ActiveSeconds: r.ActiveSeconds, LastActivityAt: r.LastActivityAt,
 		RatioLimit: r.RatioLimit, SeedingTimeLimit: r.SeedingTimeLimit,
-		InactiveSeedingTimeLimit: r.InactiveSeedingTimeLimit, DownloadLimit: r.DownloadLimit,
-		UploadLimit: r.UploadLimit, FilePriorities: prio, Error: r.Error,
+		InactiveSeedingTimeLimit: r.InactiveSeedingTimeLimit, FilePriorities: prio, Error: r.Error,
 		Trackers: jsonOrEmpty(m.trackers), WebSeeds: jsonOrEmpty(m.webSeeds), FilePaths: jsonOrEmpty(m.renames),
 		ContentLayout: cmp.Or(r.ContentLayout, LayoutOriginal),
 	}
@@ -214,12 +213,10 @@ type AddParams struct {
 	FirstLastPiece bool
 	// Name replaces the torrent's display name.
 	Name string
-	// Seed goals and limits; nil leaves the defaults.
+	// Seed goals; nil leaves the defaults.
 	RatioLimit               *float64
 	SeedingTimeLimit         *int64
 	InactiveSeedingTimeLimit *int64
-	DownloadLimit            int64
-	UploadLimit              int64
 	// SkipChecking trusts existing data instead of hashing it.
 	SkipChecking bool
 	// ContentLayout is Original (the default), Subfolder or NoSubfolder.
@@ -328,8 +325,8 @@ func (e *Engine) Add(ctx context.Context, p AddParams) (string, error) {
 			InfoHash: ih.HexString(), Name: name, Magnet: magnet, SavePath: savePath,
 			Category: p.Category, AddedAt: now, Stopped: stopped, Sequential: p.Sequential,
 			FirstLastPiece: p.FirstLastPiece, RatioLimit: -2, SeedingTimeLimit: -2,
-			InactiveSeedingTimeLimit: -2, DownloadLimit: p.DownloadLimit, UploadLimit: p.UploadLimit,
-			ContentLayout: cmp.Or(p.ContentLayout, LayoutOriginal),
+			InactiveSeedingTimeLimit: -2,
+			ContentLayout:            cmp.Or(p.ContentLayout, LayoutOriginal),
 		},
 	}
 	if mib != nil {
@@ -855,19 +852,6 @@ func (e *Engine) SetShareLimits(ctx context.Context, l ShareLimits, hashes ...st
 		m.rec.RatioLimit = l.RatioLimit
 		m.rec.SeedingTimeLimit = l.SeedingTimeLimit
 		m.rec.InactiveSeedingTimeLimit = l.InactiveSeedingTimeLimit
-		return nil
-	})
-}
-
-// SetLimits sets per-torrent rate limits in bytes per second, 0 for none.
-// They are stored and reported; anacrolix does not enforce per-torrent
-// limits yet.
-func (e *Engine) SetLimits(ctx context.Context, down, up int64, hashes ...string) error {
-	if down < 0 || up < 0 {
-		return fmt.Errorf("%w: limits must not be negative", ErrInvalid)
-	}
-	return e.each(ctx, hashes, func(m *managed) error {
-		m.rec.DownloadLimit, m.rec.UploadLimit = down, up
 		return nil
 	})
 }

@@ -128,7 +128,7 @@ func (q *Queries) ListTorrentTags(ctx context.Context) ([]TorrentTag, error) {
 }
 
 const listTorrents = `-- name: ListTorrents :many
-SELECT info_hash, name, magnet, metainfo, save_path, category, added_at, completed_at, stopped, forced, sequential, first_last_piece, queue_position, uploaded, downloaded, seeding_seconds, active_seconds, last_activity_at, ratio_limit, seeding_time_limit, inactive_seeding_time_limit, download_limit, upload_limit, file_priorities, error, trackers, web_seeds, file_paths, content_layout FROM torrents ORDER BY added_at, info_hash
+SELECT info_hash, name, magnet, metainfo, save_path, category, added_at, completed_at, stopped, forced, sequential, first_last_piece, queue_position, uploaded, downloaded, seeding_seconds, active_seconds, last_activity_at, ratio_limit, seeding_time_limit, inactive_seeding_time_limit, file_priorities, error, trackers, web_seeds, file_paths, content_layout FROM torrents ORDER BY added_at, info_hash
 `
 
 func (q *Queries) ListTorrents(ctx context.Context) ([]Torrent, error) {
@@ -162,8 +162,6 @@ func (q *Queries) ListTorrents(ctx context.Context) ([]Torrent, error) {
 			&i.RatioLimit,
 			&i.SeedingTimeLimit,
 			&i.InactiveSeedingTimeLimit,
-			&i.DownloadLimit,
-			&i.UploadLimit,
 			&i.FilePriorities,
 			&i.Error,
 			&i.Trackers,
@@ -202,16 +200,16 @@ const upsertTorrent = `-- name: UpsertTorrent :exec
 INSERT INTO torrents (
     info_hash, name, magnet, metainfo, save_path, category, added_at, completed_at, stopped, forced,
     sequential, first_last_piece, queue_position, uploaded, downloaded, seeding_seconds, active_seconds,
-    last_activity_at, ratio_limit, seeding_time_limit, inactive_seeding_time_limit, download_limit,
-    upload_limit, file_priorities, error, trackers, web_seeds, file_paths, content_layout
+    last_activity_at, ratio_limit, seeding_time_limit, inactive_seeding_time_limit, file_priorities,
+    error, trackers, web_seeds, file_paths, content_layout
 ) VALUES (
     ?1, ?2, ?3, ?4, ?5,
     ?6, ?7, ?8, ?9, ?10,
     ?11, ?12, ?13, ?14,
     ?15, ?16, ?17, ?18,
     ?19, ?20, ?21,
-    ?22, ?23, ?24, ?25,
-    ?26, ?27, ?28, ?29
+    ?22, ?23,
+    ?24, ?25, ?26, ?27
 )
 ON CONFLICT (info_hash) DO UPDATE SET
     name = excluded.name,
@@ -233,8 +231,6 @@ ON CONFLICT (info_hash) DO UPDATE SET
     ratio_limit = excluded.ratio_limit,
     seeding_time_limit = excluded.seeding_time_limit,
     inactive_seeding_time_limit = excluded.inactive_seeding_time_limit,
-    download_limit = excluded.download_limit,
-    upload_limit = excluded.upload_limit,
     file_priorities = excluded.file_priorities,
     error = excluded.error,
     trackers = excluded.trackers,
@@ -265,8 +261,6 @@ type UpsertTorrentParams struct {
 	RatioLimit               float64
 	SeedingTimeLimit         int64
 	InactiveSeedingTimeLimit int64
-	DownloadLimit            int64
-	UploadLimit              int64
 	FilePriorities           string
 	Error                    string
 	Trackers                 string
@@ -298,8 +292,6 @@ func (q *Queries) UpsertTorrent(ctx context.Context, arg UpsertTorrentParams) er
 		arg.RatioLimit,
 		arg.SeedingTimeLimit,
 		arg.InactiveSeedingTimeLimit,
-		arg.DownloadLimit,
-		arg.UploadLimit,
 		arg.FilePriorities,
 		arg.Error,
 		arg.Trackers,

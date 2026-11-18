@@ -23,6 +23,5 @@ Admins see piecemeal's recent log under **Log**, and failed sign-ins and changes
 | No incoming peers; the status bar says firewalled | The peer port isn't reachable: forward it on your router, or use NAT-PMP through a VPN; see [VPN and port forwarding](../guides/vpn.md). |
 | Torrents stay in "checking" for a long time | piecemeal is verifying data on disk, after an import, a restore or a lost piece completion database. It's limited by the disk; see [Performance](../reference/performance.md). |
 | Writes are slow on ZFS | Leave `PIECEMEAL_MMAP` off. Memory-mapped writes land as small page writes in large records and amplify many times over. |
-| A per-torrent speed limit has no effect | Per-torrent limits are stored but not enforced; only the global limits are. |
 
 If something else is wrong, [open an issue](https://github.com/sebdanielsson/piecemeal/issues) with the version (`piecemeal version`), what you did, and the log around it.

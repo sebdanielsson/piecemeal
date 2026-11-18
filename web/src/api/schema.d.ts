@@ -914,7 +914,11 @@ export interface components {
        * @enum {string}
        */
       contentLayout?: "Original" | "Subfolder" | "NoSubfolder";
-      /** Format: int64 */
+      /**
+       * Format: int64
+       * @deprecated
+       * @description Ignored: piecemeal has no per-torrent speed limits. Use the global limits.
+       */
       downloadLimit?: number;
       firstLastPiece?: boolean;
       /**
@@ -942,7 +946,11 @@ export interface components {
       tags?: string[] | null;
       /** @description The .torrent file, base64. */
       torrentFile?: string;
-      /** Format: int64 */
+      /**
+       * Format: int64
+       * @deprecated
+       * @description Ignored: piecemeal has no per-torrent speed limits. Use the global limits.
+       */
       uploadLimit?: number;
       /** @description An http(s) URL of a .torrent file, or one that redirects to a magnet URI. */
       url?: string;
@@ -1563,11 +1571,6 @@ export interface components {
       createdBy: string;
       /**
        * Format: int64
-       * @description Bytes per second, 0 for unlimited.
-       */
-      downloadLimit: number;
-      /**
-       * Format: int64
        * @description Bytes per second.
        */
       downloadRate: number;
@@ -1692,11 +1695,6 @@ export interface components {
        * @description Number of trackers.
        */
       trackers: number;
-      /**
-       * Format: int64
-       * @description Bytes per second, 0 for unlimited.
-       */
-      uploadLimit: number;
       /**
        * Format: int64
        * @description Bytes per second.
@@ -1859,7 +1857,11 @@ export interface components {
     UpdateTorrentRequest: {
       /** @description Empty removes the category. */
       category?: string;
-      /** Format: int64 */
+      /**
+       * Format: int64
+       * @deprecated
+       * @description Ignored: piecemeal has no per-torrent speed limits. Use the global limits.
+       */
       downloadLimit?: number;
       firstLastPiece?: boolean;
       forced?: boolean;
@@ -1885,7 +1887,11 @@ export interface components {
       stopped?: boolean;
       /** @description Replaces the torrent's tags. */
       tags?: string[];
-      /** Format: int64 */
+      /**
+       * Format: int64
+       * @deprecated
+       * @description Ignored: piecemeal has no per-torrent speed limits. Use the global limits.
+       */
       uploadLimit?: number;
     };
     User: {

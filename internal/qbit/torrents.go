@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"math"
 	"net/http"
@@ -142,14 +141,6 @@ type Torrent struct {
 	Upspeed                  int64   `json:"upspeed"`
 }
 
-// unlimited maps piecemeal's 0-is-unlimited rate limits to qBittorrent's -1.
-func unlimited(v int64) int64 {
-	if v <= 0 {
-		return -1
-	}
-	return v
-}
-
 func eta(t engine.Torrent) int64 {
 	if t.ETA < 0 {
 		return infinity
@@ -197,7 +188,7 @@ func (s *Server) torrent(t engine.Torrent) Torrent {
 		PiecesNum: t.Pieces,
 		AddedOn:   t.AddedAt, AmountLeft: max(t.Size-t.Completed, 0), Category: t.Category,
 		Comment: t.Comment, Completed: t.Completed, CompletionOn: completedOn, ContentPath: t.ContentPath,
-		DlLimit: unlimited(t.DownloadLimit), Dlspeed: t.DownRate, Downloaded: t.Downloaded,
+		DlLimit: -1, Dlspeed: t.DownRate, Downloaded: t.Downloaded,
 		DownloadedSession: t.SessionDown, ETA: eta(t), FLPiecePrio: t.FirstLast, ForceStart: t.Forced,
 		HasMetadata: t.HasMetadata, Hash: t.Hash, InactiveSeedingTimeLimit: t.InactiveSeedingTimeLimit,
 		InfohashV1: t.Hash, LastActivity: t.LastActive, MagnetURI: magnet(t),
@@ -210,7 +201,7 @@ func (s *Server) torrent(t engine.Torrent) Torrent {
 		SeedingTime: t.SeedingTime, SeedingTimeLimit: t.SeedingTimeLimit, SeenComplete: completedOn,
 		SeqDl: t.Sequential, ShareLimitAction: "Default", ShareLimitsMode: "Default", Size: t.Size,
 		State: State(t), Tags: strings.Join(t.Tags, ", "), TimeActive: t.ActiveTime, TotalSize: t.TotalSize,
-		Tracker: t.Tracker, TrackersCount: t.Trackers, UpLimit: unlimited(t.UploadLimit), Uploaded: t.Uploaded,
+		Tracker: t.Tracker, TrackersCount: t.Trackers, UpLimit: -1, Uploaded: t.Uploaded,
 		UploadedSession: t.SessionUp, Upspeed: t.UpRate,
 	}
 }
@@ -384,7 +375,8 @@ func (s *Server) properties(w http.ResponseWriter, r *http.Request) {
 		"piece_size": pieceSize, "comment": t.Comment, "total_wasted": 0,
 		"total_uploaded": t.Uploaded, "total_uploaded_session": t.SessionUp,
 		"total_downloaded": t.Downloaded, "total_downloaded_session": t.SessionDown,
-		"up_limit": unlimited(t.UploadLimit), "dl_limit": unlimited(t.DownloadLimit),
+		// piecemeal has no per-torrent speed limits.
+		"up_limit": -1, "dl_limit": -1,
 		"time_elapsed": t.ActiveTime, "seeding_time": t.SeedingTime,
 		"nb_connections": t.Seeds + t.Peers, "nb_connections_limit": s.settings.Get().MaxConnectionsPerTorrent,
 		"share_ratio": ratio(t.Ratio), "addition_date": t.AddedAt, "completion_date": minusOne(t.CompletedAt),
@@ -539,12 +531,8 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 	if v, err := strconv.ParseInt(r.FormValue("inactiveSeedingTimeLimit"), 10, 64); err == nil {
 		base.InactiveSeedingTimeLimit = &v
 	}
-	if v, err := strconv.ParseInt(r.FormValue("dlLimit"), 10, 64); err == nil && v > 0 {
-		base.DownloadLimit = v
-	}
-	if v, err := strconv.ParseInt(r.FormValue("upLimit"), 10, 64); err == nil && v > 0 {
-		base.UploadLimit = v
-	}
+	// dlLimit and upLimit are ignored: piecemeal has no per-torrent speed
+	// limits.
 	if base.Category != "" {
 		if !slices.ContainsFunc(s.engine.Categories(), func(c engine.Category) bool { return c.Name == base.Category }) {
 			// qBittorrent creates a category it doesn't know.
@@ -709,33 +697,6 @@ func (s *Server) setShareLimits(w http.ResponseWriter, r *http.Request) {
 		}
 		return s.engine.SetShareLimits(r.Context(), l, hs...)
 	})
-}
-
-func (s *Server) setLimit(download bool) func(http.ResponseWriter, *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
-		s.withHashes(w, r, func(hs []string) error {
-			limit, err := strconv.ParseInt(r.FormValue("limit"), 10, 64)
-			if err != nil {
-				return fmt.Errorf("%w: limit", engine.ErrInvalid)
-			}
-			limit = max(limit, 0)
-			var errs []error
-			for _, h := range resolveAll(s, hs) {
-				t, ok := s.engine.Get(h)
-				if !ok {
-					continue
-				}
-				down, up := t.DownloadLimit, t.UploadLimit
-				if download {
-					down = limit
-				} else {
-					up = limit
-				}
-				errs = append(errs, s.engine.SetLimits(r.Context(), down, up, h))
-			}
-			return errors.Join(errs...)
-		})
-	}
 }
 
 // resolveAll expands "all" to every hash.

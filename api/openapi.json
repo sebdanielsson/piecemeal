@@ -171,6 +171,8 @@
             "type": "string"
           },
           "downloadLimit": {
+            "deprecated": true,
+            "description": "Ignored: piecemeal has no per-torrent speed limits. Use the global limits.",
             "format": "int64",
             "minimum": 0,
             "type": "integer"
@@ -229,6 +231,8 @@
             "type": "string"
           },
           "uploadLimit": {
+            "deprecated": true,
+            "description": "Ignored: piecemeal has no per-torrent speed limits. Use the global limits.",
             "format": "int64",
             "minimum": 0,
             "type": "integer"
@@ -1879,11 +1883,6 @@
           "createdBy": {
             "type": "string"
           },
-          "downloadLimit": {
-            "description": "Bytes per second, 0 for unlimited.",
-            "format": "int64",
-            "type": "integer"
-          },
           "downloadRate": {
             "description": "Bytes per second.",
             "format": "int64",
@@ -2059,11 +2058,6 @@
             "format": "int64",
             "type": "integer"
           },
-          "uploadLimit": {
-            "description": "Bytes per second, 0 for unlimited.",
-            "format": "int64",
-            "type": "integer"
-          },
           "uploadRate": {
             "description": "Bytes per second.",
             "format": "int64",
@@ -2125,8 +2119,6 @@
           "ratioLimit",
           "seedingTimeLimit",
           "inactiveSeedingTimeLimit",
-          "downloadLimit",
-          "uploadLimit",
           "queuePosition"
         ],
         "type": "object"
@@ -2447,6 +2439,8 @@
             "type": "string"
           },
           "downloadLimit": {
+            "deprecated": true,
+            "description": "Ignored: piecemeal has no per-torrent speed limits. Use the global limits.",
             "format": "int64",
             "minimum": 0,
             "type": "integer"
@@ -2493,6 +2487,8 @@
             "type": "array"
           },
           "uploadLimit": {
+            "deprecated": true,
+            "description": "Ignored: piecemeal has no per-torrent speed limits. Use the global limits.",
             "format": "int64",
             "minimum": 0,
             "type": "integer"

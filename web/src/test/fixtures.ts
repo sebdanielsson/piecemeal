@@ -52,8 +52,6 @@ export function torrent(overrides: Partial<Torrent> = {}): Torrent {
     ratioLimit: -2,
     seedingTimeLimit: -2,
     inactiveSeedingTimeLimit: -2,
-    downloadLimit: 0,
-    uploadLimit: 0,
     queuePosition: 0,
     ...overrides,
   };

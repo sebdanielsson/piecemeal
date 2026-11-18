@@ -5,15 +5,15 @@ SELECT * FROM torrents ORDER BY added_at, info_hash;
 INSERT INTO torrents (
     info_hash, name, magnet, metainfo, save_path, category, added_at, completed_at, stopped, forced,
     sequential, first_last_piece, queue_position, uploaded, downloaded, seeding_seconds, active_seconds,
-    last_activity_at, ratio_limit, seeding_time_limit, inactive_seeding_time_limit, download_limit,
-    upload_limit, file_priorities, error, trackers, web_seeds, file_paths, content_layout
+    last_activity_at, ratio_limit, seeding_time_limit, inactive_seeding_time_limit, file_priorities,
+    error, trackers, web_seeds, file_paths, content_layout
 ) VALUES (
     sqlc.arg(info_hash), sqlc.arg(name), sqlc.arg(magnet), sqlc.arg(metainfo), sqlc.arg(save_path),
     sqlc.arg(category), sqlc.arg(added_at), sqlc.arg(completed_at), sqlc.arg(stopped), sqlc.arg(forced),
     sqlc.arg(sequential), sqlc.arg(first_last_piece), sqlc.arg(queue_position), sqlc.arg(uploaded),
     sqlc.arg(downloaded), sqlc.arg(seeding_seconds), sqlc.arg(active_seconds), sqlc.arg(last_activity_at),
     sqlc.arg(ratio_limit), sqlc.arg(seeding_time_limit), sqlc.arg(inactive_seeding_time_limit),
-    sqlc.arg(download_limit), sqlc.arg(upload_limit), sqlc.arg(file_priorities), sqlc.arg(error),
+    sqlc.arg(file_priorities), sqlc.arg(error),
     sqlc.arg(trackers), sqlc.arg(web_seeds), sqlc.arg(file_paths), sqlc.arg(content_layout)
 )
 ON CONFLICT (info_hash) DO UPDATE SET
@@ -36,8 +36,6 @@ ON CONFLICT (info_hash) DO UPDATE SET
     ratio_limit = excluded.ratio_limit,
     seeding_time_limit = excluded.seeding_time_limit,
     inactive_seeding_time_limit = excluded.inactive_seeding_time_limit,
-    download_limit = excluded.download_limit,
-    upload_limit = excluded.upload_limit,
     file_priorities = excluded.file_priorities,
     error = excluded.error,
     trackers = excluded.trackers,

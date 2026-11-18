@@ -115,8 +115,6 @@ type Torrent struct {
 	RatioLimit               float64
 	SeedingTimeLimit         int64
 	InactiveSeedingTimeLimit int64
-	DownloadLimit            int64
-	UploadLimit              int64
 	FilePriorities           string
 	Error                    string
 	Trackers                 string

@@ -75,8 +75,8 @@ type AddTorrentRequest struct {
 	RatioLimit               *float64 `json:"ratioLimit,omitempty"`
 	SeedingTimeLimit         *int64   `json:"seedingTimeLimit,omitempty" doc:"Minutes."`
 	InactiveSeedingTimeLimit *int64   `json:"inactiveSeedingTimeLimit,omitempty" doc:"Minutes."`
-	DownloadLimit            int64    `json:"downloadLimit,omitempty" minimum:"0"`
-	UploadLimit              int64    `json:"uploadLimit,omitempty" minimum:"0"`
+	DownloadLimit            int64    `json:"downloadLimit,omitempty" minimum:"0" deprecated:"true" doc:"Ignored: piecemeal has no per-torrent speed limits. Use the global limits."`
+	UploadLimit              int64    `json:"uploadLimit,omitempty" minimum:"0" deprecated:"true" doc:"Ignored: piecemeal has no per-torrent speed limits. Use the global limits."`
 	SkipChecking             bool     `json:"skipChecking,omitempty" doc:"Trust data already on disk instead of verifying it."`
 	ContentLayout            string   `json:"contentLayout,omitempty" enum:"Original,Subfolder,NoSubfolder" doc:"Original keeps the torrent's own layout, Subfolder puts a single file in a folder, NoSubfolder drops the top folder."`
 }
@@ -102,8 +102,8 @@ type UpdateTorrentRequest struct {
 	RatioLimit               *float64  `json:"ratioLimit,omitempty" doc:"-2 follows the global setting, -1 is unlimited."`
 	SeedingTimeLimit         *int64    `json:"seedingTimeLimit,omitempty" doc:"Minutes. -2 follows the global setting, -1 is unlimited."`
 	InactiveSeedingTimeLimit *int64    `json:"inactiveSeedingTimeLimit,omitempty" doc:"Minutes. -2 follows the global setting, -1 is unlimited."`
-	DownloadLimit            *int64    `json:"downloadLimit,omitempty" minimum:"0"`
-	UploadLimit              *int64    `json:"uploadLimit,omitempty" minimum:"0"`
+	DownloadLimit            *int64    `json:"downloadLimit,omitempty" minimum:"0" deprecated:"true" doc:"Ignored: piecemeal has no per-torrent speed limits. Use the global limits."`
+	UploadLimit              *int64    `json:"uploadLimit,omitempty" minimum:"0" deprecated:"true" doc:"Ignored: piecemeal has no per-torrent speed limits. Use the global limits."`
 }
 
 type updateTorrentInput struct {
@@ -417,8 +417,8 @@ func (a *API) addTorrent(ctx context.Context, req AddTorrentRequest) (*addTorren
 		Magnet: req.Magnet, Metainfo: req.TorrentFile, SavePath: req.SavePath, Category: req.Category,
 		Tags: req.Tags, Stopped: req.Stopped, Sequential: req.Sequential, FirstLastPiece: req.FirstLastPiece,
 		Name: req.Name, RatioLimit: req.RatioLimit, SeedingTimeLimit: req.SeedingTimeLimit,
-		InactiveSeedingTimeLimit: req.InactiveSeedingTimeLimit, DownloadLimit: req.DownloadLimit,
-		UploadLimit: req.UploadLimit, SkipChecking: req.SkipChecking, ContentLayout: req.ContentLayout,
+		InactiveSeedingTimeLimit: req.InactiveSeedingTimeLimit, SkipChecking: req.SkipChecking,
+		ContentLayout: req.ContentLayout,
 	}
 	if req.URL != "" {
 		res, err := a.Fetcher.Get(ctx, req.URL)
@@ -493,17 +493,6 @@ func (a *API) updateTorrent(ctx context.Context, hash string, u UpdateTorrentReq
 			l.InactiveSeedingTimeLimit = *u.InactiveSeedingTimeLimit
 		}
 		errs = append(errs, e.SetShareLimits(ctx, l, hash))
-	}
-	if u.DownloadLimit != nil || u.UploadLimit != nil {
-		st, _ := e.Get(hash)
-		down, up := st.DownloadLimit, st.UploadLimit
-		if u.DownloadLimit != nil {
-			down = *u.DownloadLimit
-		}
-		if u.UploadLimit != nil {
-			up = *u.UploadLimit
-		}
-		errs = append(errs, e.SetLimits(ctx, down, up, hash))
 	}
 	if u.Forced != nil {
 		errs = append(errs, e.SetForced(ctx, *u.Forced, hash))
