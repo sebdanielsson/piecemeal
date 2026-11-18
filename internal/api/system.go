@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -62,6 +63,18 @@ type patchSettingsInput struct {
 	RawBody []byte
 }
 
+// TransferLimits changes the global speed limits. Absent fields are left
+// as they are; limits are bytes per second, 0 for unlimited.
+type TransferLimits struct {
+	AltSpeedEnabled  *bool  `json:"altSpeedEnabled,omitempty"`
+	DownloadLimit    *int64 `json:"downloadLimit,omitempty" minimum:"0"`
+	UploadLimit      *int64 `json:"uploadLimit,omitempty" minimum:"0"`
+	AltDownloadLimit *int64 `json:"altDownloadLimit,omitempty" minimum:"0"`
+	AltUploadLimit   *int64 `json:"altUploadLimit,omitempty" minimum:"0"`
+}
+
+type transferLimitsInput struct{ Body TransferLimits }
+
 type logInput struct {
 	After int64  `query:"after" doc:"Only entries with a higher id."`
 	Level string `query:"level" enum:"INFO,WARN,ERROR" default:"INFO"`
@@ -93,12 +106,39 @@ func (a *API) registerSystem() {
 			return &transferOutput{Body: a.Engine.Transfer()}, nil
 		})
 
+	op := a.operation(http.MethodPatch, "/transfer", "updateTransfer", "Change the speed limits", tag, accessUser)
+	op.Description = "Changes the global and alternative limits and the alternative speed toggle. " +
+		"Unlike PATCH /settings, any signed-in user may do this."
+	op.Errors = append(op.Errors, http.StatusUnprocessableEntity)
+	huma.Register(a.huma, op, func(ctx context.Context, in *transferLimitsInput) (*transferOutput, error) {
+		values := map[string]any{}
+		b := in.Body
+		if b.AltSpeedEnabled != nil {
+			values["altSpeedEnabled"] = *b.AltSpeedEnabled
+		}
+		for name, v := range map[string]*int64{
+			"downloadLimit": b.DownloadLimit, "uploadLimit": b.UploadLimit,
+			"altDownloadLimit": b.AltDownloadLimit, "altUploadLimit": b.AltUploadLimit,
+		} {
+			if v != nil {
+				values[name] = *v
+			}
+		}
+		if len(values) > 0 {
+			if _, err := a.Settings.Set(ctx, values); err != nil {
+				return nil, apiError(err)
+			}
+			a.Auth.Audit(ctx, actor(ctx), "transfer.update", fmt.Sprint(values))
+		}
+		return &transferOutput{Body: a.Engine.Transfer()}, nil
+	})
+
 	huma.Register(a.huma, a.operation(http.MethodGet, "/settings", "getSettings", "Get settings", tag, accessUser),
 		func(context.Context, *struct{}) (*settingsOutput, error) {
 			return &settingsOutput{Body: SettingsResponse{Settings: a.Settings.Get(), Locked: a.Settings.Locked()}}, nil
 		})
 
-	op := a.operation(http.MethodPatch, "/settings", "updateSettings", "Change settings", tag, accessAdmin)
+	op = a.operation(http.MethodPatch, "/settings", "updateSettings", "Change settings", tag, accessAdmin)
 	op.Errors = append(op.Errors, http.StatusUnprocessableEntity)
 	huma.Register(a.huma, op, func(ctx context.Context, in *patchSettingsInput) (*settingsOutput, error) {
 		s, err := a.Settings.Update(ctx, json.RawMessage(in.RawBody))

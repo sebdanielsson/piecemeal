@@ -515,7 +515,11 @@ export interface paths {
     delete?: never;
     options?: never;
     head?: never;
-    patch?: never;
+    /**
+     * Change the speed limits
+     * @description Changes the global and alternative limits and the alternative speed toggle. Unlike PATCH /settings, any signed-in user may do this.
+     */
+    patch: operations["updateTransfer"];
     trace?: never;
   };
   "/users": {
@@ -556,6 +560,8 @@ export interface components {
       scope: "full" | "qbittorrent" | "read-only";
       /** Format: int64 */
       userId: number;
+      /** @description The owner's username. */
+      username: string;
     };
     AddPeersInputBody: {
       /** @description host:port, IP addresses only. */
@@ -671,6 +677,8 @@ export interface components {
       scope: "full" | "qbittorrent" | "read-only";
       /** Format: int64 */
       userId: number;
+      /** @description The owner's username. */
+      username: string;
     };
     ErrorDetail: {
       /** @description Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id' */
@@ -850,6 +858,7 @@ export interface components {
       userAgent: string;
       /** Format: int64 */
       userId: number;
+      username: string;
     };
     SessionsOutputBody: {
       items: components["schemas"]["Session"][] | null;
@@ -938,6 +947,10 @@ export interface components {
       utp: boolean;
     };
     SettingsEvent: {
+      /** @description Settings set by environment variables, mapped to the variable. */
+      locked: {
+        [key: string]: string;
+      };
       settings: components["schemas"]["Settings"];
     };
     SettingsResponse: {
@@ -1212,6 +1225,17 @@ export interface components {
        * @description Bytes per second.
        */
       uploadRate: number;
+    };
+    TransferLimits: {
+      /** Format: int64 */
+      altDownloadLimit?: number;
+      altSpeedEnabled?: boolean;
+      /** Format: int64 */
+      altUploadLimit?: number;
+      /** Format: int64 */
+      downloadLimit?: number;
+      /** Format: int64 */
+      uploadLimit?: number;
     };
     TransferStatus: {
       altSpeedEnabled: boolean;
@@ -3587,6 +3611,66 @@ export interface operations {
       };
       /** @description Forbidden */
       403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+    };
+  };
+  updateTransfer: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["TransferLimits"];
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TransferStatus"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Unprocessable Entity */
+      422: {
         headers: {
           [name: string]: unknown;
         };

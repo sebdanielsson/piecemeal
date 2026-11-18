@@ -43,6 +43,7 @@ type TagsEvent struct {
 // SettingsEvent is the new settings.
 type SettingsEvent struct {
 	Settings settings.Settings `json:"settings"`
+	Locked   map[string]string `json:"locked" doc:"Settings set by environment variables, mapped to the variable."`
 }
 
 func (a *API) registerEvents() {
@@ -111,7 +112,7 @@ func (a *API) stream(ctx context.Context, send sse.Sender) {
 					return
 				}
 			case engine.EventSettings:
-				if send.Data(SettingsEvent{Settings: a.Settings.Get()}) != nil {
+				if send.Data(SettingsEvent{Settings: a.Settings.Get(), Locked: a.Settings.Locked()}) != nil {
 					return
 				}
 			}

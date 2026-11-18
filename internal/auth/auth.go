@@ -355,6 +355,7 @@ type APIKey struct {
 	Prefix     string     `json:"prefix" doc:"The first characters of the key, to tell keys apart."`
 	Scope      Scope      `json:"scope" enum:"full,qbittorrent,read-only"`
 	UserID     int64      `json:"userId"`
+	Username   string     `json:"username" doc:"The owner's username."`
 	CreatedAt  time.Time  `json:"createdAt"`
 	LastUsedAt *time.Time `json:"lastUsedAt,omitempty"`
 }
@@ -399,10 +400,16 @@ func (s *Service) ListAPIKeys(ctx context.Context, by *Principal) ([]APIKey, err
 	if err != nil {
 		return nil, err
 	}
+	names, err := s.usernames(ctx)
+	if err != nil {
+		return nil, err
+	}
 	out := []APIKey{}
 	for _, k := range keys {
 		if by.IsAdmin || k.UserID == by.UserID {
-			out = append(out, apiKeyFrom(k))
+			key := apiKeyFrom(k)
+			key.Username = names[k.UserID]
+			out = append(out, key)
 		}
 	}
 	return out, nil
@@ -428,6 +435,7 @@ func (s *Service) DeleteAPIKey(ctx context.Context, by *Principal, id int64) err
 type Session struct {
 	ID         string    `json:"id"`
 	UserID     int64     `json:"userId"`
+	Username   string    `json:"username"`
 	Kind       string    `json:"kind" enum:"web,qbittorrent"`
 	CreatedAt  time.Time `json:"createdAt"`
 	LastSeenAt time.Time `json:"lastSeenAt"`
@@ -449,10 +457,14 @@ func (s *Service) ListSessions(ctx context.Context, by *Principal) ([]Session, e
 	if err != nil {
 		return nil, err
 	}
+	names, err := s.usernames(ctx)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]Session, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, Session{
-			ID: sessionID(r.TokenHash), UserID: r.UserID, Kind: r.Kind, CreatedAt: time.Unix(r.CreatedAt, 0).UTC(),
+			ID: sessionID(r.TokenHash), UserID: r.UserID, Username: names[r.UserID], Kind: r.Kind, CreatedAt: time.Unix(r.CreatedAt, 0).UTC(),
 			LastSeenAt: time.Unix(r.LastSeenAt, 0).UTC(), ExpiresAt: time.Unix(r.ExpiresAt, 0).UTC(), IP: r.Ip,
 			UserAgent: r.UserAgent, Current: subtle.ConstantTimeCompare(r.TokenHash, by.sessionHash) == 1,
 		})
@@ -632,6 +644,19 @@ func (l *loginLimiter) reset(ip string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	delete(l.fails, ip)
+}
+
+// usernames maps user IDs to usernames.
+func (s *Service) usernames(ctx context.Context) (map[int64]string, error) {
+	users, err := s.store.ListUsers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	m := make(map[int64]string, len(users))
+	for _, u := range users {
+		m[u.ID] = u.Username
+	}
+	return m, nil
 }
 
 // Users lists every user.

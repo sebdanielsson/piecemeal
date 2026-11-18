@@ -302,3 +302,27 @@ func TestEventsStartWithSnapshot(t *testing.T) {
 	}
 	t.Fatal("no torrents event for the added torrent")
 }
+
+func TestTransferLimitsForUsers(t *testing.T) {
+	s := newTestServer(t)
+	s.login()
+	var tr engine.TransferStatus
+	alt := true
+	limit := int64(2000)
+	s.do(http.MethodPatch, "/transfer", TransferLimits{AltSpeedEnabled: &alt, AltDownloadLimit: &limit}, http.StatusOK, &tr, csrf...)
+	if !tr.AltSpeedEnabled || tr.DownloadLimit != 2000 {
+		t.Fatalf("transfer: %+v", tr)
+	}
+	// uploadLimit is pinned by PIECEMEAL_UPLOAD_LIMIT in this server.
+	up := int64(5)
+	s.do(http.MethodPatch, "/transfer", TransferLimits{UploadLimit: &up}, http.StatusUnprocessableEntity, nil, csrf...)
+
+	var keys struct{ Items []auth.APIKey }
+	s.do(http.MethodPost, "/api-keys", CreateAPIKeyRequest{Name: "k", Scope: auth.ScopeFull}, http.StatusCreated, nil, csrf...)
+	s.do(http.MethodGet, "/api-keys", nil, http.StatusOK, &keys)
+	var sessions struct{ Items []auth.Session }
+	s.do(http.MethodGet, "/sessions", nil, http.StatusOK, &sessions)
+	if keys.Items[0].Username != "admin" || sessions.Items[0].Username != "admin" {
+		t.Fatalf("usernames: %+v %+v", keys.Items, sessions.Items)
+	}
+}
