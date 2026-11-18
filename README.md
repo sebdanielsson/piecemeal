@@ -71,6 +71,22 @@ docker start piecemeal
 
 Only one piecemeal can use a data directory at a time.
 
+## Moving from Transmission or qBittorrent
+
+`piecemeal import` reads another client's torrents and adds them, with their save paths, renamed and skipped files, labels or category and tags, stopped state, ratio limits, added and completed times, and transfer totals. Stop piecemeal first; the other client can keep running, but stop it before piecemeal starts seeding the same files.
+
+```sh
+docker stop piecemeal
+docker run --rm -v piecemeal-data:/data -v /path/to/downloads:/downloads \
+  -v /path/to/transmission-config:/import:ro \
+  ghcr.io/sebdanielsson/piecemeal import transmission /import --dry-run
+```
+
+- For Transmission, give its configuration directory (with `torrents/` and `resume/`); for qBittorrent, its `BT_backup` directory. Transmission's labels become tags; qBittorrent's category and tags carry over.
+- `--map FROM=TO` rewrites save paths when the other client saw the downloads under another path, such as `--map /data/torrents=/downloads`. Save paths must end up inside `PIECEMEAL_ALLOWED_ROOTS`.
+- piecemeal checks each torrent's data when it next starts (stopped ones when they start). `--trust-data` marks complete torrents as verified instead, which is faster on large libraries but trusts the files on disk.
+- `--dry-run` lists what would be imported. Torrents already in piecemeal are skipped, so running it twice is safe. qBittorrent magnets without metadata yet have no torrent file and are left out; add them again.
+
 ## Development
 
 Tool versions are pinned in [`mise.toml`](mise.toml).

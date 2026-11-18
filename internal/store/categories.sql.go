@@ -9,6 +9,15 @@ import (
 	"context"
 )
 
+const createCategoryIfMissing = `-- name: CreateCategoryIfMissing :exec
+INSERT INTO categories (name, save_path) VALUES (?1, '') ON CONFLICT (name) DO NOTHING
+`
+
+func (q *Queries) CreateCategoryIfMissing(ctx context.Context, name string) error {
+	_, err := q.db.ExecContext(ctx, createCategoryIfMissing, name)
+	return err
+}
+
 const createTag = `-- name: CreateTag :exec
 INSERT INTO tags (name) VALUES (?1) ON CONFLICT DO NOTHING
 `
