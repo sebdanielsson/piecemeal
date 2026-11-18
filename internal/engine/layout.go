@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"os"
@@ -53,7 +54,9 @@ func layoutPath(info *metainfo.Info, fi metainfo.FileInfo, layout string) string
 	switch {
 	case layout == LayoutSubfolder && !info.IsDir():
 		name := info.BestName()
-		return strings.TrimSuffix(name, path.Ext(name)) + "/" + name
+		// A name that is only an extension, such as .nfo, keeps it.
+		folder := cmp.Or(strings.TrimSuffix(name, path.Ext(name)), name)
+		return folder + "/" + name
 	case layout == LayoutNoSubfolder && info.IsDir():
 		return strings.Join(fi.BestPath(), "/")
 	default:
@@ -117,6 +120,9 @@ func contentAndRoot(savePath string, rel []string) (content, root string) {
 // storagePaths sets up the anacrolix file storage to ask the engine where
 // each torrent and file goes.
 func (e *Engine) storagePaths(opts *storage.NewFileClientOpts) {
+	// anacrolix calls these once per file while it opens a torrent's
+	// storage; forgetInfo drops the entry when the torrent leaves the
+	// client.
 	opts.TorrentDirMaker = func(_ string, info *metainfo.Info, ih metainfo.Hash) string {
 		e.infoOwners.Store(info, ih)
 		if p, ok := e.paths.Load(ih); ok {
@@ -137,6 +143,17 @@ func (e *Engine) storagePaths(opts *storage.NewFileClientOpts) {
 	}
 }
 
+// forgetInfo drops the storage's record of a torrent's open info, once
+// the torrent has left the client.
+func (e *Engine) forgetInfo(ih metainfo.Hash) {
+	e.infoOwners.Range(func(k, v any) bool {
+		if v == ih {
+			e.infoOwners.Delete(k)
+		}
+		return true
+	})
+}
+
 // pathsOf returns a torrent's file placement.
 func (m *managed) pathsOf() torrentPaths {
 	return torrentPaths{savePath: m.rec.SavePath, layout: m.rec.ContentLayout, renames: m.renames}
@@ -151,8 +168,7 @@ func (e *Engine) recordPathsLocked(m *managed) {
 func cleanRelative(p string) (string, error) {
 	p = strings.ReplaceAll(p, `\`, "/")
 	c := path.Clean(p)
-	if p == "" || c == "." || path.IsAbs(c) || c == ".." || strings.HasPrefix(c, "../") ||
-		strings.ContainsRune(c, 0) {
+	if p == "" || c == "." || strings.ContainsRune(c, 0) || !filepath.IsLocal(c) {
 		return "", fmt.Errorf("%w: path %q", ErrInvalid, p)
 	}
 	return c, nil
@@ -207,6 +223,25 @@ func (e *Engine) RenamePath(hash, oldPath, newPath string) error {
 			}
 		}
 	}
+	// os.Rename replaces an existing file, which in a shared save path can
+	// be another torrent's. The same file is fine: a case-only rename on a
+	// case-insensitive filesystem.
+	type rename struct{ from, to string }
+	disk := make(map[int]rename, len(moves))
+	for i, np := range moves {
+		cur := filepath.FromSlash(current[i])
+		if !filepath.IsLocal(cur) {
+			return fmt.Errorf("%w: file path %q", ErrInvalid, current[i])
+		}
+		from := filepath.Join(m.rec.SavePath, cur)
+		to := filepath.Join(m.rec.SavePath, filepath.FromSlash(np))
+		if toInfo, err := os.Lstat(to); err == nil {
+			if fromInfo, err := os.Lstat(from); err != nil || !os.SameFile(fromInfo, toInfo) {
+				return fmt.Errorf("%w: %q already exists on disk", ErrExists, np)
+			}
+		}
+		disk[i] = rename{from, to}
+	}
 
 	running := m.t != nil
 	e.detachLocked(m)
@@ -216,8 +251,7 @@ func (e *Engine) RenamePath(hash, oldPath, newPath string) error {
 	}
 	var errs []error
 	for i, np := range moves {
-		from := filepath.Join(m.rec.SavePath, filepath.FromSlash(current[i]))
-		to := filepath.Join(m.rec.SavePath, filepath.FromSlash(np))
+		from, to := disk[i].from, disk[i].to
 		if !within(m.rec.SavePath, to) {
 			errs = append(errs, fmt.Errorf("%w: %s", ErrPathForbidden, np))
 			continue
@@ -235,7 +269,7 @@ func (e *Engine) RenamePath(hash, oldPath, newPath string) error {
 	// Folders the move emptied.
 	var oldDirs []string
 	for i := range moves {
-		oldDirs = append(oldDirs, filepath.Join(m.rec.SavePath, filepath.FromSlash(current[i])))
+		oldDirs = append(oldDirs, disk[i].from)
 	}
 	removeEmptyDirs(m.rec.SavePath, oldDirs)
 

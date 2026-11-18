@@ -84,3 +84,33 @@ func TestMove(t *testing.T) {
 		t.Fatalf("old content left behind: %v", err)
 	}
 }
+
+// TestMoveFilesRollsBack checks that a move that fails partway puts the
+// files it already moved back.
+func TestMoveFilesRollsBack(t *testing.T) {
+	src, dest := t.TempDir(), t.TempDir()
+	for _, f := range []string{"x/a", "y/b"} {
+		p := filepath.Join(src, filepath.FromSlash(f))
+		if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(f), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A file where the second one's folder should be makes its move fail.
+	if err := os.WriteFile(filepath.Join(dest, "y"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := moveFiles(src, dest, []string{"x/a", "y/b"}); err == nil {
+		t.Fatal("no error")
+	}
+	for _, f := range []string{"x/a", "y/b"} {
+		if _, err := os.Stat(filepath.Join(src, filepath.FromSlash(f))); err != nil {
+			t.Errorf("%s not back in place: %v", f, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dest, "x")); !os.IsNotExist(err) {
+		t.Errorf("emptied folder left in the destination: %v", err)
+	}
+}

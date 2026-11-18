@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"cmp"
-	"fmt"
 	"io"
 	"net"
 	"net/netip"
@@ -12,8 +11,11 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/anacrolix/torrent/iplist"
+
+	"github.com/sebdanielsson/piecemeal/internal/settings"
 )
 
 // ParseIPFilter reads an IP filter in any of the common formats, line by
@@ -53,24 +55,23 @@ func ParseIPFilter(r io.Reader) (ranges []iplist.Range, bad int, err error) {
 // parseFilterLine parses one line. A zero Range with ok means a range that
 // is allowed rather than blocked.
 func parseFilterLine(line string) (iplist.Range, bool) {
-	// eMule .dat
+	// eMule .dat. A line that only looks like one, such as a PeerGuardian
+	// line whose description has a hyphen before a comma, falls through.
 	if parts := strings.Split(line, ","); len(parts) >= 2 && strings.Contains(parts[0], "-") {
-		first, last, ok := ipRange(parts[0])
-		if !ok {
-			return iplist.Range{}, false
+		if first, last, ok := ipRange(parts[0]); ok {
+			level, err := strconv.Atoi(strings.TrimSpace(parts[1]))
+			if err != nil {
+				return iplist.Range{}, false
+			}
+			if level >= 128 {
+				return iplist.Range{}, true
+			}
+			desc := ""
+			if len(parts) > 2 {
+				desc = strings.TrimSpace(strings.Join(parts[2:], ","))
+			}
+			return iplist.Range{First: first, Last: last, Description: desc}, true
 		}
-		level, err := strconv.Atoi(strings.TrimSpace(parts[1]))
-		if err != nil {
-			return iplist.Range{}, false
-		}
-		if level >= 128 {
-			return iplist.Range{}, true
-		}
-		desc := ""
-		if len(parts) > 2 {
-			desc = strings.TrimSpace(strings.Join(parts[2:], ","))
-		}
-		return iplist.Range{First: first, Last: last, Description: desc}, true
 	}
 	// PeerGuardian: the description can contain colons, the range can't.
 	if i := strings.LastIndex(line, ":"); i > 0 && strings.Contains(line[i:], "-") {
@@ -137,27 +138,40 @@ func lastInPrefix(p netip.Prefix) netip.Addr {
 	return a
 }
 
-// blocklist builds the client's IP blocklist from the settings, or nil
-// for none.
-func (e *Engine) blocklist(enabled bool, path, banned string) (iplist.Ranger, error) {
-	var ranges []iplist.Range
-	if enabled && path != "" {
-		f, err := os.Open(path) //nolint:gosec // the admin's choice of file
-		if err != nil {
-			return nil, fmt.Errorf("IP filter: %w", err)
-		}
-		r, bad, err := ParseIPFilter(f)
-		_ = f.Close()
-		if err != nil {
-			return nil, fmt.Errorf("IP filter %s: %w", path, err)
-		}
-		e.log.Info("IP filter loaded", "path", path, "ranges", len(r), "unreadableLines", bad)
-		ranges = r
-	}
-	b, bad, err := ParseIPFilter(strings.NewReader(banned))
+// peerFilter is the blocklist the client checks connections against.
+// Its list is swapped when the filter settings change, without recreating
+// the client.
+type peerFilter struct{ list atomic.Pointer[iplist.IPList] }
+
+func (f *peerFilter) Lookup(ip net.IP) (iplist.Range, bool) {
+	return f.list.Load().Lookup(ip)
+}
+
+func (f *peerFilter) NumRanges() int { return f.list.Load().NumRanges() }
+
+// blocked reports whether a peer address (host:port) is filtered.
+func (f *peerFilter) blocked(addr string) bool {
+	ap, err := netip.ParseAddrPort(addr)
 	if err != nil {
-		return nil, err
+		return false
 	}
+	_, ok := f.Lookup(net.IP(ap.Addr().Unmap().AsSlice()))
+	return ok
+}
+
+// reloadFilter builds the blocklist from the settings and swaps it in. A
+// filter file that can't be read leaves just the banned addresses.
+func (e *Engine) reloadFilter(s settings.Settings) {
+	var ranges []iplist.Range
+	if s.IPFilterEnabled && s.IPFilterPath != "" {
+		if r, bad, err := readIPFilter(s.IPFilterPath); err != nil {
+			e.log.Error("not using the IP filter", "path", s.IPFilterPath, "error", err)
+		} else {
+			e.log.Info("IP filter loaded", "path", s.IPFilterPath, "ranges", len(r), "unreadableLines", bad)
+			ranges = r
+		}
+	}
+	b, bad, _ := ParseIPFilter(strings.NewReader(s.BannedIPs))
 	if bad > 0 {
 		e.log.Warn("ignoring banned IP entries that aren't addresses or CIDR ranges", "count", bad)
 	}
@@ -166,10 +180,74 @@ func (e *Engine) blocklist(enabled bool, path, banned string) (iplist.Ranger, er
 	}
 	ranges = append(ranges, b...)
 	if len(ranges) == 0 {
-		return nil, nil
+		e.filter.list.Store(nil)
+		return
 	}
-	slices.SortFunc(ranges, func(a, b iplist.Range) int {
+	e.filter.list.Store(iplist.New(mergeRanges(ranges)))
+}
+
+func readIPFilter(path string) ([]iplist.Range, int, error) {
+	f, err := os.Open(path) //nolint:gosec // the admin's choice of file
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = f.Close() }()
+	return ParseIPFilter(f)
+}
+
+// dropBlockedPeersLocked closes connections to peers the filter now
+// blocks.
+func (e *Engine) dropBlockedPeersLocked() {
+	for _, m := range e.torrents {
+		if m.t == nil {
+			continue
+		}
+		for _, pc := range m.t.PeerConns() {
+			if e.filter.blocked(pc.RemoteAddr.String()) {
+				_ = pc.Close()
+			}
+		}
+	}
+}
+
+// mergeRanges sorts ranges and merges overlapping and adjacent ones of the
+// same address family. iplist only checks the last range starting at or
+// before an address, so with overlaps, a banned address inside a filtered
+// range would let the rest of that range through.
+func mergeRanges(ranges []iplist.Range) []iplist.Range {
+	byFirst := func(a, b iplist.Range) int {
 		return cmp.Or(bytes.Compare(a.First, b.First), bytes.Compare(a.Last, b.Last))
-	})
-	return iplist.New(ranges), nil
+	}
+	var out []iplist.Range
+	for _, size := range []int{net.IPv4len, net.IPv6len} {
+		family := slices.DeleteFunc(slices.Clone(ranges), func(r iplist.Range) bool { return len(r.First) != size })
+		slices.SortFunc(family, byFirst)
+		start := len(out)
+		for _, r := range family {
+			if n := len(out); n > start && bytes.Compare(r.First, nextIP(out[n-1].Last)) <= 0 {
+				last := &out[n-1]
+				if bytes.Compare(r.Last, last.Last) > 0 {
+					last.Last = r.Last
+				}
+				if last.Description != r.Description && r.Description != "" {
+					last.Description = cmp.Or(last.Description, r.Description)
+				}
+				continue
+			}
+			out = append(out, r)
+		}
+	}
+	slices.SortFunc(out, byFirst)
+	return out
+}
+
+// nextIP is ip plus one, or ip itself at the end of the address space.
+func nextIP(ip net.IP) net.IP {
+	next := slices.Clone(ip)
+	for i := len(next) - 1; i >= 0; i-- {
+		if next[i]++; next[i] != 0 {
+			return next
+		}
+	}
+	return ip
 }

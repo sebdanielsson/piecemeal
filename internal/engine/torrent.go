@@ -110,10 +110,11 @@ func (m *managed) setMetainfo(b []byte) {
 	}
 }
 
-// jsonOrEmpty encodes v, or returns "" for a nil or empty value.
+// jsonOrEmpty encodes v, or returns "" for nil. An empty, non-nil value
+// is kept: for trackers and web seeds it means all were removed.
 func jsonOrEmpty[T any](v T) string {
 	rv := reflect.ValueOf(v)
-	if !rv.IsValid() || rv.Len() == 0 {
+	if !rv.IsValid() || rv.IsNil() {
 		return ""
 	}
 	b, _ := json.Marshal(v)
@@ -620,6 +621,7 @@ func (e *Engine) detachLocked(m *managed) {
 	t := m.t
 	m.t = nil
 	t.Drop()
+	e.forgetInfo(m.hash)
 }
 
 func (e *Engine) get(hash string) (*managed, error) {
@@ -681,7 +683,13 @@ func (e *Engine) Start(ctx context.Context, hashes ...string) error {
 	queueing := e.settings.Get().QueueingEnabled
 	err := e.each(ctx, hashes, func(m *managed) error {
 		m.rec.Stopped = false
-		if m.t != nil || queueing {
+		if m.t != nil {
+			return nil
+		}
+		if queueing {
+			// The scheduler skips torrents in error: starting one retries
+			// it, as attachLocked does with queueing off.
+			m.rec.Error = ""
 			return nil
 		}
 		return e.attachLocked(m)

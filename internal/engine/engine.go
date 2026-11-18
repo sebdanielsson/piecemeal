@@ -78,6 +78,7 @@ type Engine struct {
 	// them.
 	paths      sync.Map
 	infoOwners sync.Map
+	filter     peerFilter
 
 	down, up *rate.Limiter
 
@@ -194,6 +195,7 @@ func New(ctx context.Context, cfg Config, st *store.Store, sm *settings.Manager,
 	if cfg.PortForwarded {
 		port = cfg.InitialPort
 	}
+	e.reloadFilter(s)
 	if err := e.startClient(port, s); err != nil {
 		return nil, errors.Join(err, e.closeStorage())
 	}
@@ -263,6 +265,12 @@ func (e *Engine) SetPort(port int) error {
 
 func (e *Engine) onSettingsChanged(old, cur settings.Settings) {
 	e.applyLimits(cur)
+	filterChanged := cur.IPFilterEnabled != old.IPFilterEnabled || cur.IPFilterPath != old.IPFilterPath ||
+		cur.BannedIPs != old.BannedIPs
+	if filterChanged {
+		// Outside the lock: a large filter file takes a while to parse.
+		e.reloadFilter(cur)
+	}
 	e.mu.Lock()
 	e.refreshTransferLocked()
 	if cur.MaxConnectionsPerTorrent != old.MaxConnectionsPerTorrent {
@@ -272,8 +280,10 @@ func (e *Engine) onSettingsChanged(old, cur settings.Settings) {
 			}
 		}
 	}
+	if filterChanged {
+		e.dropBlockedPeersLocked()
+	}
 	needsRestart := cur.DHT != old.DHT || cur.PEX != old.PEX || cur.UTP != old.UTP ||
-		cur.IPFilterEnabled != old.IPFilterEnabled || cur.IPFilterPath != old.IPFilterPath || cur.BannedIPs != old.BannedIPs ||
 		cur.Encryption != old.Encryption || cur.MaxHalfOpenConnections != old.MaxHalfOpenConnections ||
 		(!e.cfg.PortForwarded && cur.PeerPort != old.PeerPort)
 	if needsRestart {
@@ -352,11 +362,7 @@ func (e *Engine) clientConfig(port int, s settings.Settings) *torrent.ClientConf
 	default:
 		tc.HeaderObfuscationPolicy = torrent.HeaderObfuscationPolicy{Preferred: true}
 	}
-	if bl, err := e.blocklist(s.IPFilterEnabled, s.IPFilterPath, s.BannedIPs); err != nil {
-		e.log.Error("not filtering peers", "error", err)
-	} else if bl != nil {
-		tc.IPBlocklist = bl
-	}
+	tc.IPBlocklist = &e.filter
 	tc.Slogger = e.log.With("component", "anacrolix")
 	if e.cfg.ClientConfig != nil {
 		e.cfg.ClientConfig(tc)
@@ -403,6 +409,7 @@ func (e *Engine) restartClientLocked(port int, s settings.Settings) error {
 	}
 	for _, m := range e.torrents {
 		m.t = nil
+		e.forgetInfo(m.hash)
 	}
 	if err := e.startClientRetrying(port, s); err != nil {
 		// Leave the engine usable: fall back to any free port.

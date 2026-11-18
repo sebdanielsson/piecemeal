@@ -22,7 +22,7 @@ func roundLimit(v int64) int64 {
 	return max(v/1024*1024, 1024)
 }
 
-// prefValue decodes a preference value of the type qBittorrent uses.
+// prefInt decodes a whole-number preference value.
 func prefInt(v any) (int64, bool) {
 	f, ok := v.(float64)
 	if !ok || f != math.Trunc(f) {
@@ -172,10 +172,11 @@ func preferencesToSettings(in map[string]any, cur settings.Settings) (map[string
 	}
 	boolean("dht", "dht")
 	boolean("pex", "pex")
-	if v, ok := in["encryption"]; ok {
-		n, _ := prefInt(v)
+	if v, ok := in["encryption"]; ok && v != nil {
+		n, ok := prefInt(v)
 		switch {
-		case v == nil:
+		case !ok:
+			bad("encryption")
 		case n == 0:
 			out["encryption"] = "prefer"
 		case n == 1:
@@ -246,15 +247,17 @@ func preferencesToSettings(in map[string]any, cur settings.Settings) (map[string
 	goal("max_inactive_seeding_time_enabled", "max_inactive_seeding_time", "inactiveSeedingTimeLimit",
 		float64(cur.InactiveSeedingTimeLimit), false)
 	if v, ok := in["max_ratio_act"]; ok {
-		n, _ := prefInt(v)
-		switch n {
-		case 0:
+		n, ok := prefInt(v)
+		switch {
+		case !ok:
+			bad("max_ratio_act")
+		case n == 0:
 			out["seedGoalAction"] = "stop"
-		case 1:
+		case n == 1:
 			out["seedGoalAction"] = "remove"
-		case 3:
+		case n == 3:
 			out["seedGoalAction"] = "removeWithData"
-		case 2:
+		case n == 2:
 			// Super seeding: not supported, ignored.
 		default:
 			bad("max_ratio_act")

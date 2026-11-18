@@ -82,6 +82,8 @@ func TestSetPreferences(t *testing.T) {
 		t.Fatal("a failed request applied a key")
 	}
 	expect(t, "bad hour", e.setPreferences(map[string]any{"schedule_to_hour": 24}), http.StatusBadRequest)
+	expect(t, "encryption as a string", e.setPreferences(map[string]any{"encryption": "1"}), http.StatusBadRequest)
+	expect(t, "max_ratio_act as a fraction", e.setPreferences(map[string]any{"max_ratio_act": 1.5}), http.StatusBadRequest)
 	expect(t, "no json", e.post("app/setPreferences", nil), http.StatusBadRequest)
 	// qBittorrent 5.3.0 ignores a value that isn't an object.
 	expect(t, "not an object", e.post("app/setPreferences", url.Values{"json": {"[1]"}}), http.StatusOK)
@@ -303,6 +305,8 @@ func TestNonAdminWrites(t *testing.T) {
 	expect(t, "setPreferences", e.post("app/setPreferences", url.Values{"json": {string(b)}}, bearer...), http.StatusOK)
 	expect(t, "banPeers", e.post("transfer/banPeers", url.Values{"peers": {"203.0.113.2:1"}}, bearer...), http.StatusForbidden)
 	expect(t, "setCookies", e.post("app/setCookies", url.Values{"cookies": {"[]"}}, bearer...), http.StatusForbidden)
+	expect(t, "cookies", e.get("app/cookies", bearer...), http.StatusForbidden)
+	expect(t, "log/main", e.get("log/main", bearer...), http.StatusForbidden)
 	e.login()
 	p := e.preferences()
 	if p["dl_limit"] != 2048.0 || p["dht"] != false || p["banned_IPs"] != "" {

@@ -40,7 +40,11 @@ func (s *Server) loadCookies(ctx context.Context) error {
 	return nil
 }
 
-func (s *Server) cookies(w http.ResponseWriter, _ *http.Request) {
+// cookies returns the download cookies: tracker logins, so admins only.
+func (s *Server) cookies(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r) {
+		return
+	}
 	writeJSON(w, s.fetcher.Cookies())
 }
 

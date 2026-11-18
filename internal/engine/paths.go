@@ -25,11 +25,17 @@ func (e *Engine) confine(path string) (string, error) {
 	}
 	for _, root := range e.cfg.AllowedRoots {
 		r, err := resolveExisting(root)
-		if err != nil {
+		if err != nil || !within(r, resolved) {
 			continue
 		}
-		if within(r, resolved) {
-			return clean, nil
+		// Rebuild the path from the root and a part checked to stay inside
+		// it, so the result is plainly under the root: as given when it is
+		// lexically under it, resolved when only a symlink leads there.
+		if rel, err := filepath.Rel(root, clean); err == nil && filepath.IsLocal(rel) {
+			return filepath.Join(root, rel), nil
+		}
+		if rel, err := filepath.Rel(r, resolved); err == nil && filepath.IsLocal(rel) {
+			return filepath.Join(r, rel), nil
 		}
 	}
 	return "", fmt.Errorf("%w: %s", ErrPathForbidden, path)
@@ -73,6 +79,12 @@ func within(root, path string) bool {
 func (e *Engine) PathAllowed(path string) bool {
 	_, err := e.confine(path)
 	return err == nil
+}
+
+// Confine returns path, cleaned, if it is inside an allowed root once
+// symlinks are resolved, and ErrPathForbidden otherwise.
+func (e *Engine) Confine(path string) (string, error) {
+	return e.confine(path)
 }
 
 // FreeSpace returns the free bytes on the filesystem holding path, which

@@ -18,7 +18,7 @@ CI checks it two ways (see [`test/e2e`](../test/e2e)): Radarr, Sonarr and Prowla
 - Parameters come from the query string and from urlencoded or multipart bodies. Bodies are read only after authentication and are capped at 64 MiB.
 - Endpoints for features piecemeal doesn't have answer 409 with a short reason, qBittorrent's status for a valid request it can't carry out.
 - Actions answer 200 with an empty body, or 204 where qBittorrent 5.3.0 does (`setSpeedLimits`, `addTrackers`, `editTracker`, `removeTrackers`, `setTags`, `deleteAPIKey`, `clientdata/store`).
-- Instance-wide changes need an admin, as in piecemeal's own API: other users' `setPreferences` applies the speed limits only, and their `banPeers` and `setCookies` get 403.
+- Instance-wide changes and private data need an admin, as in piecemeal's own API: other users' `setPreferences` applies the speed limits only, and their `banPeers`, `cookies`, `setCookies` and `log/main` get 403.
 - Endpoints that take a single `hash` answer 404 for an unknown one; endpoints that take `hashes` skip unknown ones.
 
 ## Endpoints
@@ -39,7 +39,7 @@ Status: **yes** is implemented, **partial** works with the differences noted, **
 | `networkInterfaceList`, `networkInterfaceAddressList` | yes | Listed for the settings page; piecemeal binds with `PIECEMEAL_LISTEN_HOST`, so choosing one has no effect. |
 | `getDirectoryContent` | partial | Only inside the allowed roots; 404 elsewhere. Strings only: `withMetadata` is ignored. |
 | `getFreeSpaceAtPath` | yes | Only inside the allowed roots; 404 elsewhere. |
-| `cookies`, `setCookies` | yes | Sent with torrent files fetched by URL, matched by domain, path and expiry. Kept across restarts. |
+| `cookies`, `setCookies` | yes | Sent with torrent files fetched by URL, matched by domain, path and expiry. Kept across restarts. Admins only: they're usually tracker logins. |
 | `rotateAPIKey`, `deleteAPIKey` | yes | Manage the caller's own `qbittorrent`-scoped key, named "qBittorrent API key". Need a session or a `full`-scope key. |
 | `shutdown`, `sendTestEmail` | never | piecemeal runs as a service and sends no mail. |
 
@@ -72,7 +72,7 @@ Status: **yes** is implemented, **partial** works with the differences noted, **
 
 | Endpoint | Status | Notes |
 | --- | --- | --- |
-| `main` | yes | piecemeal's own log, info and above, from a bounded buffer. |
+| `main` | yes | piecemeal's own log, info and above, from a bounded buffer. Admins only. |
 | `peers` | partial | Always empty: piecemeal doesn't log refused peers. |
 
 ### torrents

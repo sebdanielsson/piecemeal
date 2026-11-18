@@ -158,7 +158,11 @@ const (
 	logCritical = 8
 )
 
+// logMain returns piecemeal's log, to admins as in the native API.
 func (s *Server) logMain(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r) {
+		return
+	}
 	q := r.Form
 	want := func(name string) bool {
 		v, err := strconv.ParseBool(q.Get(name))
@@ -244,12 +248,13 @@ func (s *Server) getDirectoryContent(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "dirPath must be an absolute path", http.StatusBadRequest)
 		return
 	}
-	if !s.engine.PathAllowed(dir) {
+	dir, err := s.engine.Confine(dir)
+	if err != nil {
 		http.Error(w, "Not Found", http.StatusNotFound)
 		return
 	}
 	mode := r.FormValue("mode")
-	entries, err := os.ReadDir(filepath.Clean(dir))
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		http.Error(w, "Not Found", http.StatusNotFound)
 		return

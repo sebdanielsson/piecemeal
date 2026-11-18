@@ -62,7 +62,13 @@ export function TrackersTab({ torrent }: { torrent: Torrent }) {
           {seeds.length > 0 && `${seeds.length} web ${seeds.length === 1 ? "seed" : "seeds"}`}
         </span>
         <div className="flex-1" />
-        <Button size="xs" variant="ghost" onClick={() => setEditing(true)}>
+        <Button
+          size="xs"
+          variant="ghost"
+          // Saving sends the web seeds too, so wait for them.
+          disabled={!webSeeds.isSuccess}
+          onClick={() => setEditing(true)}
+        >
           <PencilIcon data-icon="inline-start" />
           Edit
         </Button>

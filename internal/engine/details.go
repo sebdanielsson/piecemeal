@@ -324,7 +324,8 @@ func (e *Engine) PieceHashes(hash string) ([]string, error) {
 	}
 	info := m.info
 	e.mu.Unlock()
-	if info == nil {
+	if info == nil || !info.HasV1() {
+		// No metadata yet, or a v2-only torrent without SHA-1 piece hashes.
 		return []string{}, nil
 	}
 	out := make([]string, 0, info.NumPieces())

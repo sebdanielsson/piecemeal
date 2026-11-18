@@ -71,12 +71,12 @@ export const settingsGroups: FieldGroupDef[] = [
   {
     title: "Queueing",
     description:
-      "Limits how many torrents run at once; the rest wait in the queue. Forced torrents don't count.",
+      "Limits how many torrents run at once; the rest wait in the queue. Forced torrents don't count. -1 means no limit.",
     fields: [
       { key: "queueingEnabled", label: "Queue torrents", kind: "bool" },
-      { key: "maxActiveDownloads", label: "Active downloads", kind: "int", min: 0 },
-      { key: "maxActiveUploads", label: "Active uploads", kind: "int", min: 0 },
-      { key: "maxActiveTorrents", label: "Active torrents", kind: "int", min: 0 },
+      { key: "maxActiveDownloads", label: "Active downloads", kind: "int", min: -1 },
+      { key: "maxActiveUploads", label: "Active uploads", kind: "int", min: -1 },
+      { key: "maxActiveTorrents", label: "Active torrents", kind: "int", min: -1 },
       {
         key: "dontCountSlowTorrents",
         label: "Don't count slow torrents",

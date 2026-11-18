@@ -15,7 +15,7 @@ import (
 	"github.com/anacrolix/torrent/metainfo"
 )
 
-// currentTrackersLocked is the torrent's announce list: the edited one, or
+// currentTrackers is the torrent's announce list: the edited one, or
 // the torrent file's, or the magnet's.
 func (m *managed) currentTrackers() [][]string {
 	if m.trackers != nil {
@@ -258,35 +258,65 @@ func (e *Engine) Move(ctx context.Context, hash, savePath string) error {
 
 // moveFiles moves files from one directory to another, both given relative
 // paths, renaming where it can and copying across filesystems. Files that
-// don't exist yet are skipped. Emptied source folders are removed.
+// don't exist yet are skipped. Every destination is checked first, and if
+// a file fails to move, the ones already moved go back, so the data never
+// ends up split between the two folders. Emptied folders are removed.
 func moveFiles(src, dest string, rel []string) error {
-	var moved []string
+	type move struct{ from, to string }
+	var moves []move
 	for _, r := range rel {
-		from := filepath.Join(src, filepath.FromSlash(r))
-		to := filepath.Join(dest, filepath.FromSlash(r))
+		r = filepath.FromSlash(r)
+		if !filepath.IsLocal(r) {
+			return fmt.Errorf("%w: file path %q", ErrInvalid, r)
+		}
+		from := filepath.Join(src, r)
+		to := filepath.Join(dest, r)
 		if _, err := os.Lstat(from); errors.Is(err, os.ErrNotExist) {
 			continue
 		}
 		if _, err := os.Lstat(to); err == nil {
 			return fmt.Errorf("%w: %s", ErrExists, to)
 		}
-		if err := os.MkdirAll(filepath.Dir(to), 0o755); err != nil { //nolint:gosec // download folders are shared with media apps
-			return err
-		}
-		err := os.Rename(from, to)
-		if errors.Is(err, syscall.EXDEV) {
-			err = copyFile(from, to)
-			if err == nil {
-				err = os.Remove(from)
+		moves = append(moves, move{from, to})
+	}
+	var done []move
+	for _, mv := range moves {
+		if err := moveFile(mv.from, mv.to); err != nil {
+			var errs []error
+			for _, d := range slices.Backward(done) {
+				if err := moveFile(d.to, d.from); err != nil {
+					errs = append(errs, fmt.Errorf("putting %s back: %w", d.from, err))
+				}
 			}
+			var back []string
+			for _, d := range done {
+				back = append(back, d.to)
+			}
+			removeEmptyDirs(dest, back)
+			return errors.Join(append([]error{err}, errs...)...)
 		}
-		if err != nil {
-			return err
-		}
-		moved = append(moved, from)
+		done = append(done, mv)
+	}
+	var moved []string
+	for _, d := range done {
+		moved = append(moved, d.from)
 	}
 	removeEmptyDirs(src, moved)
 	return nil
+}
+
+// moveFile renames a file, or copies and removes it across filesystems.
+func moveFile(from, to string) error {
+	if err := os.MkdirAll(filepath.Dir(to), 0o755); err != nil { //nolint:gosec // download folders are shared with media apps
+		return err
+	}
+	err := os.Rename(from, to)
+	if errors.Is(err, syscall.EXDEV) {
+		if err = copyFile(from, to); err == nil {
+			err = os.Remove(from)
+		}
+	}
+	return err
 }
 
 func copyFile(from, to string) (err error) {
