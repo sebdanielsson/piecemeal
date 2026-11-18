@@ -1,0 +1,63 @@
+---
+name: Fuzz
+
+permissions:
+  contents: read
+
+on:
+  schedule:
+    # Weekly, Sunday night.
+    - cron: "17 2 * * 0"
+  workflow_dispatch:
+    inputs:
+      fuzztime:
+        description: Time per fuzz target
+        default: 5m
+
+jobs:
+  fuzz:
+    name: ${{ matrix.target }}
+    runs-on: ubuntu-26.04-arm
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { package: rss, target: FuzzParse }
+          - { package: rss, target: FuzzRuleText }
+          - { package: rss, target: FuzzEpisodeFilter }
+          - { package: rss, target: FuzzSmartFilter }
+          - { package: qbit, target: FuzzRuleJSON }
+          - { package: engine, target: FuzzParseIPFilter }
+          - { package: engine, target: FuzzCleanRelative }
+          - { package: engine, target: FuzzParseSource }
+          - { package: settings, target: FuzzUpdate }
+          - { package: settings, target: FuzzParseClock }
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup tools
+        uses: jdx/mise-action@v5
+        with:
+          install_args: go
+
+      - name: Create the web UI embed directory
+        run: mkdir -p internal/webui/dist && touch internal/webui/dist/.keep
+
+      - name: Fuzz
+        env:
+          FUZZTIME: ${{ inputs.fuzztime || '5m' }}
+          TARGET: ${{ matrix.target }}
+          PACKAGE: ${{ matrix.package }}
+        run: go test -run '^$' -fuzz "^${TARGET}\$" -fuzztime "$FUZZTIME" "./internal/${PACKAGE}/"
+
+      # A failing input is written to testdata/fuzz; keep it to add as a
+      # regression case.
+      - name: Upload the failing input
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-${{ matrix.target }}
+          path: internal/${{ matrix.package }}/testdata/fuzz
+          if-no-files-found: ignore
