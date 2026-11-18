@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.0.0](https://github.com/sebdanielsson/piecemeal/compare/v0.6.0...v1.0.0) (2026-11-18)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @tanstack/react-query to ^5.108.0 ([#32](https://github.com/sebdanielsson/piecemeal/issues/32)) ([7e637b9](https://github.com/sebdanielsson/piecemeal/commit/7e637b906779450d59cbc95b5e7dcf4bf67b62e8))
+* **deps:** update module golang.org/x/net to v0.63.0 ([#34](https://github.com/sebdanielsson/piecemeal/issues/34)) ([ffb873d](https://github.com/sebdanielsson/piecemeal/commit/ffb873dbfa0ef83d1fa68479a58d4cd2fa0795f1))
+* **import:** make Transmission's first label the category ([#33](https://github.com/sebdanielsson/piecemeal/issues/33)) ([02c8925](https://github.com/sebdanielsson/piecemeal/commit/02c89254bf27fb2c5d89e9602a3d2fd4b08df0fe))
+
+
+### Documentation
+
+* prepare 1.0 ([#40](https://github.com/sebdanielsson/piecemeal/issues/40)) ([77b8691](https://github.com/sebdanielsson/piecemeal/commit/77b8691315799d28906835cb9430963ed0a23246))
+
 ## [0.6.0](https://github.com/sebdanielsson/piecemeal/compare/v0.5.0...v0.6.0) (2026-11-18)
 
 
