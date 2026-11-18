@@ -68,3 +68,20 @@ func TestLogLevel(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestOIDC(t *testing.T) {
+	_, err := FromEnv(env(map[string]string{"PIECEMEAL_OIDC_ISSUER": "https://id.example.com"}))
+	if err == nil || !strings.Contains(err.Error(), "CLIENT_ID") || !strings.Contains(err.Error(), "PUBLIC_URL") {
+		t.Fatalf("missing client ID and public URL: %v", err)
+	}
+	c, err := FromEnv(env(map[string]string{
+		"PIECEMEAL_OIDC_ISSUER": "https://id.example.com", "PIECEMEAL_OIDC_CLIENT_ID": "pm",
+		"PIECEMEAL_PUBLIC_URL": "https://piecemeal.example.com/", "PIECEMEAL_OIDC_ALLOWED_GROUPS": "media, admins",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.OIDC.RedirectURL != "https://piecemeal.example.com/api/piecemeal/v1/auth/oidc/callback" || len(c.OIDC.AllowedGroups) != 2 {
+		t.Fatalf("oidc: %+v", c.OIDC)
+	}
+}

@@ -207,6 +207,14 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, logs *logbuf.
 		return err
 	}
 	go pruneSessions(ctx, authSvc, log)
+	var oidcLogin *auth.OIDC
+	if o := cfg.OIDC; o.Issuer != "" {
+		oidcLogin = auth.NewOIDC(auth.OIDCConfig{
+			Issuer: o.Issuer, ClientID: o.ClientID, ClientSecret: o.ClientSecret, RedirectURL: o.RedirectURL,
+			Name: o.Name, GroupsClaim: o.GroupsClaim, AllowedGroups: o.AllowedGroups, AdminGroups: o.AdminGroups,
+		}, authSvc)
+		log.Info("OIDC sign-in enabled", "issuer", o.Issuer, "redirect", o.RedirectURL)
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -230,7 +238,8 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, logs *logbuf.
 	}
 	nativeAPI := api.New(mux, api.Deps{
 		Version: version, StartedAt: time.Now(), Engine: e, Settings: sm, Auth: authSvc,
-		Fetcher: fetch.New(cfg.FetchAllowedNetworks), Logs: logs, NATPMP: mapper, Log: log.With("component", "api"),
+		Fetcher: fetch.New(cfg.FetchAllowedNetworks), Logs: logs, NATPMP: mapper, OIDC: oidcLogin,
+		Log: log.With("component", "api"),
 		System: api.SystemInfo{
 			DataDir: cfg.DataDir, DownloadDir: cfg.DownloadDir, WatchDir: cfg.WatchDir, AllowedRoots: cfg.AllowedRoots,
 		},

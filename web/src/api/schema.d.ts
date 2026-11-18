@@ -613,7 +613,10 @@ export interface components {
     };
     AuthConfig: {
       localLogin: boolean;
+      /** @description Sign in by sending the browser to /api/piecemeal/v1/auth/oidc/login. */
       oidc: boolean;
+      /** @description What to call the OIDC provider on the sign-in button. */
+      oidcName?: string;
     };
     BulkAction: {
       /** @enum {string} */

@@ -40,6 +40,13 @@ Startup configuration comes from environment variables:
 | `PIECEMEAL_TRUSTED_PROXIES` | none | CIDRs whose `X-Forwarded-For` is trusted for client addresses. |
 | `PIECEMEAL_FETCH_ALLOWED_NETWORKS` | none | Private CIDRs that adding by URL may fetch from. Private, loopback and link-local addresses are refused otherwise. |
 | `PIECEMEAL_METRICS` | `auth` | `/metrics` access: `public`, `auth` (session or API key) or `off`. |
+| `PIECEMEAL_PUBLIC_URL` | none | Where people reach piecemeal, such as `https://piecemeal.example.com`. Needed for OIDC. |
+| `PIECEMEAL_OIDC_ISSUER` | off | OpenID Connect issuer URL, such as Pocket ID's. Turns on SSO sign-in. |
+| `PIECEMEAL_OIDC_CLIENT_ID`, `PIECEMEAL_OIDC_CLIENT_SECRET` | none | The client registered at the provider, with the callback `<public URL>/api/piecemeal/v1/auth/oidc/callback`. |
+| `PIECEMEAL_OIDC_NAME` | `SSO` | Name on the sign-in button. |
+| `PIECEMEAL_OIDC_ALLOWED_GROUPS` | anyone | Comma-separated groups allowed to sign in. |
+| `PIECEMEAL_OIDC_ADMIN_GROUPS` | none | Comma-separated groups whose members are admins. |
+| `PIECEMEAL_OIDC_GROUPS_CLAIM` | `groups` | ID token claim holding the groups. |
 | `PIECEMEAL_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. |
 | `PIECEMEAL_LOG_FORMAT` | `json` | `json` or `text`. |
 

@@ -196,7 +196,7 @@ piecemeal's own CD ends at a signed image on GHCR. Deploying is GitOps in `sebda
 1. The `transmission-wireguard` stack runs `ghcr.io/sebdanielsson/piecemeal:<version>` in place of today's build-at-start test service, in the WireGuard network namespace, with `/chungus/media/downloads` mounted at `/downloads` so the paths it reports match Radarr's and Sonarr's.
 2. Secrets (OIDC client secret, admin password hash, session key) go in the stack's `.env.sops` and are decrypted by its existing pre-deploy hook.
 3. Renovate in the infra repo opens a PR for each release; merging it makes Arcane redeploy within five minutes.
-4. A Pocket ID OIDC client for `https://piecemeal.risk-bee.ts.net/auth/oidc/callback` has to be created by hand.
+4. A Pocket ID OIDC client for `https://piecemeal.risk-bee.ts.net/api/piecemeal/v1/auth/oidc/callback` has to be created by hand.
 
 ## Phases
 
