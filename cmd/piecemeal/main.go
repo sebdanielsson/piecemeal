@@ -9,6 +9,8 @@
 //	piecemeal healthcheck     check /healthz of the piecemeal on PIECEMEAL_ADDR, for container healthchecks
 //	piecemeal backup FILE     copy the database in PIECEMEAL_DATA_DIR to FILE; works while piecemeal runs
 //	piecemeal restore FILE    replace the database with a backup; piecemeal must be stopped
+//	piecemeal import transmission|qbittorrent DIR [--map FROM=TO]... [--trust-data] [--dry-run]
+//	                          import another client's torrents; piecemeal must be stopped
 //	piecemeal version         print the version
 package main
 
@@ -82,6 +84,12 @@ func realMain() int {
 		return 0
 	case "healthcheck":
 		if err := healthcheck(os.Getenv("PIECEMEAL_ADDR")); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
+	case "import":
+		if err := importTorrents(context.Background(), os.Args[2:], os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}

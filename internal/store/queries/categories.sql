@@ -16,3 +16,6 @@ INSERT INTO tags (name) VALUES (sqlc.arg(name)) ON CONFLICT DO NOTHING;
 
 -- name: DeleteTag :execrows
 DELETE FROM tags WHERE name = sqlc.arg(name);
+
+-- name: CreateCategoryIfMissing :exec
+INSERT INTO categories (name, save_path) VALUES (sqlc.arg(name), '') ON CONFLICT (name) DO NOTHING;
