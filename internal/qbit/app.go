@@ -212,6 +212,9 @@ func (s *Server) transferInfo(w http.ResponseWriter, _ *http.Request) {
 		"up_rate_limit":     t.UploadLimit,
 		"dht_nodes":         t.DHTNodes,
 		"connection_status": status,
+		// piecemeal doesn't learn its external address.
+		"last_external_address_v4": "",
+		"last_external_address_v6": "",
 	})
 }
 

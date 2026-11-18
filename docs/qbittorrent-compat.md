@@ -17,6 +17,8 @@ CI checks it two ways (see [`test/e2e`](../test/e2e)): Radarr, Sonarr and Prowla
 - Endpoints that read accept GET and POST, since some clients send everything as POST. Endpoints that change something accept only POST and answer 405 to GET.
 - Parameters come from the query string and from urlencoded or multipart bodies. Bodies are read only after authentication and are capped at 64 MiB.
 - Endpoints for features piecemeal doesn't have answer 409 with a short reason, qBittorrent's status for a valid request it can't carry out.
+- Actions answer 200 with an empty body, or 204 where qBittorrent 5.3.0 does (`setSpeedLimits`, `addTrackers`, `editTracker`, `removeTrackers`, `setTags`, `deleteAPIKey`, `clientdata/store`).
+- Instance-wide changes need an admin, as in piecemeal's own API: other users' `setPreferences` applies the speed limits only, and their `banPeers` and `setCookies` get 403.
 - Endpoints that take a single `hash` answer 404 for an unknown one; endpoints that take `hashes` skip unknown ones.
 
 ## Endpoints
@@ -32,7 +34,7 @@ Status: **yes** is implemented, **partial** works with the differences noted, **
 | `buildInfo` | partial | Library versions are empty strings. |
 | `processInfo` | yes | |
 | `preferences` | yes | All 241 keys of qBittorrent 5.3.0 with their types. Keys piecemeal maps come from its settings (download, speed, connection, queueing, seeding goals, IP filter, schedule, Web UI); the rest report qBittorrent's defaults and are fixed. `web_ui_api_key` is the prefix of the caller's key from `rotateAPIKey`, or empty: piecemeal stores only key hashes. |
-| `setPreferences` | partial | Applies the keys piecemeal maps and ignores the rest, so writing back the whole object works. Keys pinned by environment variables are ignored. A mapped key with a bad value fails the whole request with 400. Rate limits are rounded down to whole KiB/s, as qBittorrent does. `web_ui_password` is ignored: manage users in piecemeal. |
+| `setPreferences` | partial | Applies the keys piecemeal maps and ignores the rest, so writing back the whole object works. Keys pinned by environment variables are ignored. A mapped key with a bad value fails the whole request with 400; a `json` that isn't an object is ignored, as in qBittorrent. Rate limits are rounded down to whole KiB/s, as qBittorrent does. `web_ui_password` is ignored: manage users in piecemeal. |
 | `defaultSavePath` | yes | |
 | `networkInterfaceList`, `networkInterfaceAddressList` | yes | Listed for the settings page; piecemeal binds with `PIECEMEAL_LISTEN_HOST`, so choosing one has no effect. |
 | `getDirectoryContent` | partial | Only inside the allowed roots; 404 elsewhere. Strings only: `withMetadata` is ignored. |
@@ -60,7 +62,7 @@ Status: **yes** is implemented, **partial** works with the differences noted, **
 | Endpoint | Status | Notes |
 | --- | --- | --- |
 | `info` | yes | |
-| `speedLimitsMode`, `setSpeedLimitsMode`, `toggleSpeedLimitsMode` | yes | |
+| `speedLimitsMode`, `setSpeedLimitsMode`, `toggleSpeedLimitsMode` | yes | Any `mode` but 0 turns the alternative limits on, as in qBittorrent. |
 | `downloadLimit`, `uploadLimit`, `setDownloadLimit`, `setUploadLimit` | yes | The normal limits, whatever the mode, rounded down to whole KiB/s. |
 | `getSpeedLimits`, `setSpeedLimits` | yes | |
 | `banPeers` | yes | Adds the addresses to `banned_IPs`. |
@@ -88,7 +90,7 @@ Status: **yes** is implemented, **partial** works with the differences noted, **
 | `pause`, `resume` | yes | Aliases of `stop` and `start`, for WebAPI before 2.11. |
 | `recheck`, `reannounce` | yes | `reannounce` announces to every tracker; it doesn't take `trackers`/`urls`. |
 | `setForceStart` | yes | |
-| `setShareLimits` | partial | `ratioLimit`, `seedingTimeLimit`, `inactiveSeedingTimeLimit`; missing ones default to -2. `shareLimitAction` and `shareLimitsMode` are ignored: the global seed goal action applies, and any limit reached ends seeding. |
+| `setShareLimits` | partial | `ratioLimit`, `seedingTimeLimit`, `inactiveSeedingTimeLimit`; missing ones default to -2. `shareLimitAction` and `shareLimitsMode` are ignored: the global seed goal action applies, and any limit reached ends seeding. qBittorrent 5.3.0 requires those two; piecemeal doesn't, for older clients. |
 | `setDownloadLimit`, `setUploadLimit`, `downloadLimit`, `uploadLimit` | partial | Stored and reported, not enforced (anacrolix has only client-wide limits). |
 | `toggleSequentialDownload`, `toggleFirstLastPiecePrio`, `filePrio`, `rename` | yes | |
 | `topPrio`, `bottomPrio`, `increasePrio`, `decreasePrio` | yes | 409 "Torrent queueing must be enabled" with queueing off, as in qBittorrent. |
@@ -96,7 +98,7 @@ Status: **yes** is implemented, **partial** works with the differences noted, **
 | `tags`, `createTags`, `deleteTags`, `addTags`, `removeTags`, `setTags` | yes | `addTags` and `setTags` create unknown tags. |
 | `addTrackers`, `editTracker`, `removeTrackers` | yes | `hash` may name several torrents, `all`, or `*` for `removeTrackers`. Percent-encoded URLs, as VueTorrent sends them, are decoded. `editTracker` takes `url` or `origUrl`; `tier` is ignored. |
 | `webseeds`, `addWebSeeds`, `editWebSeed`, `removeWebSeeds` | yes | |
-| `addPeers` | yes | |
+| `addPeers` | yes | Answers with each torrent's count of added and invalid peers. |
 | `setLocation`, `setSavePath` | yes | Data moves in the background (state `moving`), inside the allowed roots. |
 | `renameFile`, `renameFolder` | yes | Renames on disk and remembers the mapping. |
 | `export` | yes | With the current trackers and web seeds, named after the torrent. |

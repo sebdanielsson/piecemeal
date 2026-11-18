@@ -40,7 +40,7 @@ func TestTransferEndpoints(t *testing.T) {
 	expect(t, "setSpeedLimits missing", e.post("transfer/setSpeedLimits", url.Values{"dl_limit": {"0"}}), http.StatusBadRequest)
 	expect(t, "setSpeedLimits", e.post("transfer/setSpeedLimits", url.Values{
 		"dl_limit": {"2048"}, "up_limit": {"-1"}, "alt_dl_limit": {"1"}, "alt_up_limit": {"3072"},
-	}), http.StatusOK)
+	}), http.StatusNoContent)
 	var limits map[string]int64
 	e.get("transfer/getSpeedLimits").json(t, &limits)
 	if want := map[string]int64{"dl_limit": 2048, "up_limit": 0, "alt_dl_limit": 1024, "alt_up_limit": 3072}; !maps.Equal(limits, want) {
@@ -74,13 +74,13 @@ func TestTorrentEditing(t *testing.T) {
 		return v
 	}
 
-	expect(t, "addTrackers", e.post("torrents/addTrackers", with("urls", "https://a.example/announce\nudp://b.example:1")), http.StatusOK)
+	expect(t, "addTrackers", e.post("torrents/addTrackers", with("urls", "https://a.example/announce\nudp://b.example:1")), http.StatusNoContent)
 	expect(t, "editTracker", e.post("torrents/editTracker", with("origUrl", "udp://b.example:1", "newUrl", "udp://c.example:1")), http.StatusNoContent)
 	expect(t, "editTracker missing", e.post("torrents/editTracker", with("url", "udp://x:1", "newUrl", "udp://y:1")), http.StatusConflict)
 	// VueTorrent percent-encodes each URL.
-	expect(t, "removeTrackers", e.post("torrents/removeTrackers", with("urls", url.QueryEscape("https://a.example/announce"))), http.StatusOK)
+	expect(t, "removeTrackers", e.post("torrents/removeTrackers", with("urls", url.QueryEscape("https://a.example/announce"))), http.StatusNoContent)
 	expect(t, "removeTrackers none", e.post("torrents/removeTrackers", with("urls", "https://none.example/announce")), http.StatusConflict)
-	expect(t, "removeTrackers all", e.post("torrents/removeTrackers", with("hash", "*", "urls", "https://none.example/announce")), http.StatusOK)
+	expect(t, "removeTrackers all", e.post("torrents/removeTrackers", with("hash", "*", "urls", "https://none.example/announce")), http.StatusNoContent)
 	expect(t, "addTrackers unknown", e.post("torrents/addTrackers", with("hash", strings.Repeat("0", 40), "urls", "udp://d.example:1")), http.StatusNotFound)
 	var trs []map[string]any
 	e.get("torrents/trackers?hash="+seed.Hash).json(t, &trs)
@@ -104,8 +104,8 @@ func TestTorrentEditing(t *testing.T) {
 		t.Fatalf("files after renames: %v", files)
 	}
 
-	expect(t, "setTags", e.post("torrents/setTags", url.Values{"hashes": {seed.Hash}, "tags": {"a,b"}}), http.StatusOK)
-	expect(t, "setTags again", e.post("torrents/setTags", url.Values{"hashes": {seed.Hash}, "tags": {"b"}}), http.StatusOK)
+	expect(t, "setTags", e.post("torrents/setTags", url.Values{"hashes": {seed.Hash}, "tags": {"a,b"}}), http.StatusNoContent)
+	expect(t, "setTags again", e.post("torrents/setTags", url.Values{"hashes": {seed.Hash}, "tags": {"b"}}), http.StatusNoContent)
 	var list []Torrent
 	e.get("torrents/info").json(t, &list)
 	if list[0].Tags != "b" || list[0].Priority != -1 {

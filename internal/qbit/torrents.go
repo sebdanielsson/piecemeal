@@ -393,7 +393,7 @@ func (s *Server) properties(w http.ResponseWriter, r *http.Request) {
 		"pieces_have": t.PiecesHave, "pieces_num": pieces, "reannounce": 0, "seeds": t.Seeds,
 		"seeds_total": t.Seeds, "total_size": minusOne(t.TotalSize),
 		"up_speed_avg": avg(t.Uploaded, t.ActiveTime), "up_speed": t.UpRate,
-		"private": t.Private, "has_metadata": t.HasMetadata, "progress": t.Progress,
+		"private": t.Private, "is_private": t.Private, "has_metadata": t.HasMetadata, "progress": t.Progress,
 		"popularity": 0, "availability": 0,
 	})
 }
@@ -678,22 +678,21 @@ func (s *Server) setForceStart(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// withHashes parses the form and runs fn on the known torrents in hashes.
+// withHashes runs fn on the known torrents in hashes and answers 200.
 func (s *Server) withHashes(w http.ResponseWriter, r *http.Request, fn func(hs []string) error) {
-	if err := parseForm(w, r); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+	s.withHashesStatus(w, r, http.StatusOK, fn)
+}
+
+// withHashesStatus runs fn on the known torrents in hashes and answers
+// status.
+func (s *Server) withHashesStatus(w http.ResponseWriter, r *http.Request, status int, fn func(hs []string) error) {
+	if hs := s.known(hashes(r, "hashes")); len(hs) > 0 {
+		if err := fn(hs); err != nil {
+			s.engineError(w, err)
+			return
+		}
 	}
-	hs := s.known(hashes(r, "hashes"))
-	if len(hs) == 0 {
-		done(w)
-		return
-	}
-	if err := fn(hs); err != nil {
-		s.engineError(w, err)
-		return
-	}
-	done(w)
+	w.WriteHeader(status)
 }
 
 func (s *Server) setShareLimits(w http.ResponseWriter, r *http.Request) {

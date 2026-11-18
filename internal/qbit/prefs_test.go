@@ -2,6 +2,7 @@ package qbit
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"maps"
 	"net/http"
@@ -13,7 +14,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sebdanielsson/piecemeal/internal/auth"
 	"github.com/sebdanielsson/piecemeal/internal/engine/enginetest"
+	"github.com/sebdanielsson/piecemeal/internal/store"
 )
 
 func (e *env) setPreferences(prefs map[string]any) response {
@@ -80,7 +83,8 @@ func TestSetPreferences(t *testing.T) {
 	}
 	expect(t, "bad hour", e.setPreferences(map[string]any{"schedule_to_hour": 24}), http.StatusBadRequest)
 	expect(t, "no json", e.post("app/setPreferences", nil), http.StatusBadRequest)
-	expect(t, "not an object", e.post("app/setPreferences", url.Values{"json": {"[1]"}}), http.StatusBadRequest)
+	// qBittorrent 5.3.0 ignores a value that isn't an object.
+	expect(t, "not an object", e.post("app/setPreferences", url.Values{"json": {"[1]"}}), http.StatusOK)
 }
 
 func jsonEqual(t *testing.T, a, b any) bool {
@@ -111,7 +115,7 @@ func TestAPIKeyRotation(t *testing.T) {
 
 	e.post("app/rotateAPIKey", nil).json(t, &out)
 	expect(t, "old key", anon.get("app/version", "Authorization", "Bearer "+key), http.StatusForbidden)
-	expect(t, "delete", e.post("app/deleteAPIKey", nil), http.StatusOK)
+	expect(t, "delete", e.post("app/deleteAPIKey", nil), http.StatusNoContent)
 	expect(t, "deleted key", anon.get("app/version", "Authorization", "Bearer "+out["apiKey"]), http.StatusForbidden)
 	if m := e.preferences()["web_ui_api_key"]; m != "" {
 		t.Fatalf("marker after delete: %q", m)
@@ -130,14 +134,14 @@ func TestClientData(t *testing.T) {
 		e.get("clientdata/load?"+q.Encode()).json(t, &out)
 		return out
 	}
-	expect(t, "store", e.post("clientdata/store", url.Values{"data": {`{"a": 1, "b": {"c": [2]}}`}}), http.StatusOK)
+	expect(t, "store", e.post("clientdata/store", url.Values{"data": {`{"a": 1, "b": {"c": [2]}}`}}), http.StatusNoContent)
 	if got := load(""); len(got) != 2 {
 		t.Fatalf("load all: %v", got)
 	}
 	if got := load(`["a", "z"]`); len(got) != 1 || got["a"] != 1.0 {
 		t.Fatalf("load keys: %v", got)
 	}
-	expect(t, "delete", e.post("clientdata/store", url.Values{"data": {`{"a": null}`}}), http.StatusOK)
+	expect(t, "delete", e.post("clientdata/store", url.Values{"data": {`{"a": null}`}}), http.StatusNoContent)
 	if got := load(""); len(got) != 1 || got["b"] == nil {
 		t.Fatalf("after delete: %v", got)
 	}
@@ -278,5 +282,30 @@ func TestPreferenceTypes(t *testing.T) {
 		if _, ok := p[k]; !ok && k != "web_ui_password" {
 			t.Errorf("%s missing", k)
 		}
+	}
+}
+
+// TestNonAdminWrites checks that users who aren't admins can change the
+// speed limits through the qBittorrent API but not instance-wide settings.
+func TestNonAdminWrites(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	u, err := e.store.CreateUser(ctx, store.CreateUserParams{Username: "bob", CreatedAt: time.Now().Unix()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, key, err := e.auth.CreateAPIKey(ctx, &auth.Principal{UserID: u.ID, Username: "bob"}, "bob's arr", auth.ScopeQBittorrent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bearer := []string{"Authorization", "Bearer " + key}
+	b, _ := json.Marshal(map[string]any{"dl_limit": 2048, "dht": true, "banned_IPs": "203.0.113.1"})
+	expect(t, "setPreferences", e.post("app/setPreferences", url.Values{"json": {string(b)}}, bearer...), http.StatusOK)
+	expect(t, "banPeers", e.post("transfer/banPeers", url.Values{"peers": {"203.0.113.2:1"}}, bearer...), http.StatusForbidden)
+	expect(t, "setCookies", e.post("app/setCookies", url.Values{"cookies": {"[]"}}, bearer...), http.StatusForbidden)
+	e.login()
+	p := e.preferences()
+	if p["dl_limit"] != 2048.0 || p["dht"] != false || p["banned_IPs"] != "" {
+		t.Fatalf("after a user's writes: dl_limit %v, dht %v, banned %q", p["dl_limit"], p["dht"], p["banned_IPs"])
 	}
 }

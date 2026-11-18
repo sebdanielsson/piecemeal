@@ -38,12 +38,13 @@ func (s *Server) setSpeedLimitsMode(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	mode := r.FormValue("mode")
-	if mode != "0" && mode != "1" {
+	mode, err := strconv.Atoi(r.FormValue("mode"))
+	if err != nil {
 		http.Error(w, "mode must be 0 or 1", http.StatusBadRequest)
 		return
 	}
-	s.setSetting(w, r, map[string]any{"altSpeedEnabled": mode == "1"})
+	// qBittorrent 5.3.0 takes any value but 0 as on.
+	s.setSetting(w, r, map[string]any{"altSpeedEnabled": mode != 0})
 }
 
 // limitSetting is the setting behind the global limit endpoints: always
@@ -110,7 +111,11 @@ func (s *Server) setSpeedLimits(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Missing required parameters: "+strings.Join(missing, ", "), http.StatusBadRequest)
 		return
 	}
-	s.setSetting(w, r, values)
+	if _, err := s.settings.Set(r.Context(), values); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	noContent(w)
 }
 
 // setSetting changes settings from a qBittorrent endpoint.
@@ -123,8 +128,7 @@ func (s *Server) setSetting(w http.ResponseWriter, r *http.Request, values map[s
 }
 
 func (s *Server) banPeers(w http.ResponseWriter, r *http.Request) {
-	if err := parseForm(w, r); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	if !requireAdmin(w, r) {
 		return
 	}
 	banned := strings.Split(s.settings.Get().BannedIPs, "\n")
@@ -375,7 +379,7 @@ func (s *Server) eachTracker(w http.ResponseWriter, r *http.Request, fn func(has
 			return
 		}
 	}
-	done(w)
+	noContent(w)
 }
 
 func (s *Server) addTrackers(w http.ResponseWriter, r *http.Request) {
@@ -423,18 +427,31 @@ func (s *Server) addPeers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var peers []string
+	failed := 0
 	for _, p := range strings.Split(r.FormValue("peers"), "|") {
 		if _, err := netip.ParseAddrPort(strings.TrimSpace(p)); err == nil {
 			peers = append(peers, strings.TrimSpace(p))
+		} else {
+			failed++
 		}
 	}
 	if len(peers) == 0 {
 		http.Error(w, "None of the supplied peers are valid", http.StatusBadRequest)
 		return
 	}
-	s.withHashes(w, r, func(hs []string) error {
-		return s.engine.AddPeers(r.Context(), peers, resolveAll(s, hs)...)
-	})
+	hs := resolveAll(s, s.known(hashes(r, "hashes")))
+	if len(hs) > 0 {
+		if err := s.engine.AddPeers(r.Context(), peers, hs...); err != nil {
+			s.engineError(w, err)
+			return
+		}
+	}
+	// Per torrent, how many peers were added and how many weren't valid.
+	out := map[string]map[string]int{}
+	for _, h := range hs {
+		out[h] = map[string]int{"added": len(peers), "failed": failed}
+	}
+	writeJSON(w, out)
 }
 
 func (s *Server) setLocation(param string) func(http.ResponseWriter, *http.Request) {
@@ -512,7 +529,7 @@ func (s *Server) torrentLimits(download bool) func(http.ResponseWriter, *http.Re
 				if download {
 					v = t.DownloadLimit
 				}
-				out[h] = unlimited(v)
+				out[h] = max(v, 0)
 			}
 		}
 		writeJSON(w, out)
@@ -625,7 +642,7 @@ func (s *Server) pieceHashes(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) setTags(w http.ResponseWriter, r *http.Request) {
-	s.withHashes(w, r, func(hs []string) error {
+	s.withHashesStatus(w, r, http.StatusNoContent, func(hs []string) error {
 		want := list(r.FormValue("tags"))
 		var errs []error
 		for _, h := range resolveAll(s, hs) {

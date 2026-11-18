@@ -47,7 +47,8 @@ func (s *Server) setPreferences(w http.ResponseWriter, r *http.Request) {
 	}
 	var in map[string]any
 	if err := json.Unmarshal([]byte(raw), &in); err != nil || in == nil {
-		http.Error(w, "json must be a JSON object", http.StatusBadRequest)
+		// qBittorrent 5.3.0 ignores a value that isn't a JSON object.
+		done(w)
 		return
 	}
 	cur := s.settings.Get()
@@ -62,8 +63,12 @@ func (s *Server) setPreferences(w http.ResponseWriter, r *http.Request) {
 		delete(values, "peerPort")
 	}
 	locked := s.settings.Locked()
+	admin := principal(r).IsAdmin
 	for k, v := range values {
-		if _, pinned := locked[k]; pinned || reflect.DeepEqual(settingValue(cur, k), v) {
+		_, pinned := locked[k]
+		// Users who aren't admins may change the speed limits only, as in
+		// piecemeal's own API.
+		if pinned || (!admin && !userSettings[k]) || reflect.DeepEqual(settingValue(cur, k), v) {
 			delete(values, k)
 		}
 	}
@@ -80,6 +85,22 @@ func (s *Server) setPreferences(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	done(w)
+}
+
+// userSettings are the settings any user may change; the rest need an
+// admin.
+var userSettings = map[string]bool{
+	"downloadLimit": true, "uploadLimit": true, "altDownloadLimit": true, "altUploadLimit": true,
+	"altSpeedEnabled": true,
+}
+
+// requireAdmin answers 403 unless the caller is an admin.
+func requireAdmin(w http.ResponseWriter, r *http.Request) bool {
+	if !principal(r).IsAdmin {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return false
+	}
+	return true
 }
 
 // settingValue reads a setting by JSON name, in the type Set takes.
@@ -360,5 +381,5 @@ func (s *Server) deleteAPIKey(w http.ResponseWriter, r *http.Request) {
 		s.engineError(w, err)
 		return
 	}
-	done(w)
+	noContent(w)
 }

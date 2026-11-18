@@ -32,6 +32,7 @@ type env struct {
 	auth   *auth.Service
 	client *http.Client
 	save   string
+	store  *store.Store
 }
 
 func newEnv(t *testing.T, environ ...string) *env {
@@ -71,7 +72,7 @@ func newEnv(t *testing.T, environ ...string) *env {
 	srv := httptest.NewServer(New(Deps{Engine: e, Settings: sm, Auth: a, Fetcher: fetch.New(nil), Store: st, Logs: logs, Log: log, HTTPPort: 8080}))
 	t.Cleanup(srv.Close)
 	jar, _ := cookiejar.New(nil)
-	return &env{t: t, srv: srv, engine: e, auth: a, client: &http.Client{Jar: jar}, save: save}
+	return &env{t: t, srv: srv, engine: e, auth: a, client: &http.Client{Jar: jar}, save: save, store: st}
 }
 
 type response struct {
@@ -83,7 +84,7 @@ type response struct {
 // newEnvClient is another client of the same server, with its own cookies.
 func newEnvClient(e *env) *env {
 	jar, _ := cookiejar.New(nil)
-	return &env{t: e.t, srv: e.srv, engine: e.engine, auth: e.auth, client: &http.Client{Jar: jar}, save: e.save}
+	return &env{t: e.t, srv: e.srv, engine: e.engine, auth: e.auth, client: &http.Client{Jar: jar}, save: e.save, store: e.store}
 }
 
 func (r response) json(t *testing.T, v any) {

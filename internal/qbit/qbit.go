@@ -389,9 +389,16 @@ func writeJSON(w http.ResponseWriter, v any) {
 	}
 }
 
-// done answers an action that has nothing to return.
+// done answers an action that has nothing to return, with 200 as most
+// qBittorrent endpoints do.
 func done(w http.ResponseWriter) {
 	w.WriteHeader(http.StatusOK)
+}
+
+// noContent answers an action with 204, as qBittorrent 5.3.0 does for the
+// endpoints added or reworked in recent WebAPI versions.
+func noContent(w http.ResponseWriter) {
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // parseForm reads the query string and a POST body, which qBittorrent

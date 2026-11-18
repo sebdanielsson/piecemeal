@@ -46,6 +46,9 @@ func (s *Server) cookies(w http.ResponseWriter, _ *http.Request) {
 
 // setCookies replaces the cookies sent when downloading torrent files.
 func (s *Server) setCookies(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r) {
+		return
+	}
 	raw := bytes.TrimSpace([]byte(r.FormValue("cookies")))
 	var cs []fetch.Cookie
 	if len(raw) == 0 || raw[0] != '[' || json.Unmarshal(raw, &cs) != nil {
@@ -136,5 +139,5 @@ func (s *Server) clientDataStore(w http.ResponseWriter, r *http.Request) {
 		s.engineError(w, err)
 		return
 	}
-	done(w)
+	noContent(w)
 }
