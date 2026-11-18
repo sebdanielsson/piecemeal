@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.6.0](https://github.com/sebdanielsson/piecemeal/compare/v0.5.0...v0.6.0) (2026-11-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* with OIDC, set PIECEMEAL_OIDC_ALLOWED_GROUPS, or PIECEMEAL_OIDC_ALLOW_ANY=true to keep letting every account at the provider sign in.
+
+### Features
+
+* back up and restore the database ([#27](https://github.com/sebdanielsson/piecemeal/issues/27)) ([fdfd19a](https://github.com/sebdanielsson/piecemeal/commit/fdfd19aea0e2cb859c58feae1d9fb79efefee221))
+* import torrents from Transmission and qBittorrent ([#28](https://github.com/sebdanielsson/piecemeal/issues/28)) ([5cdd2d3](https://github.com/sebdanielsson/piecemeal/commit/5cdd2d3b00e7306a70bf1af7d1b645efeda4994a))
+
+
+### Bug Fixes
+
+* **deps:** update dependency lucide-react to ^1.74.0 ([#25](https://github.com/sebdanielsson/piecemeal/issues/25)) ([1e1fbf4](https://github.com/sebdanielsson/piecemeal/commit/1e1fbf4981b81e72d73a29a2e5861c13b5921ada))
+* **deps:** update module github.com/dlclark/regexp2 to v2 ([#23](https://github.com/sebdanielsson/piecemeal/issues/23)) ([3e10ed6](https://github.com/sebdanielsson/piecemeal/commit/3e10ed6c16f9bd3c19995ab08f0c83344322663e))
+* harden authentication, fetching and RSS from a security audit ([#29](https://github.com/sebdanielsson/piecemeal/issues/29)) ([b9057c5](https://github.com/sebdanielsson/piecemeal/commit/b9057c5d29971964f990f77492ad8788f02727f7))
+
+
+### Performance Improvements
+
+* faster sync/maindata polls, measured with a 1,000-torrent load test ([#30](https://github.com/sebdanielsson/piecemeal/issues/30)) ([fc8ca1c](https://github.com/sebdanielsson/piecemeal/commit/fc8ca1c76c4605cc53a8a1e263b35cc652a97f40))
+
 ## [0.5.0](https://github.com/sebdanielsson/piecemeal/compare/v0.4.0...v0.5.0) (2026-11-18)
 
 
