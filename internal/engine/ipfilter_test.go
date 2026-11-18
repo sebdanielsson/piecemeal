@@ -85,6 +85,9 @@ func TestBanDropsPeersWithoutRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.waitFor(hash, "the banned seeder to go", func(st Torrent) bool { return st.Seeds+st.Peers == 0 })
+	if log := h.engine.PeerLog(-1); len(log) == 0 || log[0].IP != host || log[0].Blocked || log[0].Reason != "banned" {
+		t.Fatalf("peer log: %+v", log)
+	}
 	h.engine.mu.Lock()
 	same := h.engine.client == client
 	h.engine.mu.Unlock()

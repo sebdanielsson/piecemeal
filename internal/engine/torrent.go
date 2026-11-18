@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -169,6 +170,7 @@ func (m *managed) params() store.UpsertTorrentParams {
 		RatioLimit: r.RatioLimit, SeedingTimeLimit: r.SeedingTimeLimit,
 		InactiveSeedingTimeLimit: r.InactiveSeedingTimeLimit, FilePriorities: prio, Error: r.Error,
 		Trackers: jsonOrEmpty(m.trackers), WebSeeds: jsonOrEmpty(m.webSeeds), FilePaths: jsonOrEmpty(m.renames),
+		Comment:       r.Comment,
 		ContentLayout: cmp.Or(r.ContentLayout, LayoutOriginal),
 	}
 }
@@ -813,6 +815,15 @@ func (e *Engine) announce(t *torrent.Torrent, trackers []string, req tracker.Ann
 		t.AddPeers(peers)
 	}
 	<-ctx.Done()
+}
+
+// SetComment replaces the comment the torrents show; the torrent file is
+// unchanged.
+func (e *Engine) SetComment(ctx context.Context, comment string, hashes ...string) error {
+	return e.each(ctx, hashes, func(m *managed) error {
+		m.rec.Comment = sql.NullString{String: comment, Valid: true}
+		return nil
+	})
 }
 
 // SetSequential turns sequential download on or off.

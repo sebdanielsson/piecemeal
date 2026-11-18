@@ -92,6 +92,7 @@ type addTorrentOutput struct {
 // are.
 type UpdateTorrentRequest struct {
 	Name                     *string   `json:"name,omitempty"`
+	Comment                  *string   `json:"comment,omitempty" doc:"Replaces the comment shown for the torrent; the torrent file is unchanged."`
 	SavePath                 *string   `json:"savePath,omitempty" doc:"Moves the data there in the background; the state is moving until it's done."`
 	Category                 *string   `json:"category,omitempty" doc:"Empty removes the category."`
 	Tags                     *[]string `json:"tags,omitempty" doc:"Replaces the torrent's tags."`
@@ -493,6 +494,9 @@ func (a *API) updateTorrent(ctx context.Context, hash string, u UpdateTorrentReq
 			l.InactiveSeedingTimeLimit = *u.InactiveSeedingTimeLimit
 		}
 		errs = append(errs, e.SetShareLimits(ctx, l, hash))
+	}
+	if u.Comment != nil {
+		errs = append(errs, e.SetComment(ctx, *u.Comment, hash))
 	}
 	if u.Forced != nil {
 		errs = append(errs, e.SetForced(ctx, *u.Forced, hash))

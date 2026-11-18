@@ -35,13 +35,13 @@ Status: **yes** is implemented, **partial** works with the differences noted, **
 | --- | --- | --- |
 | `version` | yes | `v5.3.0` |
 | `webapiVersion` | yes | `2.16.2` |
-| `buildInfo` | partial | Library versions are empty strings. |
+| `buildInfo` | yes | `libtorrent` names the anacrolix/torrent version; `qt`, `boost`, `openssl` and `zlib` are empty, since piecemeal uses none of them. |
 | `processInfo` | yes | |
 | `preferences` | yes | All 241 keys of qBittorrent 5.3.0 with their types. Keys piecemeal maps come from its settings (download, speed, connection, queueing, seeding goals, IP filter, schedule, Web UI); the rest report qBittorrent's defaults and are fixed. `web_ui_api_key` is the prefix of the caller's key from `rotateAPIKey`, or empty: piecemeal stores only key hashes. `web_ui_host_header_validation_enabled` and `web_ui_domain_list` report `PIECEMEAL_ALLOWED_HOSTS`. |
 | `setPreferences` | partial | Applies the keys piecemeal maps and ignores the rest, so writing back the whole object works. Keys pinned by environment variables are ignored. A mapped key with a bad value fails the whole request with 400; a `json` that isn't an object is ignored, as in qBittorrent. Rate limits are rounded down to whole KiB/s, as qBittorrent does. `web_ui_password` is ignored: manage users in piecemeal. |
 | `defaultSavePath` | yes | |
 | `networkInterfaceList`, `networkInterfaceAddressList` | yes | Listed for the settings page; piecemeal binds with `PIECEMEAL_LISTEN_HOST`, so choosing one has no effect. |
-| `getDirectoryContent` | partial | Only inside the allowed roots; 404 elsewhere. Strings only: `withMetadata` is ignored. |
+| `getDirectoryContent` | yes | Only inside the allowed roots; 404 elsewhere. With `withMetadata`, objects with the name, type, size and dates; Linux reports no creation time, so `creation_date` is the inode change time there. |
 | `getFreeSpaceAtPath` | yes | Only inside the allowed roots; 404 elsewhere. |
 | `cookies`, `setCookies` | yes | Sent with torrent files fetched by URL, matched by domain, path and expiry. Kept across restarts. Admins only: they're usually tracker logins. |
 | `rotateAPIKey`, `deleteAPIKey` | yes | Manage the caller's own `qbittorrent`-scoped key, named "qBittorrent API key". Need a session or a `full`-scope key. |
@@ -77,15 +77,15 @@ Status: **yes** is implemented, **partial** works with the differences noted, **
 | Endpoint | Status | Notes |
 | --- | --- | --- |
 | `main` | yes | piecemeal's own log, info and above, from a bounded buffer. Admins only. |
-| `peers` | partial | Always empty: piecemeal doesn't log refused peers. |
+| `peers` | yes | Addresses the IP filter refused (`blocked`, reason "IP filter" and the range's description) and banned ones (reason "banned"), each at most once a minute, the last 1,000. |
 
 ### torrents
 
 | Endpoint | Status | Notes |
 | --- | --- | --- |
-| `info` | yes | `filter`, `category`, `tag`, `hashes`, `private`, `sort`, `reverse`, `limit` and `offset`. Not yet `includeFiles` and `includeTrackers`. `availability` is 0. `priority` is the queue position, 0 outside the queue, and -1 with queueing off. |
-| `properties` | yes | 404 for unknown hashes, 200 for magnets still fetching metadata. |
-| `files` | yes | `availability` is 0. |
+| `info` | yes | `filter`, `category`, `tag`, `hashes`, `private`, `sort`, `reverse`, `limit` and `offset`; `includeFiles` and `includeTrackers` add the `files` and `trackers` lists (the trackers without the DHT, PeX and LSD rows). `availability` is the distributed copies among connected peers, -1 for complete torrents and ones not running, as qBittorrent reports seeds. `popularity` is the ratio per month of activity. `priority` is the queue position, 0 outside the queue, and -1 with queueing off. |
+| `properties` | yes | 404 for unknown hashes, 200 for magnets still fetching metadata. `availability` and `popularity` as in `info`. |
+| `files` | yes | `availability` is the share of a file's pieces some connected peer has, -1 for complete torrents. |
 | `trackers` | partial | Trackers and their tiers, with status "not contacted" and -1 counts: anacrolix doesn't expose announce results ([#44](https://github.com/sebdanielsson/piecemeal/issues/44)). DHT, PeX and LSD rows as in qBittorrent. |
 | `pieceStates`, `pieceHashes` | yes | |
 | `add` | partial | `urls` (magnets, and http(s) links fetched with SSRF protection and the cookie jar), `torrents`, `savepath`, `category` (created if missing), `tags`, `stopped`/`paused`, `skip_checking`/`seedMode`, `rename`, `contentLayout`, `ratioLimit`, `seedingTimeLimit`, `inactiveSeedingTimeLimit`, `sequentialDownload`, `firstLastPiecePrio`, `forced`. Synchronous. Answers 200 with qBittorrent 5.2's JSON counts, 409 when every torrent was already there, 415 for invalid torrent files. `autoTMM`, `upLimit` and `dlLimit` are ignored. |
@@ -112,7 +112,9 @@ Status: **yes** is implemented, **partial** works with the differences noted, **
 | `SSLParameters` | partial | Empty strings: piecemeal has no SSL torrents. |
 | `setAutoManagement`, `setDownloadPath` | partial | Accepted and ignored: piecemeal has no automatic torrent management or incomplete folder. |
 | `setSuperSeeding`, `setSSLParameters` | never | anacrolix has no super seeding or SSL torrents ([#46](https://github.com/sebdanielsson/piecemeal/issues/46), [#48](https://github.com/sebdanielsson/piecemeal/issues/48)). |
-| `setComment`, `pieceAvailability`, `fetchMetadata`, `parseMetadata`, `saveMetadata` | no | |
+| `setComment` | yes | Replaces the comment `info`, `properties` and `sync/maindata` show, kept across restarts; the torrent file and `export` keep the original. |
+| `pieceAvailability` | yes | How many connected peers have each piece; `[]` for complete torrents, ones not running, and magnets without metadata. |
+| `fetchMetadata`, `parseMetadata`, `saveMetadata` | no | |
 
 ### Other groups
 

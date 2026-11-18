@@ -198,6 +198,9 @@ func TestAppLeftovers(t *testing.T) {
 	if !slices.Contains([]any{"linux", "macos", "windows", "unknown"}, build["platform"]) {
 		t.Fatalf("platform %v", build["platform"])
 	}
+	if lib, _ := build["libtorrent"].(string); !strings.HasPrefix(lib, "anacrolix/torrent v") {
+		t.Fatalf("libtorrent %q", lib)
+	}
 }
 
 func TestDownloadFile(t *testing.T) {

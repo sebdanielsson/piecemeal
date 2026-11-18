@@ -2438,6 +2438,10 @@
             "description": "Empty removes the category.",
             "type": "string"
           },
+          "comment": {
+            "description": "Replaces the comment shown for the torrent; the torrent file is unchanged.",
+            "type": "string"
+          },
           "downloadLimit": {
             "deprecated": true,
             "description": "Ignored: piecemeal has no per-torrent speed limits. Use the global limits.",

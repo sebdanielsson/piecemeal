@@ -195,4 +195,60 @@ func TestDirectoryContent(t *testing.T) {
 	}
 	expect(t, "outside the roots", e.post("app/getDirectoryContent", url.Values{"dirPath": {"/etc"}}), http.StatusNotFound)
 	_ = context.Background()
+
+	if err := os.WriteFile(filepath.Join(e.save, "f.bin"), make([]byte, 1234), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var objs []map[string]any
+	e.post("app/getDirectoryContent", url.Values{"dirPath": {e.save}, "withMetadata": {"true"}}).json(t, &objs)
+	byName := map[string]map[string]any{}
+	for _, o := range objs {
+		byName[o["name"].(string)] = o
+	}
+	f, d := byName["f.bin"], byName["sub"]
+	if f["type"] != "file" || f["size"] != 1234.0 || d["type"] != "dir" || d["size"] != nil ||
+		f["last_modification_date"].(float64) < 1e9 || f["creation_date"] == nil || f["last_access_date"] == nil {
+		t.Fatalf("with metadata: %v", objs)
+	}
+}
+
+func TestInfoListsAndAvailability(t *testing.T) {
+	e := newEnv(t)
+	e.login()
+	seed := enginetest.NewSeeder(t, "Show", map[string]int{"e01.mkv": 64 << 10, "e02.mkv": 64 << 10})
+	expect(t, "add", e.postMultipart("torrents/add", map[string]string{"stopped": "true"}, seed.Metainfo), http.StatusOK)
+	expect(t, "addTrackers", e.post("torrents/addTrackers", url.Values{"hash": {seed.Hash}, "urls": {"udp://tracker.example:1337"}}), http.StatusNoContent)
+
+	var plain []map[string]any
+	e.get("torrents/info").json(t, &plain)
+	if _, ok := plain[0]["files"]; ok || len(plain) != 1 {
+		t.Fatalf("files without includeFiles: %v", plain)
+	}
+	var full []struct {
+		Hash         string           `json:"hash"`
+		Availability float64          `json:"availability"`
+		Files        []map[string]any `json:"files"`
+		Trackers     []map[string]any `json:"trackers"`
+	}
+	e.get("torrents/info?includeFiles=true&includeTrackers=true").json(t, &full)
+	if len(full) != 1 || len(full[0].Files) != 2 || len(full[0].Trackers) != 1 ||
+		full[0].Trackers[0]["url"] != "udp://tracker.example:1337" || full[0].Availability != -1 {
+		t.Fatalf("with lists: %+v", full)
+	}
+	var avail []int
+	e.get("torrents/pieceAvailability?hash="+seed.Hash).json(t, &avail)
+	if avail == nil || len(avail) != 0 {
+		t.Fatalf("availability of a stopped torrent: %v", avail)
+	}
+	expect(t, "unknown", e.get("torrents/pieceAvailability?hash=0000000000000000000000000000000000000000"), http.StatusNotFound)
+	expect(t, "setComment", e.post("torrents/setComment", url.Values{"hashes": {seed.Hash}, "comment": {"from the API"}}), http.StatusOK)
+	expect(t, "setComment without hashes", e.post("torrents/setComment", url.Values{"comment": {"x"}}), http.StatusBadRequest)
+	var props map[string]any
+	e.get("torrents/properties?hash="+seed.Hash).json(t, &props)
+	if props["comment"] != "from the API" {
+		t.Fatalf("comment %v", props["comment"])
+	}
+	if props["availability"] != -1.0 || props["popularity"] != 0.0 {
+		t.Fatalf("properties: availability %v popularity %v", props["availability"], props["popularity"])
+	}
 }

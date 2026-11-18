@@ -3,6 +3,7 @@ package qbit
 import (
 	"net/http"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 
@@ -17,12 +18,30 @@ func (s *Server) buildInfo(w http.ResponseWriter, _ *http.Request) {
 	case "darwin":
 		platform = "macos"
 	}
+	// libtorrent's place is anacrolix/torrent's; piecemeal uses none of
+	// the other libraries.
 	writeJSON(w, map[string]any{
-		"qt": "", "libtorrent": "", "boost": "", "openssl": "", "zlib": "",
+		"qt": "", "libtorrent": torrentLibrary, "boost": "", "openssl": "", "zlib": "",
 		"bitness":  strconv.IntSize,
 		"platform": platform,
 	})
 }
+
+// torrentLibrary names the anacrolix/torrent version piecemeal was built
+// with.
+var torrentLibrary = func() string {
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		for _, d := range bi.Deps {
+			if d.Path == "github.com/anacrolix/torrent" {
+				if d.Replace != nil {
+					d = d.Replace
+				}
+				return "anacrolix/torrent " + d.Version
+			}
+		}
+	}
+	return ""
+}()
 
 func (s *Server) processInfo(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, map[string]int64{"launch_time": s.started.Unix()})
