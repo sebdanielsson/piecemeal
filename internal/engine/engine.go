@@ -92,6 +92,10 @@ type Engine struct {
 	snap atomic.Pointer[snapshot]
 	bus  *Bus
 
+	// lastWindow is whether the alternative speed schedule's window was on
+	// at the last check, nil before the first.
+	lastWindow *bool
+
 	session sessionCounters
 
 	ctx    context.Context
@@ -194,6 +198,10 @@ func New(ctx context.Context, cfg Config, st *store.Store, sm *settings.Manager,
 	}
 
 	e.ctx, e.cancel = context.WithCancel(context.Background())
+	e.mu.Lock()
+	e.normalizeQueueLocked()
+	e.scheduleLocked(time.Now())
+	e.mu.Unlock()
 	sm.Subscribe(e.onSettingsChanged)
 	sm.AddValidator(func(s settings.Settings) error {
 		if _, err := e.confine(s.DefaultSavePath); err != nil {
@@ -406,8 +414,13 @@ func (e *Engine) loop() {
 		case <-e.ctx.Done():
 			return
 		case now := <-tick.C:
+			e.mu.Lock()
+			e.normalizeQueueLocked()
+			e.scheduleLocked(now)
+			e.mu.Unlock()
 			e.tick(now)
 			e.enforceSeedGoals()
+			e.applySchedule(now)
 		case <-checkpoint.C:
 			if err := e.checkpoint(e.ctx, false); err != nil && !errors.Is(err, context.Canceled) {
 				e.log.Error("saving torrent counters", "error", err)

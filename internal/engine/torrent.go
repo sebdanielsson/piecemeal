@@ -48,6 +48,10 @@ type managed struct {
 	trackers [][]string
 	webSeeds []string
 	moving   bool
+	// queued: runnable but held back by the queue limits.
+	queued    bool
+	slow      bool
+	slowSince time.Time
 	// boosted holds the piece priorities applyPiecePrioritiesLocked set.
 	boosted map[int]types.PiecePriority
 	// seqFrom is where the search for the next missing piece starts, for
@@ -364,11 +368,13 @@ func (e *Engine) Add(ctx context.Context, p AddParams) (string, error) {
 		}
 	}
 	e.torrents[ih] = m
-	if !stopped {
+	e.normalizeQueueLocked()
+	if !stopped && !s.QueueingEnabled {
 		if err := e.attachLocked(m, attachOpts{spec: spec, skipChecking: p.SkipChecking}); err != nil {
 			m.setError(err)
 		}
 	}
+	e.scheduleLocked(time.Now())
 	e.refreshLocked(m)
 	e.log.Info("torrent added", "hash", m.rec.InfoHash, "name", name, "savePath", savePath, "stopped", stopped)
 	if newTags {
@@ -664,13 +670,29 @@ func (e *Engine) each(ctx context.Context, hashes []string, fn func(m *managed) 
 
 // Start resumes stopped torrents.
 func (e *Engine) Start(ctx context.Context, hashes ...string) error {
-	return e.each(ctx, hashes, func(m *managed) error {
+	queueing := e.settings.Get().QueueingEnabled
+	err := e.each(ctx, hashes, func(m *managed) error {
 		m.rec.Stopped = false
-		if m.t != nil {
+		if m.t != nil || queueing {
 			return nil
 		}
 		return e.attachLocked(m)
 	})
+	if queueing {
+		e.mu.Lock()
+		e.scheduleLocked(time.Now())
+		e.refreshLocked(e.allLocked()...)
+		e.mu.Unlock()
+	}
+	return err
+}
+
+func (e *Engine) allLocked() []*managed {
+	out := make([]*managed, 0, len(e.torrents))
+	for _, m := range e.torrents {
+		out = append(out, m)
+	}
+	return out
 }
 
 // Stop stops torrents: they leave the swarm, and keep their data and record.
@@ -678,6 +700,7 @@ func (e *Engine) Stop(ctx context.Context, hashes ...string) error {
 	return e.each(ctx, hashes, func(m *managed) error {
 		m.rec.Stopped = true
 		m.rec.Forced = false
+		m.queued = false
 		e.detachLocked(m)
 		return nil
 	})
@@ -1058,7 +1081,7 @@ func (e *Engine) loadTorrents(ctx context.Context) error {
 		if m.info != nil {
 			m.completed = e.completedFromStore(m)
 		}
-		if !r.Stopped {
+		if !r.Stopped && !e.settings.Get().QueueingEnabled {
 			if err := e.attachLocked(m); err != nil {
 				e.log.Error("starting torrent", "hash", r.InfoHash, "error", err)
 				m.setError(err)

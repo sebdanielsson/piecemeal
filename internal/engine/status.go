@@ -360,6 +360,8 @@ func (e *Engine) statusLocked(m *managed) *Torrent {
 		st.State = StateMoving
 	case r.Error != "":
 		st.State = StateError
+	case m.queued:
+		st.State = StateQueued
 	case m.t == nil:
 		st.State = StateStopped
 	case m.checking:
