@@ -218,39 +218,9 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, logs *logbuf.
 		log.Info("OIDC sign-in enabled", "issuer", o.Issuer, "redirect", o.RedirectURL)
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = io.WriteString(w, "ok\n")
+	mux, nativeAPI := routes(routeDeps{
+		cfg: cfg, engine: e, settings: sm, auth: authSvc, oidc: oidcLogin, logs: logs, mapper: mapper, log: log,
 	})
-	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, _ *http.Request) {
-		if mapper != nil && !mapper.Ready() {
-			http.Error(w, "waiting for a NAT-PMP port mapping\n", http.StatusServiceUnavailable)
-			return
-		}
-		_, _ = io.WriteString(w, "ok\n")
-	})
-	if cfg.Metrics != "off" {
-		reg := prometheus.NewRegistry()
-		reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}), metrics.NewCollector(e))
-		h := promhttp.HandlerFor(reg, promhttp.HandlerOpts{})
-		if cfg.Metrics == "auth" {
-			h = requireAuth(authSvc, h)
-		}
-		mux.Handle("GET /metrics", h)
-	}
-	nativeAPI := api.New(mux, api.Deps{
-		Version: version, StartedAt: time.Now(), Engine: e, Settings: sm, Auth: authSvc,
-		Fetcher: fetch.New(cfg.FetchAllowedNetworks), Logs: logs, NATPMP: mapper, OIDC: oidcLogin,
-		Log: log.With("component", "api"),
-		System: api.SystemInfo{
-			DataDir: cfg.DataDir, DownloadDir: cfg.DownloadDir, WatchDir: cfg.WatchDir, AllowedRoots: cfg.AllowedRoots,
-		},
-	})
-	mux.Handle(qbit.Prefix, qbit.New(qbit.Deps{
-		Engine: e, Settings: sm, Auth: authSvc, Fetcher: fetch.New(cfg.FetchAllowedNetworks),
-		Log: log.With("component", "qbit"), HTTPPort: httpPort(cfg.Addr),
-	}))
-	mux.Handle("GET /", webui.Handler())
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,
@@ -283,6 +253,60 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, logs *logbuf.
 		log.Warn("http shutdown", "error", err)
 	}
 	return nil
+}
+
+type routeDeps struct {
+	cfg      config.Config
+	engine   *engine.Engine
+	settings *settings.Manager
+	auth     *auth.Service
+	oidc     *auth.OIDC
+	logs     *logbuf.Buffer
+	mapper   *natpmp.Mapper
+	log      *slog.Logger
+}
+
+// routes builds the HTTP handler: health checks, metrics, the native and
+// qBittorrent APIs, and the web UI.
+func routes(d routeDeps) (*http.ServeMux, *api.API) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, "ok\n")
+	})
+	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, _ *http.Request) {
+		if d.mapper != nil && !d.mapper.Ready() {
+			http.Error(w, "waiting for a NAT-PMP port mapping\n", http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = io.WriteString(w, "ok\n")
+	})
+	if d.cfg.Metrics != "off" {
+		reg := prometheus.NewRegistry()
+		reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}), metrics.NewCollector(d.engine))
+		h := promhttp.HandlerFor(reg, promhttp.HandlerOpts{})
+		if d.cfg.Metrics == "auth" {
+			h = requireAuth(d.auth, h)
+		}
+		mux.Handle("GET /metrics", h)
+	}
+	fetcher := fetch.New(d.cfg.FetchAllowedNetworks)
+	nativeAPI := api.New(mux, api.Deps{
+		Version: version, StartedAt: time.Now(), Engine: d.engine, Settings: d.settings, Auth: d.auth,
+		Fetcher: fetcher, Logs: d.logs, NATPMP: d.mapper, OIDC: d.oidc, Log: d.log.With("component", "api"),
+		System: api.SystemInfo{
+			DataDir: d.cfg.DataDir, DownloadDir: d.cfg.DownloadDir, WatchDir: d.cfg.WatchDir, AllowedRoots: d.cfg.AllowedRoots,
+		},
+	})
+	q := qbit.New(qbit.Deps{
+		Engine: d.engine, Settings: d.settings, Auth: d.auth, Fetcher: fetcher,
+		Log: d.log.With("component", "qbit"), HTTPPort: httpPort(d.cfg.Addr),
+	})
+	// Method-specific patterns, so they and the web UI's "GET /" don't
+	// conflict; the qBittorrent API answers 405 itself for the wrong one.
+	mux.Handle("GET "+qbit.Prefix, q)
+	mux.Handle("POST "+qbit.Prefix, q)
+	mux.Handle("GET /", webui.Handler())
+	return mux, nativeAPI
 }
 
 // httpPort is the port of a listen address such as ":8080", or 8080.

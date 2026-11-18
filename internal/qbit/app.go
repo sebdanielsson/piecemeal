@@ -66,13 +66,9 @@ func (s *Server) preferences(w http.ResponseWriter, _ *http.Request) {
 		"save_path":                     st.DefaultSavePath,
 		"temp_path_enabled":             false,
 		"temp_path":                     "",
-		"export_dir":                    "",
-		"export_dir_fin":                "",
 		"auto_tmm_enabled":              false,
 		"torrent_content_layout":        "Original",
-		"create_subfolder_enabled":      true,
 		"add_stopped_enabled":           st.AddStopped,
-		"start_paused_enabled":          st.AddStopped,
 		"add_to_top_of_queue":           false,
 		"preallocate_all":               false,
 		"incomplete_files_ext":          false,
@@ -82,7 +78,6 @@ func (s *Server) preferences(w http.ResponseWriter, _ *http.Request) {
 		"torrent_changed_tmm_enabled":   true,
 		"save_path_changed_tmm_enabled": false,
 		"category_changed_tmm_enabled":  false,
-		"use_subcategories":             false,
 
 		// Speed
 		"dl_limit":                limit(st.DownloadLimit),

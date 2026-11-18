@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -56,12 +57,22 @@ func (s *Seeder) Magnet() string {
 	return fmt.Sprintf("magnet:?xt=urn:btih:%s&dn=%s&x.pe=%s", s.Hash, url.QueryEscape(s.Name), url.QueryEscape(s.Addr))
 }
 
-// NewSeeder generates files (path to size) under a root folder named name,
-// or a single file named name when files has one entry with the key "",
-// and seeds them.
+// NewSeeder generates files (path to size) under a root folder named name
+// and seeds them on loopback until the test ends.
 func NewSeeder(t testing.TB, name string, files map[string]int) *Seeder {
 	t.Helper()
-	dir := t.TempDir()
+	s, err := StartSeeder(t.TempDir(), name, files, Offline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Client.Close() })
+	return s
+}
+
+// StartSeeder generates files (path to size) under dir/name and seeds them;
+// with no files it seeds what is already there. configure adjusts the
+// client, such as where it listens; Close the client when done.
+func StartSeeder(dir, name string, files map[string]int, configure func(*torrent.ClientConfig)) (*Seeder, error) {
 	root := filepath.Join(dir, name)
 	content := map[string][]byte{}
 	for p, size := range files {
@@ -69,29 +80,33 @@ func NewSeeder(t testing.TB, name string, files map[string]int) *Seeder {
 		_, _ = rand.Read(b)
 		full := filepath.Join(root, p)
 		if err := os.MkdirAll(filepath.Dir(full), 0o750); err != nil {
-			t.Fatal(err)
+			return nil, err
 		}
 		if err := os.WriteFile(full, b, 0o600); err != nil {
-			t.Fatal(err)
+			return nil, err
 		}
 		content[p] = b
 	}
-	info := metainfo.Info{PieceLength: 32 << 10}
+	info := metainfo.Info{PieceLength: 256 << 10}
+	if total := totalSize(files); files != nil && total < 8<<20 {
+		info.PieceLength = 32 << 10
+	}
 	if err := info.BuildFromFilePath(root); err != nil {
-		t.Fatal(err)
+		return nil, err
 	}
 	infoBytes, err := bencode.Marshal(info)
 	if err != nil {
-		t.Fatal(err)
+		return nil, err
 	}
 	mi := metainfo.MetaInfo{InfoBytes: infoBytes, Comment: "piecemeal test"}
 	var buf bytes.Buffer
 	if err := mi.Write(&buf); err != nil {
-		t.Fatal(err)
+		return nil, err
 	}
 
 	tc := torrent.NewDefaultClientConfig()
 	Offline(tc)
+	configure(tc)
 	tc.Seed = true
 	tc.DataDir = dir
 	tc.DefaultStorage = storage.NewFileOpts(storage.NewFileClientOpts{
@@ -102,23 +117,33 @@ func NewSeeder(t testing.TB, name string, files map[string]int) *Seeder {
 	tc.Slogger = slog.New(slog.DiscardHandler)
 	cl, err := torrent.NewClient(tc)
 	if err != nil {
-		t.Fatal(err)
+		return nil, err
 	}
-	t.Cleanup(func() { cl.Close() })
 	tor, err := cl.AddTorrent(&mi)
 	if err != nil {
-		t.Fatal(err)
+		cl.Close()
+		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	if err := tor.VerifyDataContext(ctx); err != nil {
-		t.Fatal(err)
+		cl.Close()
+		return nil, err
 	}
 	if !tor.Complete().Bool() {
-		t.Fatal("seeder is not complete after verifying")
+		cl.Close()
+		return nil, errors.New("seeder is not complete after verifying")
 	}
 	return &Seeder{
 		Client: cl, Metainfo: buf.Bytes(), Hash: mi.HashInfoBytes().HexString(), Name: info.BestName(),
 		Addr: fmt.Sprintf("127.0.0.1:%d", cl.LocalPort()), Content: content,
+	}, nil
+}
+
+func totalSize(files map[string]int) int {
+	n := 0
+	for _, s := range files {
+		n += s
 	}
+	return n
 }

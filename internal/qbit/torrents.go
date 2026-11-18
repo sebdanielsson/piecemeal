@@ -80,7 +80,11 @@ type Torrent struct {
 	Comment                  string  `json:"comment"`
 	Completed                int64   `json:"completed"`
 	CompletionOn             int64   `json:"completion_on"`
+	ConnectionsCount         int     `json:"connections_count"`
+	ConnectionsLimit         int     `json:"connections_limit"`
 	ContentPath              string  `json:"content_path"`
+	CreatedBy                string  `json:"created_by"`
+	CreationDate             int64   `json:"creation_date"`
 	DlLimit                  int64   `json:"dl_limit"`
 	Dlspeed                  int64   `json:"dlspeed"`
 	DownloadPath             string  `json:"download_path"`
@@ -104,6 +108,9 @@ type Torrent struct {
 	NumIncomplete            int     `json:"num_incomplete"`
 	NumLeechs                int     `json:"num_leechs"`
 	NumSeeds                 int     `json:"num_seeds"`
+	PieceSize                int64   `json:"piece_size"`
+	PiecesHave               int     `json:"pieces_have"`
+	PiecesNum                int     `json:"pieces_num"`
 	Popularity               float64 `json:"popularity"`
 	Priority                 int64   `json:"priority"`
 	Private                  bool    `json:"private"`
@@ -125,6 +132,7 @@ type Torrent struct {
 	Tags                     string  `json:"tags"`
 	TimeActive               int64   `json:"time_active"`
 	TotalSize                int64   `json:"total_size"`
+	TotalWasted              int64   `json:"total_wasted"`
 	Tracker                  string  `json:"tracker"`
 	TrackersCount            int     `json:"trackers_count"`
 	UpLimit                  int64   `json:"up_limit"`
@@ -177,8 +185,15 @@ func (s *Server) torrent(t engine.Torrent) Torrent {
 	if completedOn == 0 {
 		completedOn = -1
 	}
+	createdAt := t.CreatedAt
+	if createdAt == 0 {
+		createdAt = -1
+	}
 	return Torrent{
-		AddedOn: t.AddedAt, AmountLeft: max(t.Size-t.Completed, 0), Availability: -1, Category: t.Category,
+		ConnectionsCount: t.Seeds + t.Peers, ConnectionsLimit: st.MaxConnectionsPerTorrent,
+		CreatedBy: t.CreatedBy, CreationDate: createdAt, PieceSize: t.PieceSize, PiecesHave: t.PiecesHave,
+		PiecesNum: t.Pieces,
+		AddedOn:   t.AddedAt, AmountLeft: max(t.Size-t.Completed, 0), Category: t.Category,
 		Comment: t.Comment, Completed: t.Completed, CompletionOn: completedOn, ContentPath: t.ContentPath,
 		DlLimit: unlimited(t.DownloadLimit), Dlspeed: t.DownRate, Downloaded: t.Downloaded,
 		DownloadedSession: t.SessionDown, ETA: eta(t), FLPiecePrio: t.FirstLast, ForceStart: t.Forced,
@@ -380,8 +395,8 @@ func (s *Server) properties(w http.ResponseWriter, r *http.Request) {
 		"pieces_have": t.PiecesHave, "pieces_num": pieces, "reannounce": 0, "seeds": t.Seeds,
 		"seeds_total": t.Seeds, "total_size": minusOne(t.TotalSize),
 		"up_speed_avg": avg(t.Uploaded, t.ActiveTime), "up_speed": t.UpRate,
-		"isPrivate": t.Private, "is_private": t.Private, "has_metadata": t.HasMetadata,
-		"popularity": 0, "availability": -1,
+		"private": t.Private, "has_metadata": t.HasMetadata, "progress": t.Progress,
+		"popularity": 0, "availability": 0,
 	})
 }
 
@@ -412,7 +427,7 @@ func (s *Server) files(w http.ResponseWriter, r *http.Request) {
 		last := max(f.PieceEnd-1, f.PieceStart)
 		out = append(out, map[string]any{
 			"index": f.Index, "name": f.Path, "size": f.Size, "progress": f.Progress, "priority": int(f.Priority),
-			"is_seed": f.Progress >= 1, "piece_range": []int{f.PieceStart, last}, "availability": -1,
+			"is_seed": f.Progress >= 1, "piece_range": []int{f.PieceStart, last}, "availability": 0,
 		})
 	}
 	writeJSON(w, out)
@@ -617,9 +632,7 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, res)
 	case duplicates > 0:
 		// The *arrs read 409 as "the client already has this release".
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusConflict)
-		_ = json.NewEncoder(w).Encode(res)
+		http.Error(w, "Conflict", http.StatusConflict)
 	default:
 		http.Error(w, "Torrent file is not valid", http.StatusUnsupportedMediaType)
 	}
