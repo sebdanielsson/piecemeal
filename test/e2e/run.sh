@@ -12,7 +12,7 @@ mkdir -p ../../internal/webui/dist
 [ -n "$(ls -A ../../internal/webui/dist)" ] || touch ../../internal/webui/dist/.keep
 
 password=e2e-admin-password
-PIECEMEAL_ADMIN_PASSWORD_HASH=$(printf '%s\n' "$password" | go run ../../cmd/piecemeal hash-password)
+PIECEMEAL_ADMIN_PASSWORD_HASH=$(printf '%s\n' "$password" | CGO_ENABLED=0 go run ../../cmd/piecemeal hash-password)
 export PIECEMEAL_ADMIN_PASSWORD_HASH
 
 # Leftovers from a run with KEEP=1.
@@ -24,7 +24,9 @@ mkdir -p tmp/downloads tmp/shared tmp/movies
 # (Radarr refuses files without audio).
 release=Big.Buck.Bunny.2008.1080p.BluRay.x264-PIECEMEAL
 mkdir -p "tmp/seed/$release"
-docker run --rm -v "$PWD/tmp/seed/$release:/out" lscr.io/linuxserver/ffmpeg:9.0.2 \
+# As this user, so the file isn't root's on Linux hosts.
+docker run --rm --user "$(id -u):$(id -g)" --entrypoint ffmpeg \
+  -v "$PWD/tmp/seed/$release:/out" lscr.io/linuxserver/ffmpeg:9.0.2 \
   -hide_banner -loglevel error -f lavfi -i color=c=black:s=64x64:r=1 \
   -f lavfi -i anullsrc=r=8000:cl=mono -t 1200 \
   -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac -b:a 8k "/out/$release.mkv"
