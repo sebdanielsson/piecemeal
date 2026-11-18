@@ -105,6 +105,8 @@ pnpm -C web dev     # UI dev server, proxying /api to a piecemeal on :8080
 
 Go-only builds need the embed directory to exist: `mkdir -p internal/webui/dist && touch internal/webui/dist/.keep`.
 
+`test/e2e/run.sh` runs the end-to-end tests against qBittorrent, Radarr, Sonarr and Prowlarr in Docker, and `test/load/run.sh` measures piecemeal with 1,000 torrents; see [Performance](docs/performance.md).
+
 ## Releases
 
 Releases are cut by [release-please](https://github.com/googleapis/release-please) from conventional commits. Each release publishes a signed multi-arch image to `ghcr.io/sebdanielsson/piecemeal`, with SBOM and provenance attestations, plus binaries for linux/amd64, linux/arm64 and darwin/arm64.
