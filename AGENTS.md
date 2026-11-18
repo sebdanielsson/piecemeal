@@ -8,6 +8,7 @@ piecemeal is a BitTorrent client: a Go daemon on anacrolix/torrent with a native
 - `mise run build`: build the UI into `internal/webui/dist`, then `bin/piecemeal`.
 - `mise run check`: run every CI check locally.
 - `pnpm -C web <fmt|fmt:check|lint|typecheck|test|build|dev>`: UI tasks.
+- `pnpm -C website <dev|build>`: the website, built with Blume from `docs/` and `api/openapi.json`. User docs live in `docs/`; keep them in step with the code.
 - `golangci-lint run`, `golangci-lint fmt`, `go test -race ./...`, `govulncheck ./...`: Go tasks.
 
 ## Conventions

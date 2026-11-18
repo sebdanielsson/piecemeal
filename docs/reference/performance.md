@@ -1,3 +1,7 @@
+---
+description: The load test that measures piecemeal with 1,000 torrents, how to run it on your own disks, and its results.
+---
+
 # Performance
 
 `test/load` measures piecemeal with many torrents. It writes the data for n single-file torrents, adds them with the data in place, waits until piecemeal has verified them all, and then measures memory, idle CPU and the endpoints that clients poll. Each timed request waits a second after the previous one, as clients poll, so a CPU that slows down between requests is part of the measurement.
@@ -40,6 +44,6 @@ When piecemeal sees the directory under another path, as in a container, pass th
 
 The resident set size isn't reported on macOS; the Go runtime held 148 MiB from the OS, the same as with no torrents.
 
-Web UIs such as VueTorrent poll `sync/maindata` every one or two seconds, and the *arrs poll `torrents/info`. Both cost every torrent's state on each poll, so their cost grows with the number of torrents: at 1,000 torrents a web UI open in a browser costs about 1% of a core here.
+Web UIs such as VueTorrent poll `sync/maindata` every one or two seconds, and the \*arrs poll `torrents/info`. Both cost every torrent's state on each poll, so their cost grows with the number of torrents: at 1,000 torrents a web UI open in a browser costs about 1% of a core here.
 
 The target deployment, three ageing 2 TB WD Green drives in RAID-Z1, will be slower to verify data and add torrents. Run the load test there with `DIR` on the pool before relying on these numbers.

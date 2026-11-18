@@ -1,0 +1,1004 @@
+---
+import { Image } from "astro:assets";
+import PageLayout from "blume/components/layout/PageLayout.astro";
+import data from "blume:data";
+import listDark from "../assets/screens/list-dark.png";
+import listLight from "../assets/screens/list-light.png";
+import mobileDark from "../assets/screens/mobile-dark.png";
+import mobileLight from "../assets/screens/mobile-light.png";
+import piecesDark from "../assets/screens/pieces-dark.png";
+import piecesLight from "../assets/screens/pieces-light.png";
+
+const { config } = data;
+const repo = "https://github.com/sebdanielsson/piecemeal";
+
+const features = [
+  {
+    title: "A web UI made for the browser",
+    body: "Live updates, keyboard shortcuts, filters by state, category, tag and tracker, file priorities and renames, and a live piece map. On a phone too.",
+    icon: "M3 5h18v14H3zM3 9h18M8 9v10",
+  },
+  {
+    title: "Users, SSO and scoped keys",
+    body: "A local admin, people from any OpenID Connect provider with allowed and admin groups, and API keys for full access, the qBittorrent API, or reading.",
+    icon: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21c0-4 4-6 8-6s8 2 8 6",
+  },
+  {
+    title: "RSS with qBittorrent's rules",
+    body: "Feeds in folders, and rules with wildcards or regular expressions, episode filters and the smart episode filter. Bring your qBittorrent rules as they are.",
+    icon: "M5 19a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16",
+  },
+  {
+    title: "Queueing and seeding goals",
+    body: "Limit what downloads and seeds at once. Stop or remove torrents at a ratio, a seeding time or an idle time, per torrent or for all of them.",
+    icon: "M4 6h16M4 12h10M4 18h6",
+  },
+  {
+    title: "VPN port forwarding",
+    body: "Run inside a WireGuard container and forward the peer port with NAT-PMP. piecemeal follows the port when the VPN changes it.",
+    icon: "M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z",
+  },
+  {
+    title: "Built to be operated",
+    body: "Prometheus metrics, health and readiness checks, structured logs, an audit log, online backups, and import from Transmission and qBittorrent.",
+    icon: "M3 12h4l3-8 4 16 3-8h4",
+  },
+];
+
+const numbers = [
+  { value: "735", unit: "/s", label: "torrents added, with their data in place" },
+  { value: "1.0", unit: "s", label: "to verify them all after the last add" },
+  { value: "2.2", unit: "%", label: "of one core while idle" },
+  { value: "31", unit: "MiB", label: "Go heap in use" },
+  { value: "13", unit: "ms", label: "per incremental sync poll, as VueTorrent makes" },
+];
+
+const safety = [
+  "Save paths confined to the directories you allow, with symlinks resolved",
+  "Links from indexers can't reach into your network: private addresses are refused when dialing",
+  "Sign-in limits per address, and bounded password hashing",
+  "CSRF checks on requests from browsers, and an optional host allowlist",
+  "Session tokens and API keys stored only as hashes",
+  "Signed images with SBOMs and build provenance",
+];
+
+const compose = `services:
+  piecemeal:
+    image: ghcr.io/sebdanielsson/piecemeal:latest
+    user: "1000:1000"
+    ports:
+      - 8080:8080
+      - 6881:6881
+      - 6881:6881/udp
+    environment:
+      PIECEMEAL_ADMIN_PASSWORD_HASH: \${PIECEMEAL_ADMIN_PASSWORD_HASH}
+    volumes:
+      - piecemeal-data:/data
+      - /srv/media/downloads:/downloads
+    restart: unless-stopped
+
+volumes:
+  piecemeal-data:`;
+---
+
+<PageLayout
+  site={{ title: config.title, description: config.description }}
+  logo={config.logo}
+  banner={config.banner}
+  analytics={config.analytics}
+  navigation={data.navigation}
+  favicon={config.favicon}
+  fontCssVars={data.fontCssVars}
+  themeMode={config.theme.mode}
+  searchEnabled={config.search.enabled}
+  siteUrl={config.site}
+  ogEnabled={config.og.enabled}
+  page={{
+    title: "piecemeal: a self-hosted BitTorrent client for the *arrs",
+    description: config.description,
+  }}
+>
+  <div class="pm">
+    <section class="hero wrap">
+      <p class="eyebrow">Self-hosted BitTorrent client · Go · MIT</p>
+      <h1>Every piece,<br />in its place.</h1>
+      <p class="lede">
+        piecemeal is a BitTorrent client for your server. It speaks qBittorrent to Radarr, Sonarr and
+        Prowlarr, comes with a web UI built for the browser, and signs your household in with SSO. One Go
+        binary on <a href="https://github.com/anacrolix/torrent">anacrolix/torrent</a>.
+      </p>
+      <div class="ctas">
+        <a class="button primary" href="/docs/install">Get started</a>
+        <a class="button" href="/docs">Read the docs</a>
+        <a class="button ghost" href={repo}>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              fill="currentColor"
+              d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.2 1.77 1.2 1.03 1.77 2.71 1.26 3.37.96.1-.75.4-1.26.73-1.55-2.56-.29-5.25-1.28-5.25-5.69 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.42-2.7 5.39-5.26 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5z"
+            ></path>
+          </svg>
+          GitHub
+        </a>
+      </div>
+      <button
+        class="install"
+        type="button"
+        data-copy="docker run -p 8080:8080 ghcr.io/sebdanielsson/piecemeal"
+        aria-label="Copy the docker run command"
+      >
+        <span class="prompt">$</span>
+        <code>docker run -p 8080:8080 ghcr.io/sebdanielsson/piecemeal</code>
+        <span class="copied" aria-live="polite">Copy</span>
+      </button>
+    </section>
+
+    <section class="wrap" aria-label="A torrent downloading, piece by piece">
+      <div class="swarm" data-swarm>
+        <div class="swarm-head">
+          <div>
+            <p class="swarm-name">ubuntu-26.04-desktop-amd64.iso</p>
+            <p class="swarm-meta">
+              <span class="state"><i></i>Downloading</span>
+              <span data-rate>4.7 MiB/s</span>
+              <span>6.09 GiB</span>
+              <span>1 seed</span>
+            </p>
+          </div>
+          <p class="swarm-pct" data-pct>62.0%</p>
+        </div>
+        <div class="grid" data-grid></div>
+        <p class="legend">
+          <span><i class="have"></i>Have <b data-have>0</b></span>
+          <span><i class="down"></i>Downloading <b data-down>0</b></span>
+          <span><i></i>Missing <b data-missing>0</b></span>
+          <span class="legend-note">Piece size 4.00 MiB</span>
+        </p>
+      </div>
+    </section>
+
+    <section class="wrap shot">
+      <div class="frame">
+        <div class="frame-bar"><span></span><span></span><span></span><em>piecemeal.home.arpa</em></div>
+        <Image
+          class="only-light"
+          src={listLight}
+          alt="piecemeal's torrent list in the light theme, with three downloads in progress and five torrents seeding"
+          widths={[720, 1440, 2160]}
+          sizes="(min-width: 1200px) 1152px, 100vw"
+          loading="eager"
+        />
+        <Image
+          class="only-dark"
+          src={listDark}
+          alt="piecemeal's torrent list in the dark theme, with three downloads in progress and five torrents seeding"
+          widths={[720, 1440, 2160]}
+          sizes="(min-width: 1200px) 1152px, 100vw"
+          loading="eager"
+        />
+      </div>
+    </section>
+
+    <section class="wrap split">
+      <div>
+        <p class="kicker">A drop-in for the *arrs</p>
+        <h2>Speaks qBittorrent, so your stack doesn't change.</h2>
+        <p>
+          Add piecemeal to Radarr, Sonarr or Prowlarr as a qBittorrent download client, with an API key that
+          only works on the qBittorrent API. Categories, save paths, tags and seeding goals behave the way
+          they expect.
+        </p>
+        <ul class="tested">
+          <li><b>Radarr 7</b><span>grabs and imports a release through piecemeal in CI</span></li>
+          <li><b>Sonarr 4</b><span>download client test in CI</span></li>
+          <li><b>Prowlarr 3</b><span>download client test in CI</span></li>
+          <li><b>VueTorrent 2.37</b><span>served by piecemeal at <code>/qbittorrent/</code></span></li>
+          <li><b>qBittorrent 5.3</b><span>CI compares piecemeal's answers with the real thing</span></li>
+        </ul>
+        <a class="more" href="/docs/guides/arr">Connect the *arrs →</a>
+      </div>
+      <div class="client" aria-label="Radarr's download client settings for piecemeal">
+        <p class="client-title">Settings › Download Clients › qBittorrent</p>
+        <dl>
+          <dt>Name</dt><dd>piecemeal</dd>
+          <dt>Host</dt><dd><code>piecemeal</code></dd>
+          <dt>Port</dt><dd><code>8080</code></dd>
+          <dt>API key</dt><dd><code>pm_••••••••••••••••</code></dd>
+          <dt>Category</dt><dd><code>radarr</code></dd>
+        </dl>
+        <p class="client-ok"><i></i>Test succeeded</p>
+      </div>
+    </section>
+
+    <section class="wrap">
+      <p class="kicker">What's inside</p>
+      <h2 class="wide">Everything a server's torrent client needs, and nothing it doesn't.</h2>
+      <div class="features">
+        {
+          features.map((f) => (
+            <article>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d={f.icon} />
+              </svg>
+              <h3>{f.title}</h3>
+              <p>{f.body}</p>
+            </article>
+          ))
+        }
+      </div>
+    </section>
+
+    <section class="wrap duo">
+      <figure>
+        <Image
+          class="only-light"
+          src={piecesLight}
+          alt="A downloading torrent's piece map, in the light theme"
+          widths={[720, 1440]}
+          sizes="(min-width: 1000px) 760px, 100vw"
+        />
+        <Image
+          class="only-dark"
+          src={piecesDark}
+          alt="A downloading torrent's piece map, in the dark theme"
+          widths={[720, 1440]}
+          sizes="(min-width: 1000px) 760px, 100vw"
+        />
+        <figcaption>Files, peers, trackers and a live piece map for every torrent.</figcaption>
+      </figure>
+      <figure class="phone">
+        <Image class="only-light" src={mobileLight} alt="The torrent list on a phone, in the light theme" widths={[390, 780]} sizes="256px" />
+        <Image class="only-dark" src={mobileDark} alt="The torrent list on a phone, in the dark theme" widths={[390, 780]} sizes="256px" />
+        <figcaption>The same app on a phone.</figcaption>
+      </figure>
+    </section>
+
+    <section class="wrap">
+      <p class="kicker">Measured, not promised</p>
+      <h2 class="wide">A thousand torrents, barely noticed.</h2>
+      <div class="numbers">
+        {
+          numbers.map((n) => (
+            <div>
+              <p class="num">
+                {n.value}
+                <span>{n.unit}</span>
+              </p>
+              <p>{n.label}</p>
+            </div>
+          ))
+        }
+      </div>
+      <p class="note">
+        From <code>test/load</code> with 1,000 torrents on an Apple M5 with an SSD. Run it on your own disks:{" "}
+        <a href="/docs/reference/performance">Performance</a>.
+      </p>
+    </section>
+
+    <section class="wrap split">
+      <div>
+        <p class="kicker">Safe by default</p>
+        <h2>It can write to your disks. It acts like it.</h2>
+        <p>
+          piecemeal treats every request, every link from an indexer and every torrent as untrusted. It went
+          through a security review before 1.0, and the code that reads untrusted input is fuzzed.
+        </p>
+        <a class="more" href="/docs/reference/security">How piecemeal stays safe →</a>
+      </div>
+      <ul class="checks">
+        {safety.map((s) => <li>{s}</li>)}
+      </ul>
+    </section>
+
+    <section class="wrap start">
+      <div>
+        <p class="kicker">Quick start</p>
+        <h2>Running in a minute.</h2>
+        <ol>
+          <li>Make a password hash: <code>docker run --rm -i ghcr.io/sebdanielsson/piecemeal hash-password</code></li>
+          <li>Put it in <code>.env</code> as <code>PIECEMEAL_ADMIN_PASSWORD_HASH</code>, then <code>docker compose up -d</code>.</li>
+          <li>Open <code>http://localhost:8080</code> and sign in as <code>admin</code>.</li>
+        </ol>
+        <p>
+          Moving from Transmission or qBittorrent? <a href="/docs/guides/import">Bring your torrents</a>, data and
+          all.
+        </p>
+      </div>
+      <div class="code">
+        <div class="code-bar">
+          <span>compose.yaml</span>
+          <button type="button" data-copy={compose} aria-label="Copy compose.yaml">
+            <span class="copied" aria-live="polite">Copy</span>
+          </button>
+        </div>
+        <pre><code>{compose}</code></pre>
+      </div>
+    </section>
+
+    <section class="wrap closing">
+      <h2>Ready when your *arrs are.</h2>
+      <div class="ctas">
+        <a class="button primary" href="/docs/install">Install piecemeal</a>
+        <a class="button" href="/reference">API reference</a>
+        <a class="button ghost" href={repo}>Star on GitHub</a>
+      </div>
+    </section>
+  </div>
+</PageLayout>
+
+<script>
+  // Copy buttons.
+  for (const el of document.querySelectorAll<HTMLElement>("[data-copy]")) {
+    el.addEventListener("click", async () => {
+      const label = el.querySelector(".copied");
+      try {
+        await navigator.clipboard.writeText(el.dataset.copy ?? "");
+        if (label) label.textContent = "Copied";
+      } catch {
+        if (label) label.textContent = "Select it";
+      }
+      setTimeout(() => {
+        if (label) label.textContent = "Copy";
+      }, 1600);
+    });
+  }
+
+  // The piece map: pieces arrive out of order, a dozen in flight at a time, as
+  // in the app's Pieces tab.
+  const swarm = document.querySelector<HTMLElement>("[data-swarm]");
+  const grid = swarm?.querySelector<HTMLElement>("[data-grid]");
+  if (swarm && grid) {
+    const total = 384;
+    const cells: HTMLElement[] = [];
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < total; i++) {
+      const c = document.createElement("i");
+      cells.push(c);
+      frag.append(c);
+    }
+    grid.append(frag);
+    const state = new Uint8Array(total); // 0 missing, 1 in flight, 2 have
+    const text = (sel: string, v: string) => {
+      const el = swarm.querySelector(sel);
+      if (el) el.textContent = v;
+    };
+    const paint = () => {
+      let have = 0;
+      let down = 0;
+      for (let i = 0; i < total; i++) {
+        if (state[i] === 2) have++;
+        else if (state[i] === 1) down++;
+      }
+      text("[data-have]", String(have));
+      text("[data-down]", String(down));
+      text("[data-missing]", String(total - have - down));
+      text("[data-pct]", `${((have / total) * 100).toFixed(1)}%`);
+    };
+    const set = (i: number, s: number) => {
+      state[i] = s;
+      cells[i].className = s === 2 ? "have" : s === 1 ? "down" : "";
+    };
+    const reset = (fraction: number) => {
+      for (let i = 0; i < total; i++) set(i, Math.random() < fraction ? 2 : 0);
+      paint();
+    };
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      reset(0.62);
+    } else {
+      reset(0.62);
+      let idle = 0;
+      const tick = () => {
+        const missing: number[] = [];
+        let inFlight = 0;
+        for (let i = 0; i < total; i++) {
+          if (state[i] === 0) missing.push(i);
+          else if (state[i] === 1) inFlight++;
+        }
+        for (let k = inFlight; k < 12 && missing.length > 0; k++) {
+          const i = missing.splice(Math.floor(Math.random() * missing.length), 1)[0];
+          set(i, 1);
+          setTimeout(
+            () => {
+              set(i, 2);
+              paint();
+            },
+            500 + Math.random() * 1400,
+          );
+        }
+        text("[data-rate]", `${(4.4 + Math.random() * 0.6).toFixed(1)} MiB/s`);
+        paint();
+        if (missing.length === 0 && inFlight === 0 && ++idle > 12) {
+          idle = 0;
+          reset(0.05);
+        }
+      };
+      let timer = 0;
+      new IntersectionObserver((entries) => {
+        if (entries[0]?.isIntersecting) {
+          if (!timer) timer = window.setInterval(tick, 260);
+        } else {
+          clearInterval(timer);
+          timer = 0;
+        }
+      }).observe(swarm);
+    }
+  }
+</script>
+
+<style>
+  .pm {
+    --have: oklch(0.56 0.13 155);
+    --down: oklch(0.55 0.15 250);
+    --line: var(--blume-border);
+    --soft: var(--blume-muted-foreground);
+    color: var(--blume-foreground);
+    font-family: var(--blume-font-body);
+    padding-bottom: 6rem;
+  }
+  :global(:root[data-theme="dark"]) .pm {
+    --have: oklch(0.72 0.13 155);
+    --down: oklch(0.7 0.13 250);
+  }
+  :global(:root:not([data-theme="dark"])) .pm :global(.only-dark),
+  :global(:root[data-theme="dark"]) .pm :global(.only-light) {
+    display: none;
+  }
+  .wrap {
+    max-width: 72rem;
+    margin: 0 auto;
+    padding: 0 1.5rem;
+  }
+  section + section {
+    margin-top: 7rem;
+  }
+  h1,
+  h2,
+  h3 {
+    font-family: var(--blume-font-display);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin: 0;
+  }
+  a {
+    color: inherit;
+  }
+  code {
+    font-family: var(--blume-font-mono);
+    font-size: 0.875em;
+  }
+
+  /* Hero */
+  .hero {
+    padding-top: 7rem;
+  }
+  .eyebrow,
+  .kicker {
+    font-family: var(--blume-font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--soft);
+    margin: 0 0 1.25rem;
+  }
+  .kicker {
+    color: var(--have);
+  }
+  h1 {
+    font-size: clamp(3.25rem, 9vw, 7.5rem);
+    line-height: 0.95;
+    letter-spacing: -0.035em;
+  }
+  .lede {
+    max-width: 40rem;
+    margin: 2rem 0 0;
+    font-size: clamp(1.05rem, 1.6vw, 1.25rem);
+    line-height: 1.6;
+    color: var(--soft);
+  }
+  .lede a {
+    color: var(--blume-foreground);
+    text-underline-offset: 3px;
+  }
+  .ctas {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-top: 2.5rem;
+  }
+  .button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.8rem 1.4rem;
+    border: 1px solid var(--blume-foreground);
+    font-weight: 500;
+    font-size: 0.95rem;
+    text-decoration: none;
+    transition:
+      background 0.15s,
+      border-color 0.15s,
+      color 0.15s;
+  }
+  .button:hover {
+    background: var(--blume-muted);
+  }
+  .button.primary {
+    background: var(--blume-foreground);
+    color: var(--blume-background);
+  }
+  .button.primary:hover {
+    background: var(--have);
+    border-color: var(--have);
+  }
+  .button.ghost {
+    border-color: var(--line);
+  }
+  .button svg {
+    width: 1.1rem;
+    height: 1.1rem;
+  }
+  .install {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 1.5rem;
+    padding: 0.7rem 1rem;
+    max-width: 100%;
+    border: 1px dashed var(--line);
+    background: transparent;
+    color: var(--blume-foreground);
+    font: inherit;
+    cursor: pointer;
+    text-align: left;
+  }
+  .install code {
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+  .install .prompt {
+    color: var(--have);
+    font-family: var(--blume-font-mono);
+  }
+  .copied {
+    font-family: var(--blume-font-mono);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--soft);
+    min-width: 3.5rem;
+    text-align: right;
+  }
+
+  /* Piece map */
+  .swarm {
+    border: 1px solid var(--line);
+    padding: 1.5rem;
+  }
+  .swarm-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+  }
+  .swarm-name {
+    margin: 0;
+    font-weight: 600;
+    font-size: 1.05rem;
+    overflow-wrap: anywhere;
+  }
+  .swarm-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 1.25rem;
+    margin: 0.4rem 0 0;
+    font-size: 0.875rem;
+    color: var(--soft);
+    font-variant-numeric: tabular-nums;
+  }
+  .state {
+    color: var(--down);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .state i,
+  .legend i,
+  .client-ok i {
+    display: inline-block;
+    width: 0.6rem;
+    height: 0.6rem;
+    background: var(--down);
+  }
+  .swarm-pct {
+    margin: 0;
+    font-family: var(--blume-font-display);
+    font-size: clamp(2rem, 5vw, 3.25rem);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(48, 1fr);
+    gap: 2px;
+  }
+  .grid :global(i) {
+    aspect-ratio: 1;
+    background: var(--blume-muted);
+    transition: background 0.35s;
+  }
+  .grid :global(i.down) {
+    background: var(--down);
+  }
+  .grid :global(i.have) {
+    background: var(--have);
+  }
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.5rem;
+    margin: 1.25rem 0 0;
+    font-size: 0.85rem;
+    color: var(--soft);
+    font-variant-numeric: tabular-nums;
+  }
+  .legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+  }
+  .legend i {
+    background: var(--blume-muted);
+    outline: 1px solid var(--line);
+  }
+  .legend i.have {
+    background: var(--have);
+    outline: none;
+  }
+  .legend i.down {
+    background: var(--down);
+    outline: none;
+  }
+  .legend b {
+    color: var(--blume-foreground);
+    font-weight: 600;
+  }
+  .legend-note {
+    margin-left: auto;
+  }
+
+  /* Screenshot */
+  .frame {
+    border: 1px solid var(--line);
+    box-shadow: 0 40px 80px -48px color-mix(in oklab, var(--blume-foreground) 40%, transparent);
+  }
+  .frame-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.6rem 0.9rem;
+    border-bottom: 1px solid var(--line);
+  }
+  .frame-bar span {
+    width: 0.6rem;
+    height: 0.6rem;
+    border: 1px solid var(--line);
+  }
+  .frame-bar em {
+    font-style: normal;
+    font-family: var(--blume-font-mono);
+    font-size: 0.75rem;
+    color: var(--soft);
+    margin: 0 auto;
+    padding-right: 2.2rem;
+  }
+  .frame :global(img),
+  .duo :global(img) {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  /* Split sections */
+  .split {
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: 4rem;
+    align-items: center;
+  }
+  h2 {
+    font-size: clamp(2rem, 4vw, 3rem);
+    line-height: 1.05;
+  }
+  h2.wide {
+    max-width: 44rem;
+  }
+  .split p,
+  .start p {
+    color: var(--soft);
+    line-height: 1.65;
+    margin: 1.25rem 0 0;
+  }
+  .tested {
+    list-style: none;
+    padding: 0;
+    margin: 2rem 0 0;
+    border-top: 1px solid var(--line);
+  }
+  .tested li {
+    display: grid;
+    grid-template-columns: 9rem 1fr;
+    gap: 1rem;
+    padding: 0.7rem 0;
+    border-bottom: 1px solid var(--line);
+    font-size: 0.925rem;
+  }
+  .tested span {
+    color: var(--soft);
+  }
+  .more {
+    display: inline-block;
+    margin-top: 1.75rem;
+    font-weight: 500;
+    text-decoration-color: var(--have);
+    text-underline-offset: 4px;
+  }
+  .client {
+    border: 1px solid var(--line);
+    padding: 1.75rem;
+  }
+  .client-title {
+    margin: 0 0 1.25rem;
+    font-size: 0.8rem;
+    font-family: var(--blume-font-mono);
+    color: var(--soft);
+  }
+  .client dl {
+    display: grid;
+    grid-template-columns: 6.5rem 1fr;
+    margin: 0;
+  }
+  .client dt,
+  .client dd {
+    margin: 0;
+    padding: 0.7rem 0;
+    border-bottom: 1px solid var(--line);
+    font-size: 0.925rem;
+  }
+  .client dt {
+    color: var(--soft);
+  }
+  .client-ok {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 1.25rem 0 0;
+    font-size: 0.875rem;
+    color: var(--have);
+  }
+  .client-ok i {
+    background: var(--have);
+  }
+
+  /* Features */
+  .features {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    margin-top: 3rem;
+    border-top: 1px solid var(--line);
+    border-left: 1px solid var(--line);
+  }
+  .features article {
+    padding: 2rem 1.75rem;
+    border-right: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+  .features svg {
+    width: 1.5rem;
+    height: 1.5rem;
+    fill: none;
+    stroke: var(--have);
+    stroke-width: 1.5;
+    stroke-linecap: square;
+  }
+  .features h3 {
+    font-size: 1.3rem;
+    margin-top: 1.25rem;
+    line-height: 1.2;
+  }
+  .features p {
+    margin: 0.75rem 0 0;
+    color: var(--soft);
+    line-height: 1.6;
+    font-size: 0.95rem;
+  }
+
+  /* Detail and phone */
+  .duo {
+    display: grid;
+    grid-template-columns: 1fr 16rem;
+    gap: 3rem;
+    align-items: end;
+  }
+  .duo figure {
+    margin: 0;
+  }
+  .duo figure > :global(img) {
+    border: 1px solid var(--line);
+  }
+  .duo figcaption {
+    margin-top: 0.9rem;
+    font-size: 0.875rem;
+    color: var(--soft);
+  }
+
+  /* Numbers */
+  .numbers {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 2rem;
+    margin-top: 3rem;
+    padding-top: 2rem;
+    border-top: 1px solid var(--blume-foreground);
+  }
+  .numbers p {
+    margin: 0;
+    color: var(--soft);
+    font-size: 0.9rem;
+    line-height: 1.5;
+  }
+  .numbers .num {
+    font-family: var(--blume-font-display);
+    font-size: clamp(2.5rem, 5vw, 4rem);
+    line-height: 1;
+    color: var(--blume-foreground);
+    font-variant-numeric: tabular-nums;
+    margin-bottom: 0.75rem;
+  }
+  .num span {
+    font-family: var(--blume-font-mono);
+    font-size: 0.9rem;
+    margin-left: 0.25rem;
+    color: var(--have);
+  }
+  .note {
+    margin-top: 2rem;
+    font-size: 0.875rem;
+    color: var(--soft);
+  }
+
+  /* Safety */
+  .checks {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border-top: 1px solid var(--line);
+  }
+  .checks li {
+    position: relative;
+    padding: 0.9rem 0 0.9rem 2rem;
+    border-bottom: 1px solid var(--line);
+    font-size: 0.95rem;
+  }
+  .checks li::before {
+    content: "";
+    position: absolute;
+    left: 0.15rem;
+    top: 1.25rem;
+    width: 0.6rem;
+    height: 0.6rem;
+    background: var(--have);
+  }
+
+  /* Quick start */
+  .start {
+    display: grid;
+    grid-template-columns: 0.9fr 1.1fr;
+    gap: 4rem;
+    align-items: start;
+  }
+  .start ol {
+    margin: 1.5rem 0 0;
+    padding-left: 1.25rem;
+    line-height: 1.7;
+  }
+  .start li + li {
+    margin-top: 0.6rem;
+  }
+  .start li code,
+  .split code {
+    background: var(--blume-muted);
+    padding: 0.1rem 0.3rem;
+    overflow-wrap: anywhere;
+  }
+  .code {
+    border: 1px solid var(--line);
+    background: var(--blume-code-background, var(--blume-muted));
+    min-width: 0;
+  }
+  .code-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.55rem 1rem;
+    border-bottom: 1px solid var(--line);
+    font-family: var(--blume-font-mono);
+    font-size: 0.8rem;
+    color: var(--soft);
+  }
+  .code-bar button {
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+  }
+  .code pre {
+    margin: 0;
+    padding: 1.25rem 1rem;
+    overflow-x: auto;
+    font-size: 0.85rem;
+    line-height: 1.6;
+  }
+
+  /* Closing */
+  .closing {
+    text-align: center;
+    padding-top: 5rem;
+    border-top: 1px solid var(--line);
+  }
+  .closing h2 {
+    font-size: clamp(2.5rem, 6vw, 4.5rem);
+  }
+  .closing .ctas {
+    justify-content: center;
+  }
+
+  @media (max-width: 960px) {
+    .split,
+    .start,
+    .duo {
+      grid-template-columns: 1fr;
+      gap: 2.5rem;
+    }
+    .features {
+      grid-template-columns: 1fr 1fr;
+    }
+    .numbers {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .phone {
+      max-width: 16rem;
+    }
+  }
+  @media (max-width: 600px) {
+    section + section {
+      margin-top: 4.5rem;
+    }
+    .hero {
+      padding-top: 4rem;
+    }
+    .wrap {
+      padding: 0 1rem;
+    }
+    .grid {
+      grid-template-columns: repeat(24, 1fr);
+    }
+    .features {
+      grid-template-columns: 1fr;
+    }
+    .tested li {
+      grid-template-columns: 1fr;
+      gap: 0.15rem;
+    }
+    .legend-note {
+      margin-left: 0;
+    }
+    .frame-bar em {
+      display: none;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .grid :global(i) {
+      transition: none;
+    }
+  }
+</style>

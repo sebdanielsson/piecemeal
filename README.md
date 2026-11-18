@@ -1,12 +1,29 @@
 # piecemeal
 
-A self-hosted BitTorrent client: one Go binary built on [anacrolix/torrent](https://github.com/anacrolix/torrent), with its own REST API, a qBittorrent-compatible WebAPI for Radarr, Sonarr, Prowlarr and other qBittorrent tools, and an embedded web UI.
+A self-hosted BitTorrent client: one Go binary built on [anacrolix/torrent](https://github.com/anacrolix/torrent), with a modern web UI, its own REST API, and the qBittorrent WebAPI, so Radarr, Sonarr, Prowlarr and VueTorrent work with it as they do with qBittorrent.
 
-**Status:** before 1.0. The engine, the native API, the web UI, OIDC sign-in, the qBittorrent WebAPI (Radarr, Sonarr, Prowlarr and VueTorrent work against it) and RSS are done; hardening for 1.0 is under way. See [docs/plan.md](docs/plan.md) for the design and roadmap, and [docs/qbittorrent-compat.md](docs/qbittorrent-compat.md) for the qBittorrent API.
+**[Website and docs](https://piecemeal-flax.vercel.app)** · [Install](docs/install.md) · [Configuration](docs/configuration.md) · [API reference](https://piecemeal-flax.vercel.app/reference)
 
-## Running
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="website/assets/screens/list-dark.png">
+  <img alt="piecemeal's torrent list, with downloads in progress and seeding torrents" src="website/assets/screens/list-light.png">
+</picture>
+
+## Features
+
+- **A drop-in for the \*arrs.** Add piecemeal as a qBittorrent download client, with a scoped API key. CI runs Radarr, Sonarr and Prowlarr against it, and compares its API with a real qBittorrent 5.3.
+- **A web UI for desktop and phone**, with live updates, keyboard shortcuts, filters by state, category, tag and tracker, file priorities and renames, and a live piece map.
+- **Users and SSO**: a local admin, plus users from any OpenID Connect provider with allowed and admin groups, and API keys scoped to full access, the qBittorrent API, or reading.
+- **RSS** feeds and download rules with qBittorrent's matching, episode filters and the smart episode filter.
+- **Queueing, seeding goals, speed limits** and a schedule for alternative limits.
+- **VPN-friendly**: run in a WireGuard container and forward the peer port with NAT-PMP.
+- **Safe by default**: confined save paths, an SSRF filter on fetched URLs, sign-in limits, CSRF checks and an audit log.
+- **Operable**: Prometheus metrics, health checks, online backups, and import from Transmission and qBittorrent.
+
+## Quick start
 
 ```sh
+docker run --rm -i ghcr.io/sebdanielsson/piecemeal hash-password   # type a password, copy the hash
 docker run -d --name piecemeal \
   -p 8080:8080 -p 6881:6881 -p 6881:6881/udp \
   -v piecemeal-data:/data -v /path/to/downloads:/downloads \
@@ -14,104 +31,20 @@ docker run -d --name piecemeal \
   ghcr.io/sebdanielsson/piecemeal:latest
 ```
 
-Make the password hash with `docker run --rm -i ghcr.io/sebdanielsson/piecemeal hash-password` and type the password. Without a hash, piecemeal logs a temporary admin password at every start.
+Open `http://localhost:8080` and sign in as `admin`. Then [connect Radarr, Sonarr and Prowlarr](docs/guides/arr.md), or [move your torrents from Transmission or qBittorrent](docs/guides/import.md).
 
-The [user guide](docs/guide.md) covers Docker Compose, connecting Radarr, Sonarr and Prowlarr, reverse proxies, SSO, VPNs with port forwarding, and troubleshooting.
+## Documentation
 
-The native API is at `/api/piecemeal/v1`, with interactive docs at `/api/piecemeal/v1/docs` and the OpenAPI document in [api/openapi.json](api/openapi.json). Sign in with `POST /api/piecemeal/v1/auth/login`, or create an API key (`POST /api/piecemeal/v1/api-keys`) and send it as `Authorization: Bearer pm_...`.
+The docs are in [`docs/`](docs) and on the [website](https://piecemeal-flax.vercel.app/docs):
 
-## Configuration
+- [Install](docs/install.md), [configuration](docs/configuration.md), [backup and restore](docs/guides/backup.md)
+- [Radarr, Sonarr and Prowlarr](docs/guides/arr.md), [reverse proxy](docs/guides/reverse-proxy.md), [single sign-on](docs/guides/sso.md), [VPN and port forwarding](docs/guides/vpn.md)
+- [Web UIs](docs/features/web-ui.md), [RSS](docs/features/rss.md), [APIs](docs/reference/api.md), [qBittorrent compatibility](docs/reference/qbittorrent-compat.md)
+- [Security](docs/reference/security.md), [performance](docs/reference/performance.md), [troubleshooting](docs/help/troubleshooting.md), [FAQ](docs/help/faq.md)
 
-Startup configuration comes from environment variables:
+## Contributing
 
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `PIECEMEAL_ADDR` | `:8080` | HTTP address for the APIs and web UI. |
-| `PIECEMEAL_DATA_DIR` | `/data` in the image | Database and piece completion state. Keep it on fast storage. |
-| `PIECEMEAL_DOWNLOAD_DIR` | `/downloads` in the image | Default save path. |
-| `PIECEMEAL_ALLOWED_ROOTS` | the download dir | Comma-separated directories every save path must be inside. They must not overlap the data directory or the qBittorrent web UI directory. |
-| `PIECEMEAL_WATCH_DIR` | off | Directory polled for `.torrent` and `.magnet` files. |
-| `PIECEMEAL_QBITTORRENT_WEBUI_DIR` | off | A qBittorrent web UI such as VueTorrent, served at `/qbittorrent/`. See [qBittorrent compatibility](docs/qbittorrent-compat.md#vuetorrent-and-other-qbittorrent-web-uis). |
-| `PIECEMEAL_NATPMP_GATEWAY` | off | NAT-PMP gateway (such as a VPN's) to forward the peer port through. piecemeal listens on whatever port it gets and follows changes. |
-| `PIECEMEAL_LISTEN_HOST` | all | Address to bind peer listeners to. |
-| `PIECEMEAL_DISABLE_IPV6` | `false` | No IPv6 peers, for IPv4-only tunnels. |
-| `PIECEMEAL_MMAP` | `false` | Memory-mapped file I/O. Off by default: on ZFS it amplifies writes. |
-| `PIECEMEAL_ADMIN_USERNAME` | `admin` | The local admin. |
-| `PIECEMEAL_ADMIN_PASSWORD_HASH` | none | argon2id hash from `piecemeal hash-password`. Changing it ends the admin's sessions at the next start; API keys stay, so review them. |
-| `PIECEMEAL_LOCAL_LOGIN` | `true` | Allow password sign-in. |
-| `PIECEMEAL_SECURE_COOKIES` | `true` | Mark cookies Secure. Turn off only for plain HTTP on a host other than localhost. |
-| `PIECEMEAL_TRUSTED_PROXIES` | none | CIDRs whose `X-Forwarded-For` is trusted for client addresses. |
-| `PIECEMEAL_FETCH_ALLOWED_NETWORKS` | none | Private CIDRs that adding by URL may fetch from. Private, loopback and link-local addresses are refused otherwise. |
-| `PIECEMEAL_METRICS` | `auth` | `/metrics` access: `public`, `auth` (session or API key) or `off`. |
-| `PIECEMEAL_PUBLIC_URL` | none | Where people reach piecemeal, such as `https://piecemeal.example.com`. Needed for OIDC. |
-| `PIECEMEAL_ALLOWED_HOSTS` | any | Comma-separated host names piecemeal answers to, besides `localhost`, loopback addresses and the public URL's host. Other names get 421, which stops DNS rebinding on a LAN. Health checks answer any name. |
-| `PIECEMEAL_OIDC_ISSUER` | off | OpenID Connect issuer URL, such as Pocket ID's. Turns on SSO sign-in. |
-| `PIECEMEAL_OIDC_CLIENT_ID`, `PIECEMEAL_OIDC_CLIENT_SECRET` | none | The client registered at the provider, with the callback `<public URL>/api/piecemeal/v1/auth/oidc/callback`. |
-| `PIECEMEAL_OIDC_NAME` | `SSO` | Name on the sign-in button. |
-| `PIECEMEAL_OIDC_ALLOWED_GROUPS` | none | Comma-separated groups allowed to sign in. Required with OIDC, unless `PIECEMEAL_OIDC_ALLOW_ANY` is set. |
-| `PIECEMEAL_OIDC_ALLOW_ANY` | `false` | Let every account at the provider sign in. Users can write anywhere under the allowed roots, so set it only when the provider holds just the people you trust. |
-| `PIECEMEAL_OIDC_ADMIN_GROUPS` | none | Comma-separated groups whose members are admins. |
-| `PIECEMEAL_OIDC_GROUPS_CLAIM` | `groups` | ID token claim holding the groups. |
-| `PIECEMEAL_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. |
-| `PIECEMEAL_LOG_FORMAT` | `json` | `json` or `text`. |
-
-An admin can remove a user under Users, which ends their sessions and revokes their API keys. Remove SSO users from the allowed groups at the provider first, or they come back as new users at their next sign-in.
-
-Runtime settings (speed limits, connections, DHT, encryption, seeding goals and more) are changed through `PATCH /api/piecemeal/v1/settings`. Any of them can be pinned with an environment variable named after it, such as `PIECEMEAL_DOWNLOAD_LIMIT` for `downloadLimit`; pinned settings are read-only in the API.
-
-## Backup and restore
-
-The database in `PIECEMEAL_DATA_DIR` holds settings, users, API keys, torrents, categories, tags and RSS. Back it up while piecemeal runs, either from Settings > Backup in the web UI (admins) or from the command line:
-
-```sh
-docker exec piecemeal piecemeal backup /data/piecemeal-backup.db
-```
-
-To restore, stop piecemeal and run `piecemeal restore FILE` with the same data directory; the database it replaces is kept next to it with a `.replaced-` suffix. Downloaded data isn't part of the backup: it stays where it is, and piece completion is rebuilt by checking it, for running torrents at the next start and for stopped ones when they start.
-
-```sh
-docker stop piecemeal
-docker run --rm -v piecemeal-data:/data -v "$PWD":/backup ghcr.io/sebdanielsson/piecemeal restore /backup/piecemeal-backup.db
-docker start piecemeal
-```
-
-Only one piecemeal can use a data directory at a time.
-
-## Moving from Transmission or qBittorrent
-
-`piecemeal import` reads another client's torrents and adds them, with their save paths, renamed and skipped files, labels or category and tags, stopped state, ratio limits, added and completed times, and transfer totals. Stop piecemeal first; the other client can keep running, but stop it before piecemeal starts seeding the same files.
-
-```sh
-docker stop piecemeal
-docker run --rm -v piecemeal-data:/data -v /path/to/downloads:/downloads \
-  -v /path/to/transmission-config:/import:ro \
-  ghcr.io/sebdanielsson/piecemeal import transmission /import --dry-run
-```
-
-- For Transmission, give its configuration directory (with `torrents/` and `resume/`); for qBittorrent, its `BT_backup` directory. Transmission's labels become tags; qBittorrent's category and tags carry over.
-- `--map FROM=TO` rewrites save paths when the other client saw the downloads under another path, such as `--map /data/torrents=/downloads`. Save paths must end up inside `PIECEMEAL_ALLOWED_ROOTS`.
-- piecemeal checks each torrent's data when it next starts (stopped ones when they start). `--trust-data` marks complete torrents as verified instead, which is faster on large libraries but trusts the files on disk.
-- `--dry-run` lists what would be imported. Torrents already in piecemeal are skipped, so running it twice is safe. qBittorrent magnets without metadata yet have no torrent file and are left out; add them again.
-
-## Development
-
-Tool versions are pinned in [`mise.toml`](mise.toml).
-
-```sh
-mise install        # Go, Node, pnpm, golangci-lint, govulncheck, sqlc
-mise run build      # web UI, then bin/piecemeal with it embedded
-mise run generate   # store queries, OpenAPI document, web API client
-mise run check      # everything CI checks
-pnpm -C web dev     # UI dev server, proxying /api to a piecemeal on :8080
-```
-
-Go-only builds need the embed directory to exist: `mkdir -p internal/webui/dist && touch internal/webui/dist/.keep`.
-
-`test/e2e/run.sh` runs the end-to-end tests against qBittorrent, Radarr, Sonarr and Prowlarr in Docker, and `test/load/run.sh` measures piecemeal with 1,000 torrents; see [Performance](docs/performance.md).
-
-## Releases
-
-Releases are cut by [release-please](https://github.com/googleapis/release-please) from conventional commits. Each release publishes a signed multi-arch image to `ghcr.io/sebdanielsson/piecemeal`, with SBOM and provenance attestations, plus binaries for linux/amd64, linux/arm64 and darwin/arm64.
+See [Development](docs/help/development.md) for building, testing and conventions. Report security issues privately through [GitHub's vulnerability reporting](https://github.com/sebdanielsson/piecemeal/security/advisories/new).
 
 ## License
 
