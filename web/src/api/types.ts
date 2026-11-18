@@ -1,0 +1,32 @@
+import type { components } from "./schema";
+
+type Schemas = components["schemas"];
+
+export type Torrent = Schemas["Torrent"];
+export type TorrentState = Torrent["state"];
+export type TransferStatus = Schemas["TransferStatus"];
+export type TransferLimits = Schemas["TransferLimits"];
+export type Category = Schemas["Category"];
+export type Settings = Schemas["Settings"];
+export type SettingsResponse = Schemas["SettingsResponse"];
+export type TorrentFile = Schemas["File"];
+export type FilePriority = TorrentFile["priority"];
+export type Peer = Schemas["Peer"];
+export type Tracker = Schemas["Tracker"];
+export type APIKey = Schemas["APIKey"];
+export type APIKeyScope = APIKey["scope"];
+export type CreatedAPIKey = Schemas["CreatedAPIKey"];
+export type Session = Schemas["Session"];
+export type User = Schemas["User"];
+export type AuditEntry = Schemas["AuditEntry"];
+export type LogEntry = Schemas["LogEntry"];
+export type Principal = Schemas["Principal"];
+export type AuthConfig = Schemas["AuthConfig"];
+export type SystemInfo = Schemas["System"];
+export type BulkAction = Schemas["BulkAction"];
+export type BulkActionName = BulkAction["action"];
+export type AddTorrentRequest = Schemas["AddTorrentRequest"];
+export type UpdateTorrentRequest = Schemas["UpdateTorrentRequest"];
+export type SnapshotEvent = Schemas["SnapshotEvent"];
+export type TorrentsEvent = Schemas["TorrentsEvent"];
+export type ProblemDetails = Schemas["ErrorModel"];

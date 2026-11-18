@@ -30,6 +30,8 @@ type testServer struct {
 	*httptest.Server
 	t      *testing.T
 	client *http.Client
+	store  *store.Store
+	auth   *auth.Service
 }
 
 func newTestServer(t *testing.T) *testServer {
@@ -76,7 +78,7 @@ func newTestServer(t *testing.T) *testServer {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	jar, _ := cookiejar.New(nil)
-	return &testServer{Server: srv, t: t, client: &http.Client{Jar: jar}}
+	return &testServer{Server: srv, t: t, client: &http.Client{Jar: jar}, store: st, auth: a}
 }
 
 // do sends a request and decodes a JSON response into out. headers are
@@ -301,4 +303,51 @@ func TestEventsStartWithSnapshot(t *testing.T) {
 		}
 	}
 	t.Fatal("no torrents event for the added torrent")
+}
+
+func TestTransferLimitsForUsers(t *testing.T) {
+	s := newTestServer(t)
+	s.login()
+	var tr engine.TransferStatus
+	alt := true
+	limit := int64(2000)
+	s.do(http.MethodPatch, "/transfer", TransferLimits{AltSpeedEnabled: &alt, AltDownloadLimit: &limit}, http.StatusOK, &tr, csrf...)
+	if !tr.AltSpeedEnabled || tr.DownloadLimit != 2000 {
+		t.Fatalf("transfer: %+v", tr)
+	}
+	// uploadLimit is pinned by PIECEMEAL_UPLOAD_LIMIT in this server.
+	up := int64(5)
+	s.do(http.MethodPatch, "/transfer", TransferLimits{UploadLimit: &up}, http.StatusUnprocessableEntity, nil, csrf...)
+
+	var keys struct{ Items []auth.APIKey }
+	var created CreatedAPIKey
+	s.do(http.MethodPost, "/api-keys", CreateAPIKeyRequest{Name: "k", Scope: auth.ScopeFull}, http.StatusCreated, &created, csrf...)
+	if created.Username != "admin" {
+		t.Fatalf("created key's username %q", created.Username)
+	}
+	s.do(http.MethodGet, "/api-keys", nil, http.StatusOK, &keys)
+	var sessions struct{ Items []auth.Session }
+	s.do(http.MethodGet, "/sessions", nil, http.StatusOK, &sessions)
+	if keys.Items[0].Username != "admin" || sessions.Items[0].Username != "admin" {
+		t.Fatalf("usernames: %+v %+v", keys.Items, sessions.Items)
+	}
+}
+
+func TestNonAdminCanChangeLimitsButNotSettings(t *testing.T) {
+	s := newTestServer(t)
+	ctx := context.Background()
+	u, err := s.store.CreateUser(ctx, store.CreateUserParams{Username: "bob", DisplayName: "Bob", CreatedAt: time.Now().Unix()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, _, err := s.auth.OpenSession(ctx, httptest.NewRequest(http.MethodPost, "/", nil), u.ID, auth.KindWeb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cookie := []string{"Cookie", auth.CookieWeb + "=" + token, CSRFHeader, "piecemeal"}
+	anon := &testServer{Server: s.Server, t: t, client: http.DefaultClient}
+	limit := int64(1000)
+	anon.do(http.MethodPatch, "/transfer", TransferLimits{DownloadLimit: &limit}, http.StatusOK, nil, cookie...)
+	anon.do(http.MethodPatch, "/settings", map[string]any{"downloadLimit": 5}, http.StatusForbidden, nil, cookie...)
+	anon.do(http.MethodGet, "/audit", nil, http.StatusForbidden, nil, cookie...)
 }
