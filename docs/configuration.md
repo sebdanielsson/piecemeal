@@ -84,10 +84,11 @@ Change these in **Settings**, with `PATCH /api/piecemeal/v1/settings`, or throug
 | `utp` | `true` | Use uTP as well as TCP. |
 | `dht`, `pex` | `true` | Find peers through the DHT and peer exchange. Private torrents use neither. |
 | `encryption` | `prefer` | Peer connection encryption: `prefer`, `require` or `disable`. |
-| `ratioLimit` | `-1` | Stop seeding at this ratio; `-1` is unlimited. |
-| `seedingTimeLimit` | `-1` | Stop seeding after this many minutes. |
-| `inactiveSeedingTimeLimit` | `-1` | Stop seeding after this many minutes without uploading. |
-| `seedGoalAction` | `stop` | What happens at a seeding goal: `stop`, `remove` or `removeWithData`. |
+| `ratioLimit` | `-1` | Seeding goal: this upload ratio; `-1` is unlimited. |
+| `seedingTimeLimit` | `-1` | Seeding goal: this many minutes seeding. |
+| `inactiveSeedingTimeLimit` | `-1` | Seeding goal: this many minutes without uploading. |
+| `seedGoalMode` | `any` | `any`: a torrent reaches its goals when one of them is met; `all`: only when every goal that is set is met. |
+| `seedGoalAction` | `stop` | What happens when a torrent reaches its goals: `stop`, `remove` or `removeWithData`. |
 | `queueingEnabled` | `false` | Run only a limited number of torrents at once; the rest wait in the queue. |
 | `maxActiveDownloads`, `maxActiveUploads`, `maxActiveTorrents` | `3`, `3`, `5` | The queue's limits; `-1` is unlimited. |
 | `dontCountSlowTorrents` | `false` | Slow torrents don't count toward the limits. |
@@ -105,7 +106,7 @@ Change these in **Settings**, with `PATCH /api/piecemeal/v1/settings`, or throug
 | `rssDownloadRepacks` | `true` | With the smart episode filter, also take a REPACK or PROPER of an episode already downloaded. |
 | `rssSmartEpisodeFilters` | `SxxEyy`, `NxNN` and dates | Regular expressions, one per line, that find the episode in a title. |
 
-A torrent's own ratio and seeding-time limits override the global ones.
+The seeding goals above are the defaults. A category can set its own goals, mode and action, and so can a torrent; each one follows the next level only where it's left at the default (`-2` for a goal, `default` for the mode and action): first the torrent's own, then its category's, then the global setting.
 
 ### Pinning settings
 

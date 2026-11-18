@@ -177,6 +177,17 @@ func TestTorrentLifecycle(t *testing.T) {
 	s := newTestServer(t)
 	s.login()
 	s.do(http.MethodPut, "/categories/tv", map[string]string{"savePath": ""}, http.StatusOK, nil, csrf...)
+	var cat engine.Category
+	s.do(http.MethodPut, "/categories/tv", map[string]any{"savePath": "", "seedingTimeLimit": 90, "seedGoalAction": "remove"},
+		http.StatusOK, &cat, csrf...)
+	// Goals left out keep their values.
+	s.do(http.MethodPut, "/categories/tv", map[string]any{"savePath": "", "ratioLimit": 1.5}, http.StatusOK, &cat, csrf...)
+	if cat.RatioLimit != 1.5 || cat.SeedingTimeLimit != 90 || cat.InactiveSeedingTimeLimit != -2 ||
+		cat.SeedGoalAction != engine.ActionRemove || cat.SeedGoalMode != engine.ModeDefault {
+		t.Fatalf("category: %+v", cat)
+	}
+	s.do(http.MethodPut, "/categories/tv", map[string]any{"savePath": "", "seedGoalAction": "pause"}, http.StatusUnprocessableEntity, nil, csrf...)
+	s.do(http.MethodPut, "/categories/tv", map[string]any{"savePath": "", "ratioLimit": -3}, http.StatusUnprocessableEntity, nil, csrf...)
 
 	stopped := true
 	var added engine.Torrent
@@ -207,6 +218,19 @@ func TestTorrentLifecycle(t *testing.T) {
 	if updated.Name != "Renamed" || updated.RatioLimit != 2 || len(updated.Tags) != 1 || updated.Tags[0] != "4k" {
 		t.Fatalf("updated: %+v", updated)
 	}
+	if updated.SeedGoalAction != engine.ActionDefault || updated.SeedGoals != (engine.SeedGoals{
+		RatioLimit: 2, SeedingTimeLimit: 90, InactiveSeedingTimeLimit: -1, Action: engine.ActionRemove, Mode: engine.ModeAny,
+	}) {
+		t.Fatalf("seed goals: %s %+v", updated.SeedGoalAction, updated.SeedGoals)
+	}
+	action, mode := engine.ActionRemoveWithData, engine.ModeAll
+	s.do(http.MethodPatch, "/torrents/"+testHash, UpdateTorrentRequest{SeedGoalAction: &action, SeedGoalMode: &mode}, http.StatusOK, &updated, csrf...)
+	if updated.SeedGoalAction != action || updated.SeedGoalMode != mode || updated.RatioLimit != 2 ||
+		updated.SeedGoals.Action != action || updated.SeedGoals.Mode != mode {
+		t.Fatalf("after setting the action and mode: %+v", updated)
+	}
+	bad := "superSeed"
+	s.do(http.MethodPatch, "/torrents/"+testHash, UpdateTorrentRequest{SeedGoalAction: &bad}, http.StatusUnprocessableEntity, nil, csrf...)
 
 	s.do(http.MethodPost, "/torrents/"+testHash+"/start", nil, http.StatusOK, &updated, csrf...)
 	if updated.State != engine.StateMetadata {
@@ -247,6 +271,11 @@ func TestSettings(t *testing.T) {
 	if got.Settings.DownloadLimit != 5000 {
 		t.Fatalf("after patch: %+v", got)
 	}
+	s.do(http.MethodPatch, "/settings", map[string]any{"seedGoalMode": "all"}, http.StatusOK, &got, csrf...)
+	if got.Settings.SeedGoalMode != "all" {
+		t.Fatalf("after patching seedGoalMode: %+v", got)
+	}
+	s.do(http.MethodPatch, "/settings", map[string]any{"seedGoalMode": "most"}, http.StatusUnprocessableEntity, nil, csrf...)
 	s.do(http.MethodPatch, "/settings", map[string]any{"uploadLimit": 1}, http.StatusUnprocessableEntity, nil, csrf...)
 	s.do(http.MethodPatch, "/settings", map[string]any{"defaultSavePath": "/etc"}, http.StatusUnprocessableEntity, nil, csrf...)
 	var tr engine.TransferStatus

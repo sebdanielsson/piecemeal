@@ -343,6 +343,9 @@ func TestContractQBittorrent(t *testing.T) {
 		sub string
 		// same compares the bodies as text.
 		same bool
+		// fields compares these fields' values, in the object shape
+		// compares.
+		fields []string
 	}
 	const magnet = "magnet:?xt=urn:btih:5555555555555555555555555555555555555555&dn=contract"
 	calls := []call{
@@ -359,6 +362,15 @@ func TestContractQBittorrent(t *testing.T) {
 		{name: "createCategory", method: http.MethodPost, path: "/torrents/createCategory", form: "category=contract"},
 		{name: "createCategory again", method: http.MethodPost, path: "/torrents/createCategory", form: "category=contract"},
 		{name: "categories", method: http.MethodGet, path: "/torrents/categories", shape: true},
+		// Share limits on categories, WebAPI 2.16.2.
+		{name: "createCategory with share limits", method: http.MethodPost, path: "/torrents/createCategory", form: "category=goals&ratioLimit=1.5&seedingTimeLimit=60&inactiveSeedingTimeLimit=30&shareLimitsMode=MatchAll&shareLimitAction=Remove"},
+		{name: "categories with share limits", method: http.MethodGet, path: "/torrents/categories", sub: "goals", fields: categoryFields},
+		{name: "createCategory bad ratioLimit", method: http.MethodPost, path: "/torrents/createCategory", form: "category=bad&ratioLimit=-3", same: true},
+		{name: "createCategory bad shareLimitsMode", method: http.MethodPost, path: "/torrents/createCategory", form: "category=bad&shareLimitsMode=matchall&shareLimitAction=x", same: true},
+		{name: "createCategory bad shareLimitAction", method: http.MethodPost, path: "/torrents/createCategory", form: "category=bad&shareLimitAction=Pause", same: true},
+		{name: "createCategory super seeding", method: http.MethodPost, path: "/torrents/createCategory", form: "category=bad&shareLimitAction=EnableSuperSeeding", differs: "409: piecemeal has no super seeding"},
+		{name: "editCategory share limits only", method: http.MethodPost, path: "/torrents/editCategory", form: "category=goals&inactiveSeedingTimeLimit=-1&shareLimitAction=Stop"},
+		{name: "categories after editCategory", method: http.MethodGet, path: "/torrents/categories", sub: "goals", fields: categoryFields},
 		{name: "add magnet stopped", method: http.MethodPost, path: "/torrents/add", form: "urls=" + magnet + "&category=contract&stopped=True"},
 		{name: "add duplicate", method: http.MethodPost, path: "/torrents/add", form: "urls=" + magnet + "&category=contract&stopped=True"},
 		{name: "info", method: http.MethodGet, path: "/torrents/info?category=contract", shape: true, required: []string{
@@ -429,6 +441,19 @@ func TestContractQBittorrent(t *testing.T) {
 		{name: "reannounce", method: http.MethodPost, path: "/torrents/reannounce", form: "hashes=5555555555555555555555555555555555555555"},
 		{name: "setShareLimits", method: http.MethodPost, path: "/torrents/setShareLimits", form: "hashes=5555555555555555555555555555555555555555&ratioLimit=-2&seedingTimeLimit=-2&inactiveSeedingTimeLimit=-2&shareLimitAction=Default&shareLimitsMode=Default"},
 		{name: "setShareLimits without 5.x fields", method: http.MethodPost, path: "/torrents/setShareLimits", form: "hashes=5555555555555555555555555555555555555555&ratioLimit=-2&seedingTimeLimit=-2&inactiveSeedingTimeLimit=-2", differs: "accepted, for clients older than qBittorrent 5"},
+		// The torrent's own limits, action and mode, then its category's.
+		{name: "setShareLimits action and mode", method: http.MethodPost, path: "/torrents/setShareLimits", form: "hashes=5555555555555555555555555555555555555555&ratioLimit=-2&seedingTimeLimit=-2&inactiveSeedingTimeLimit=5&shareLimitAction=RemoveWithContent&shareLimitsMode=MatchAll"},
+		{name: "setCategory goals", method: http.MethodPost, path: "/torrents/setCategory", form: "hashes=5555555555555555555555555555555555555555&category=goals"},
+		{name: "info share limits", method: http.MethodGet, path: "/torrents/info?hashes=5555555555555555555555555555555555555555", fields: torrentShareFields},
+		{name: "setShareLimits unknown names", method: http.MethodPost, path: "/torrents/setShareLimits", form: "hashes=5555555555555555555555555555555555555555&ratioLimit=2&seedingTimeLimit=-2&inactiveSeedingTimeLimit=-2&shareLimitAction=Pause&shareLimitsMode=matchall"},
+		{name: "info after unknown names", method: http.MethodGet, path: "/torrents/info?hashes=5555555555555555555555555555555555555555", fields: torrentShareFields},
+		{name: "setShareLimits super seeding", method: http.MethodPost, path: "/torrents/setShareLimits", form: "hashes=5555555555555555555555555555555555555555&ratioLimit=-2&seedingTimeLimit=-2&inactiveSeedingTimeLimit=-2&shareLimitAction=EnableSuperSeeding&shareLimitsMode=Default", differs: "409: piecemeal has no super seeding"},
+		{name: "setCategory contract", method: http.MethodPost, path: "/torrents/setCategory", form: "hashes=5555555555555555555555555555555555555555&category=contract"},
+		// The global mode: Default and unknown values store MatchAny.
+		{name: "setPreferences share_limits_mode MatchAll", method: http.MethodPost, path: "/app/setPreferences", form: `json={"share_limits_mode":"MatchAll"}`},
+		{name: "preferences share_limits_mode MatchAll", method: http.MethodGet, path: "/app/preferences", fields: []string{"share_limits_mode"}},
+		{name: "setPreferences share_limits_mode Default", method: http.MethodPost, path: "/app/setPreferences", form: `json={"share_limits_mode":"Default"}`},
+		{name: "preferences share_limits_mode Default", method: http.MethodGet, path: "/app/preferences", fields: []string{"share_limits_mode"}},
 		{name: "setDownloadLimit per torrent", method: http.MethodPost, path: "/torrents/setDownloadLimit", form: "hashes=5555555555555555555555555555555555555555&limit=0", differs: "409: piecemeal has no per-torrent speed limits"},
 		{name: "toggleSequentialDownload", method: http.MethodPost, path: "/torrents/toggleSequentialDownload", form: "hashes=5555555555555555555555555555555555555555"},
 		{name: "toggleFirstLastPiecePrio", method: http.MethodPost, path: "/torrents/toggleFirstLastPiecePrio", form: "hashes=5555555555555555555555555555555555555555"},
@@ -478,11 +503,17 @@ func TestContractQBittorrent(t *testing.T) {
 		if c.same && !sameJSON(qbText, pmText) {
 			failures = append(failures, fmt.Sprintf("%s: body qBittorrent %q, piecemeal %q", c.name, qbText, pmText))
 		}
-		if !c.shape {
-			continue
-		}
 		if c.sub != "" {
 			qbBody, pmBody = field(qbBody, c.sub), field(pmBody, c.sub)
+		}
+		qbObj, pmObj := object(qbBody), object(pmBody)
+		for _, f := range c.fields {
+			if qv, pv := qbObj[f], pmObj[f]; !sameJSON(jsonText(qv), jsonText(pv)) {
+				failures = append(failures, fmt.Sprintf("%s: %s is %v in qBittorrent, %v in piecemeal", c.name, f, qv, pv))
+			}
+		}
+		if !c.shape {
+			continue
 		}
 		qbShape, pmShape := shape(qbBody), shape(pmBody)
 		for _, k := range c.required {
@@ -547,6 +578,44 @@ func field(v any, name string) any {
 		return m[name]
 	}
 	return nil
+}
+
+// Fields compared by value between qBittorrent and piecemeal.
+var (
+	categoryFields = []string{
+		"name", "ratio_limit", "seeding_time_limit", "inactive_seeding_time_limit", "share_limit_action",
+		"share_limits_mode",
+	}
+	torrentShareFields = []string{
+		"ratio_limit", "seeding_time_limit", "inactive_seeding_time_limit", "share_limit_action", "share_limits_mode",
+		"max_ratio", "max_seeding_time", "max_inactive_seeding_time",
+	}
+)
+
+// object is a JSON object, the first element of an array of objects, or
+// the only value of a map of objects: what shape describes.
+func object(v any) map[string]any {
+	switch x := v.(type) {
+	case []any:
+		if len(x) > 0 {
+			return object(x[0])
+		}
+	case map[string]any:
+		if len(x) == 1 {
+			for _, inner := range x {
+				if m, ok := inner.(map[string]any); ok {
+					return m
+				}
+			}
+		}
+		return x
+	}
+	return nil
+}
+
+func jsonText(v any) string {
+	b, _ := json.Marshal(v)
+	return string(b)
 }
 
 // shape flattens a JSON object, or the first element of an array of

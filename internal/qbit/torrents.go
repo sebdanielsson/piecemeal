@@ -159,14 +159,6 @@ func ratio(r float64) float64 {
 	return r
 }
 
-// effective resolves a per-torrent limit (-2 follows the global setting).
-func effective[T int64 | float64](own, global T) T {
-	if own == -2 {
-		return global
-	}
-	return own
-}
-
 // queuePriority is qBittorrent's priority field: the queue position, 0 for
 // torrents outside the queue (complete ones), and -1 with queueing off.
 func queuePriority(t engine.Torrent, queueing bool) int64 {
@@ -198,14 +190,17 @@ func (s *Server) torrent(t engine.Torrent) Torrent {
 		DownloadedSession: t.SessionDown, ETA: eta(t), FLPiecePrio: t.FirstLast, ForceStart: t.Forced,
 		HasMetadata: t.HasMetadata, Hash: t.Hash, InactiveSeedingTimeLimit: t.InactiveSeedingTimeLimit,
 		InfohashV1: t.Hash, LastActivity: t.LastActive, MagnetURI: magnet(t),
-		MaxInactiveSeedingTime: effective(t.InactiveSeedingTimeLimit, st.InactiveSeedingTimeLimit),
-		MaxRatio:               effective(t.RatioLimit, st.RatioLimit),
-		MaxSeedingTime:         effective(t.SeedingTimeLimit, st.SeedingTimeLimit),
+		// The limits in effect: the torrent's, its category's or the
+		// global ones.
+		MaxInactiveSeedingTime: t.SeedGoals.InactiveSeedingTimeLimit,
+		MaxRatio:               t.SeedGoals.RatioLimit,
+		MaxSeedingTime:         t.SeedGoals.SeedingTimeLimit,
 		Name:                   t.Name, NumComplete: t.Seeds, NumIncomplete: max(t.SwarmPeers-t.Seeds, t.Peers),
 		NumLeechs: t.Peers, NumSeeds: t.Seeds, Priority: queuePriority(t, st.QueueingEnabled), Private: t.Private, Progress: t.Progress,
 		Ratio: ratio(t.Ratio), RatioLimit: t.RatioLimit, RootPath: t.RootPath, SavePath: t.SavePath,
 		SeedingTime: t.SeedingTime, SeedingTimeLimit: t.SeedingTimeLimit, SeenComplete: completedOn,
-		SeqDl: t.Sequential, ShareLimitAction: "Default", ShareLimitsMode: "Default", Size: t.Size,
+		SeqDl: t.Sequential, ShareLimitAction: shareLimitAction(t.SeedGoalAction),
+		ShareLimitsMode: shareLimitsMode(t.SeedGoalMode), Size: t.Size,
 		State: State(t), Tags: strings.Join(t.Tags, ", "), TimeActive: t.ActiveTime, TotalSize: t.TotalSize,
 		Tracker: t.Tracker, TrackersCount: t.Trackers, UpLimit: -1, Uploaded: t.Uploaded,
 		UploadedSession: t.SessionUp, Upspeed: t.UpRate,
@@ -632,12 +627,17 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 	if v, err := strconv.ParseInt(r.FormValue("inactiveSeedingTimeLimit"), 10, 64); err == nil {
 		base.InactiveSeedingTimeLimit = &v
 	}
+	if r.FormValue("shareLimitAction") == superSeeding {
+		refuseSuperSeeding(w)
+		return
+	}
+	base.SeedGoalAction, base.SeedGoalMode = lenientShareLimits(r)
 	// dlLimit and upLimit are ignored: piecemeal has no per-torrent speed
 	// limits.
 	if base.Category != "" {
 		if !slices.ContainsFunc(s.engine.Categories(), func(c engine.Category) bool { return c.Name == base.Category }) {
 			// qBittorrent creates a category it doesn't know.
-			if err := s.engine.PutCategory(r.Context(), engine.Category{Name: base.Category}, true); err != nil && !errors.Is(err, engine.ErrExists) {
+			if err := s.engine.PutCategory(r.Context(), engine.NewCategory(base.Category), true); err != nil && !errors.Is(err, engine.ErrExists) {
 				s.engineError(w, err)
 				return
 			}
@@ -804,9 +804,21 @@ func (s *Server) withHashesStatus(w http.ResponseWriter, r *http.Request, status
 	w.WriteHeader(status)
 }
 
+// setShareLimits sets limits, action and mode. qBittorrent 5.3.0 requires
+// all five; piecemeal takes a missing limit as -2 and leaves a missing
+// action or mode as it is, for clients older than qBittorrent 5.
 func (s *Server) setShareLimits(w http.ResponseWriter, r *http.Request) {
+	if err := parseForm(w, r); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if r.FormValue("shareLimitAction") == superSeeding {
+		refuseSuperSeeding(w)
+		return
+	}
 	s.withHashes(w, r, func(hs []string) error {
 		l := engine.ShareLimits{RatioLimit: -2, SeedingTimeLimit: -2, InactiveSeedingTimeLimit: -2}
+		l.Action, l.Mode = lenientShareLimits(r)
 		if v, err := strconv.ParseFloat(r.FormValue("ratioLimit"), 64); err == nil {
 			l.RatioLimit = v
 		}

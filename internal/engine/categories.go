@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"maps"
@@ -10,10 +11,26 @@ import (
 	"github.com/sebdanielsson/piecemeal/internal/store"
 )
 
-// Category groups torrents and can give them a save path.
+// Category groups torrents and can give them a save path and seeding
+// goals.
 type Category struct {
 	Name     string `json:"name"`
 	SavePath string `json:"savePath" doc:"Where torrents in this category are saved; empty uses the default save path."`
+	// Seeding goals for the category's torrents that follow the default.
+	RatioLimit               float64 `json:"ratioLimit" doc:"-2 follows the global setting, -1 is unlimited."`
+	SeedingTimeLimit         int64   `json:"seedingTimeLimit" doc:"Minutes. -2 follows the global setting, -1 is unlimited."`
+	InactiveSeedingTimeLimit int64   `json:"inactiveSeedingTimeLimit" doc:"Minutes. -2 follows the global setting, -1 is unlimited."`
+	SeedGoalAction           string  `json:"seedGoalAction" enum:"default,stop,remove,removeWithData" doc:"What happens when a torrent reaches its seeding goals; default follows the global setting."`
+	SeedGoalMode             string  `json:"seedGoalMode" enum:"default,any,all" doc:"Whether any goal or all of them must be met; default follows the global setting."`
+}
+
+// NewCategory returns a category with no save path whose seeding goals
+// follow the global settings.
+func NewCategory(name string) Category {
+	return Category{
+		Name: name, RatioLimit: -2, SeedingTimeLimit: -2, InactiveSeedingTimeLimit: -2,
+		SeedGoalAction: ActionDefault, SeedGoalMode: ModeDefault,
+	}
 }
 
 func (e *Engine) loadCategoriesAndTags(ctx context.Context) error {
@@ -22,7 +39,11 @@ func (e *Engine) loadCategoriesAndTags(ctx context.Context) error {
 		return fmt.Errorf("load categories: %w", err)
 	}
 	for _, c := range cats {
-		e.cats[c.Name] = Category{Name: c.Name, SavePath: c.SavePath}
+		e.cats[c.Name] = Category{
+			Name: c.Name, SavePath: c.SavePath, RatioLimit: c.RatioLimit, SeedingTimeLimit: c.SeedingTimeLimit,
+			InactiveSeedingTimeLimit: c.InactiveSeedingTimeLimit,
+			SeedGoalAction:           cmp.Or(c.SeedGoalAction, ActionDefault), SeedGoalMode: cmp.Or(c.SeedGoalMode, ModeDefault),
+		}
 	}
 	tags, err := e.store.ListTags(ctx)
 	if err != nil {
@@ -63,10 +84,16 @@ func validName(kind, name string) error {
 	return nil
 }
 
-// PutCategory creates a category or changes its save path. Torrents already
-// in it stay where they are.
+// PutCategory creates a category or changes its save path and seeding
+// goals. Torrents already in it stay where they are. Start from
+// NewCategory: zero limits are goals of 0. An empty action or mode is the
+// default.
 func (e *Engine) PutCategory(ctx context.Context, c Category, create bool) error {
 	if err := validName("category", c.Name); err != nil {
+		return err
+	}
+	c.SeedGoalAction, c.SeedGoalMode = cmp.Or(c.SeedGoalAction, ActionDefault), cmp.Or(c.SeedGoalMode, ModeDefault)
+	if err := validGoals(c.RatioLimit, c.SeedingTimeLimit, c.InactiveSeedingTimeLimit, c.SeedGoalAction, c.SeedGoalMode); err != nil {
 		return err
 	}
 	if c.SavePath != "" {
@@ -85,7 +112,11 @@ func (e *Engine) PutCategory(ctx context.Context, c Category, create bool) error
 	if !create && !exists {
 		return fmt.Errorf("%w: category %q", ErrNotFound, c.Name)
 	}
-	if err := e.store.UpsertCategory(ctx, store.UpsertCategoryParams{Name: c.Name, SavePath: c.SavePath}); err != nil {
+	err := e.store.UpsertCategory(ctx, store.UpsertCategoryParams{
+		Name: c.Name, SavePath: c.SavePath, RatioLimit: c.RatioLimit, SeedingTimeLimit: c.SeedingTimeLimit,
+		InactiveSeedingTimeLimit: c.InactiveSeedingTimeLimit, SeedGoalAction: c.SeedGoalAction, SeedGoalMode: c.SeedGoalMode,
+	})
+	if err != nil {
 		return fmt.Errorf("save category: %w", err)
 	}
 	e.cats[c.Name] = c

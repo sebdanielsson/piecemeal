@@ -1,3 +1,4 @@
+import { seedGoalActions, seedGoalModes } from "@/components/form/seed-goal-options";
 import type { FieldGroupDef } from "./settings-form";
 
 export const speedGroup: FieldGroupDef = {
@@ -229,21 +230,13 @@ export const settingsGroups: FieldGroupDef[] = [
   },
   {
     title: "Seeding goals",
-    description: "Defaults for torrents that follow the global setting.",
+    description: "For torrents that follow the default and whose category doesn't set its own.",
     fields: [
-      { key: "ratioLimit", label: "Stop at ratio", kind: "ratio" },
-      { key: "seedingTimeLimit", label: "Stop after seeding for", kind: "minutes" },
-      { key: "inactiveSeedingTimeLimit", label: "Stop when inactive for", kind: "minutes" },
-      {
-        key: "seedGoalAction",
-        label: "When a goal is reached",
-        kind: "select",
-        options: [
-          { value: "stop", label: "Stop the torrent" },
-          { value: "remove", label: "Remove the torrent" },
-          { value: "removeWithData", label: "Remove the torrent and its files" },
-        ],
-      },
+      { key: "ratioLimit", label: "Ratio goal", kind: "ratio" },
+      { key: "seedingTimeLimit", label: "Seeding time goal", kind: "minutes" },
+      { key: "inactiveSeedingTimeLimit", label: "Inactive time goal", kind: "minutes" },
+      { key: "seedGoalMode", label: "Reached when", kind: "select", options: seedGoalModes },
+      { key: "seedGoalAction", label: "Then", kind: "select", options: seedGoalActions },
     ],
   },
 ];

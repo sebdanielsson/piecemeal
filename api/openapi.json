@@ -84,6 +84,25 @@
           "savePath": {
             "type": "string"
           },
+          "seedGoalAction": {
+            "description": "What happens when the torrent reaches its seeding goals; absent or default follows the category, then the global setting.",
+            "enum": [
+              "default",
+              "stop",
+              "remove",
+              "removeWithData"
+            ],
+            "type": "string"
+          },
+          "seedGoalMode": {
+            "description": "Whether any goal or all of them must be met; absent or default follows the category, then the global setting.",
+            "enum": [
+              "default",
+              "any",
+              "all"
+            ],
+            "type": "string"
+          },
           "seedingTimeLimit": {
             "format": "int64",
             "type": "integer"
@@ -198,6 +217,25 @@
             "type": "number"
           },
           "savePath": {
+            "type": "string"
+          },
+          "seedGoalAction": {
+            "description": "What happens when the torrent reaches its seeding goals; default follows the category, then the global setting.",
+            "enum": [
+              "default",
+              "stop",
+              "remove",
+              "removeWithData"
+            ],
+            "type": "string"
+          },
+          "seedGoalMode": {
+            "description": "Whether any goal or all of them must be met; default follows the category, then the global setting.",
+            "enum": [
+              "default",
+              "any",
+              "all"
+            ],
             "type": "string"
           },
           "seedingTimeLimit": {
@@ -475,17 +513,56 @@
       "Category": {
         "additionalProperties": false,
         "properties": {
+          "inactiveSeedingTimeLimit": {
+            "description": "Minutes. -2 follows the global setting, -1 is unlimited.",
+            "format": "int64",
+            "type": "integer"
+          },
           "name": {
             "type": "string"
+          },
+          "ratioLimit": {
+            "description": "-2 follows the global setting, -1 is unlimited.",
+            "format": "double",
+            "type": "number"
           },
           "savePath": {
             "description": "Where torrents in this category are saved; empty uses the default save path.",
             "type": "string"
+          },
+          "seedGoalAction": {
+            "description": "What happens when a torrent reaches its seeding goals; default follows the global setting.",
+            "enum": [
+              "default",
+              "stop",
+              "remove",
+              "removeWithData"
+            ],
+            "type": "string"
+          },
+          "seedGoalMode": {
+            "description": "Whether any goal or all of them must be met; default follows the global setting.",
+            "enum": [
+              "default",
+              "any",
+              "all"
+            ],
+            "type": "string"
+          },
+          "seedingTimeLimit": {
+            "description": "Minutes. -2 follows the global setting, -1 is unlimited.",
+            "format": "int64",
+            "type": "integer"
           }
         },
         "required": [
           "name",
-          "savePath"
+          "savePath",
+          "ratioLimit",
+          "seedingTimeLimit",
+          "inactiveSeedingTimeLimit",
+          "seedGoalAction",
+          "seedGoalMode"
         ],
         "type": "object"
       },
@@ -1061,9 +1138,43 @@
       "PutCategoryInputBody": {
         "additionalProperties": false,
         "properties": {
+          "inactiveSeedingTimeLimit": {
+            "description": "Minutes. -2 follows the global setting, -1 is unlimited.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "ratioLimit": {
+            "description": "-2 follows the global setting, -1 is unlimited.",
+            "format": "double",
+            "type": "number"
+          },
           "savePath": {
             "description": "Where torrents in this category are saved; empty uses the default save path.",
             "type": "string"
+          },
+          "seedGoalAction": {
+            "description": "What happens when a torrent reaches its seeding goals; default follows the global setting.",
+            "enum": [
+              "default",
+              "stop",
+              "remove",
+              "removeWithData"
+            ],
+            "type": "string"
+          },
+          "seedGoalMode": {
+            "description": "Whether any goal or all of them must be met; default follows the global setting.",
+            "enum": [
+              "default",
+              "any",
+              "all"
+            ],
+            "type": "string"
+          },
+          "seedingTimeLimit": {
+            "description": "Minutes. -2 follows the global setting, -1 is unlimited.",
+            "format": "int64",
+            "type": "integer"
           }
         },
         "required": [
@@ -1251,6 +1362,48 @@
           "affectedFeeds",
           "ignoreDays",
           "add"
+        ],
+        "type": "object"
+      },
+      "SeedGoals": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "stop",
+              "remove",
+              "removeWithData"
+            ],
+            "type": "string"
+          },
+          "inactiveSeedingTimeLimit": {
+            "description": "Minutes.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "mode": {
+            "enum": [
+              "any",
+              "all"
+            ],
+            "type": "string"
+          },
+          "ratioLimit": {
+            "format": "double",
+            "type": "number"
+          },
+          "seedingTimeLimit": {
+            "description": "Minutes.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ratioLimit",
+          "seedingTimeLimit",
+          "inactiveSeedingTimeLimit",
+          "action",
+          "mode"
         ],
         "type": "object"
       },
@@ -1574,11 +1727,19 @@
             "type": "string"
           },
           "seedGoalAction": {
-            "description": "What to do once a torrent reaches a seeding goal.",
+            "description": "What to do once a torrent reaches its seeding goals.",
             "enum": [
               "stop",
               "remove",
               "removeWithData"
+            ],
+            "type": "string"
+          },
+          "seedGoalMode": {
+            "description": "Whether a torrent reaches its seeding goals when any one is met, or only when all that are set are.",
+            "enum": [
+              "any",
+              "all"
             ],
             "type": "string"
           },
@@ -1635,6 +1796,7 @@
           "seedingTimeLimit",
           "inactiveSeedingTimeLimit",
           "seedGoalAction",
+          "seedGoalMode",
           "queueingEnabled",
           "maxActiveDownloads",
           "maxActiveUploads",
@@ -1922,7 +2084,7 @@
             "type": "string"
           },
           "inactiveSeedingTimeLimit": {
-            "description": "Minutes. -2 follows the global setting, -1 is unlimited.",
+            "description": "Minutes. -2 follows the category, then the global setting; -1 is unlimited.",
             "format": "int64",
             "type": "integer"
           },
@@ -1975,7 +2137,7 @@
             "type": "number"
           },
           "ratioLimit": {
-            "description": "-2 follows the global setting, -1 is unlimited.",
+            "description": "-2 follows the category, then the global setting; -1 is unlimited.",
             "format": "double",
             "type": "number"
           },
@@ -1986,13 +2148,36 @@
           "savePath": {
             "type": "string"
           },
+          "seedGoalAction": {
+            "description": "What happens when the torrent reaches its seeding goals; default follows the category, then the global setting.",
+            "enum": [
+              "default",
+              "stop",
+              "remove",
+              "removeWithData"
+            ],
+            "type": "string"
+          },
+          "seedGoalMode": {
+            "description": "Whether any goal or all of them must be met; default follows the category, then the global setting.",
+            "enum": [
+              "default",
+              "any",
+              "all"
+            ],
+            "type": "string"
+          },
+          "seedGoals": {
+            "$ref": "#/components/schemas/SeedGoals",
+            "description": "The seeding goals in effect, after following the defaults."
+          },
           "seedingTime": {
             "description": "Seconds spent seeding, all time.",
             "format": "int64",
             "type": "integer"
           },
           "seedingTimeLimit": {
-            "description": "Minutes. -2 follows the global setting, -1 is unlimited.",
+            "description": "Minutes. -2 follows the category, then the global setting; -1 is unlimited.",
             "format": "int64",
             "type": "integer"
           },
@@ -2127,6 +2312,9 @@
           "ratioLimit",
           "seedingTimeLimit",
           "inactiveSeedingTimeLimit",
+          "seedGoalAction",
+          "seedGoalMode",
+          "seedGoals",
           "queuePosition"
         ],
         "type": "object"
@@ -2464,7 +2652,7 @@
             "type": "boolean"
           },
           "inactiveSeedingTimeLimit": {
-            "description": "Minutes. -2 follows the global setting, -1 is unlimited.",
+            "description": "Minutes. -2 follows the category, then the global setting; -1 is unlimited.",
             "format": "int64",
             "type": "integer"
           },
@@ -2472,7 +2660,7 @@
             "type": "string"
           },
           "ratioLimit": {
-            "description": "-2 follows the global setting, -1 is unlimited.",
+            "description": "-2 follows the category, then the global setting; -1 is unlimited.",
             "format": "double",
             "type": "number"
           },
@@ -2480,8 +2668,27 @@
             "description": "Moves the data there in the background; the state is moving until it's done.",
             "type": "string"
           },
+          "seedGoalAction": {
+            "description": "What happens when the torrent reaches its seeding goals; default follows the category, then the global setting.",
+            "enum": [
+              "default",
+              "stop",
+              "remove",
+              "removeWithData"
+            ],
+            "type": "string"
+          },
+          "seedGoalMode": {
+            "description": "Whether any goal or all of them must be met; default follows the category, then the global setting.",
+            "enum": [
+              "default",
+              "any",
+              "all"
+            ],
+            "type": "string"
+          },
           "seedingTimeLimit": {
-            "description": "Minutes. -2 follows the global setting, -1 is unlimited.",
+            "description": "Minutes. -2 follows the category, then the global setting; -1 is unlimited.",
             "format": "int64",
             "type": "integer"
           },
@@ -5144,11 +5351,19 @@
                     "type": "string"
                   },
                   "seedGoalAction": {
-                    "description": "What to do once a torrent reaches a seeding goal.",
+                    "description": "What to do once a torrent reaches its seeding goals.",
                     "enum": [
                       "stop",
                       "remove",
                       "removeWithData"
+                    ],
+                    "type": "string"
+                  },
+                  "seedGoalMode": {
+                    "description": "Whether a torrent reaches its seeding goals when any one is met, or only when all that are set are.",
+                    "enum": [
+                      "any",
+                      "all"
                     ],
                     "type": "string"
                   },

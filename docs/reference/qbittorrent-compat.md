@@ -83,23 +83,23 @@ Status: **yes** is implemented, **partial** works with the differences noted, **
 
 | Endpoint | Status | Notes |
 | --- | --- | --- |
-| `info` | yes | `filter`, `category`, `tag`, `hashes`, `private`, `sort`, `reverse`, `limit` and `offset`; `includeFiles` and `includeTrackers` add the `files` and `trackers` lists (the trackers without the DHT, PeX and LSD rows). `availability` is the distributed copies among connected peers: -1 for complete torrents, as qBittorrent reports seeds, and 0 for torrents not running. `popularity` is the ratio per month of activity. `priority` is the queue position, 0 outside the queue, and -1 with queueing off. |
+| `info` | yes | `filter`, `category`, `tag`, `hashes`, `private`, `sort`, `reverse`, `limit` and `offset`; `includeFiles` and `includeTrackers` add the `files` and `trackers` lists (the trackers without the DHT, PeX and LSD rows). `availability` is the distributed copies among connected peers: -1 for complete torrents, as qBittorrent reports seeds, and 0 for torrents not running. `popularity` is the ratio per month of activity. `priority` is the queue position, 0 outside the queue, and -1 with queueing off. `max_ratio`, `max_seeding_time` and `max_inactive_seeding_time` are the limits in effect: the torrent's, its category's or the global ones (see [Share limits](#share-limits)). |
 | `properties` | yes | 404 for unknown hashes, 200 for magnets still fetching metadata. `availability` and `popularity` as in `info`. |
 | `files` | yes | `availability` is the share of a file's pieces some connected peer has, -1 for complete torrents. |
 | `trackers` | partial | Trackers and their tiers, with status "not contacted" and -1 counts: anacrolix doesn't expose announce results ([#44](https://github.com/sebdanielsson/piecemeal/issues/44)). DHT, PeX and LSD rows as in qBittorrent. |
 | `pieceStates`, `pieceHashes` | yes | |
-| `add` | partial | `urls` (magnets, and http(s) links fetched with SSRF protection and the cookie jar), `torrents`, `savepath`, `category` (created if missing), `tags`, `stopped`/`paused`, `skip_checking`/`seedMode`, `rename`, `contentLayout`, `ratioLimit`, `seedingTimeLimit`, `inactiveSeedingTimeLimit`, `sequentialDownload`, `firstLastPiecePrio`, `forced`. Synchronous. Answers 200 with qBittorrent 5.2's JSON counts, 409 when every torrent was already there, 415 for invalid torrent files. `autoTMM`, `upLimit` and `dlLimit` are ignored. |
+| `add` | partial | `urls` (magnets, and http(s) links fetched with SSRF protection and the cookie jar), `torrents`, `savepath`, `category` (created if missing), `tags`, `stopped`/`paused`, `skip_checking`/`seedMode`, `rename`, `contentLayout`, `ratioLimit`, `seedingTimeLimit`, `inactiveSeedingTimeLimit`, `shareLimitAction`, `shareLimitsMode`, `sequentialDownload`, `firstLastPiecePrio`, `forced`. Synchronous. Answers 200 with qBittorrent 5.2's JSON counts, 409 when every torrent was already there, 415 for invalid torrent files, and 409 for `shareLimitAction=EnableSuperSeeding`. `autoTMM`, `upLimit` and `dlLimit` are ignored. |
 | `delete` | yes | Unknown hashes are ignored. |
 | `start`, `stop` | yes | |
 | `pause`, `resume` | yes | Aliases of `stop` and `start`, for WebAPI before 2.11. |
 | `recheck`, `reannounce` | yes | Rechecks wait their turn, as in qBittorrent: see `max_active_checking_torrents`. Stopped torrents are checked too and stay stopped; stopping a torrent cancels its recheck. `reannounce` announces to every tracker; it doesn't take `trackers`/`urls`. |
 | `setForceStart` | yes | |
-| `setShareLimits` | partial | `ratioLimit`, `seedingTimeLimit`, `inactiveSeedingTimeLimit`; missing ones default to -2. `shareLimitAction` and `shareLimitsMode` are ignored: the global seed goal action applies, and any limit reached ends seeding. qBittorrent 5.3.0 requires those two; piecemeal doesn't, for older clients. |
+| `setShareLimits` | partial | `ratioLimit`, `seedingTimeLimit`, `inactiveSeedingTimeLimit`, `shareLimitAction` and `shareLimitsMode`. qBittorrent 5.3.0 requires all five; for clients older than qBittorrent 5, piecemeal takes a missing limit as -2 and leaves a missing action or mode as it was. As in qBittorrent, an action or mode it doesn't know is `Default`. `EnableSuperSeeding` answers 409. |
 | `downloadLimit`, `uploadLimit` | yes | 0 for every torrent: piecemeal has no per-torrent speed limits, so none applies. `dl_limit` and `up_limit` in `info` and `properties` are -1. |
 | `setDownloadLimit`, `setUploadLimit` | never | anacrolix/torrent only limits the whole client; tracked in [#43](https://github.com/sebdanielsson/piecemeal/issues/43). The global limits work. |
 | `toggleSequentialDownload`, `toggleFirstLastPiecePrio`, `filePrio`, `rename` | yes | |
 | `topPrio`, `bottomPrio`, `increasePrio`, `decreasePrio` | yes | 409 "Torrent queueing must be enabled" with queueing off, as in qBittorrent. |
-| `categories`, `createCategory`, `editCategory`, `removeCategories`, `setCategory` | yes | A category's `savePath` is used for torrents added to it without a save path. Changing a category doesn't move data, as in qBittorrent without automatic torrent management. |
+| `categories`, `createCategory`, `editCategory`, `removeCategories`, `setCategory` | yes | A category's `savePath` is used for torrents added to it without a save path. Changing a category doesn't move data, as in qBittorrent without automatic torrent management. `createCategory` and `editCategory` take WebAPI 2.16.2's `ratioLimit`, `seedingTimeLimit`, `inactiveSeedingTimeLimit`, `shareLimitsMode` and `shareLimitAction`, each optional; `editCategory` changes only what it's given, `savePath` included. A bad value answers 400 naming it, as in qBittorrent, and `EnableSuperSeeding` 409. `categories` and `sync/maindata` report them. |
 | `tags`, `createTags`, `deleteTags`, `addTags`, `removeTags`, `setTags` | yes | `addTags` and `setTags` create unknown tags. |
 | `addTrackers`, `editTracker`, `removeTrackers` | yes | `hash` may name several torrents, `all`, or `*` for `removeTrackers`. Percent-encoded URLs, as VueTorrent sends them, are decoded. `editTracker` takes `url` or `origUrl`; `tier` is ignored. |
 | `webseeds`, `addWebSeeds`, `editWebSeed`, `removeWebSeeds` | yes | |
@@ -135,7 +135,7 @@ Feeds and download rules work as in qBittorrent 5.3.0: paths join names with `\`
 | `items` | yes | With `withData`, feeds carry `title`, `lastBuildDate`, `isLoading`, `hasError` and their articles, newest first. Article descriptions are sanitized HTML, and `link` and `torrentURL` are left out unless they're http(s) URLs (or magnet links for `torrentURL`). Callers other than admins see feed URLs with the query replaced by `…`, since trackers put passkeys there; `rules` and `exportRules` mask `affectedFeeds` the same way. |
 | `addFolder`, `addFeed`, `removeItem`, `moveItem`, `setFeedURL`, `setFeedRefreshInterval` | yes | A feed added with an empty `path` is named after its title once fetched. Feed URLs are fetched with the same SSRF protection and cookies as torrent URLs. |
 | `markAsRead`, `refreshItem` | yes | |
-| `setRule`, `renameRule`, `removeRule`, `cloneRule`, `rules`, `exportRules`, `importRules` | yes | Rules take `torrentParams` or the legacy `addPaused`, `assignedCategory`, `savePath` and `torrentContentLayout`; a bad definition makes a rule with the defaults, as in qBittorrent. Options piecemeal doesn't use, such as `download_path` and per-torrent limits, are kept and returned. |
+| `setRule`, `renameRule`, `removeRule`, `cloneRule`, `rules`, `exportRules`, `importRules` | yes | Rules take `torrentParams` or the legacy `addPaused`, `assignedCategory`, `savePath` and `torrentContentLayout`; a bad definition makes a rule with the defaults, as in qBittorrent. The share limits in `torrentParams`, `share_limit_action` and `share_limits_mode` included, apply to the torrents a rule adds; a rule with `EnableSuperSeeding` answers 409, in `setRule` and `importRules`. Options piecemeal doesn't use, such as `download_path` and per-torrent speed limits, are kept and returned. |
 | `matchingArticles` | yes | Keyed by feed name, as in qBittorrent. |
 
 Matching follows qBittorrent: wildcard terms (`*`, `?`, `[…]`) that must all match, `|` between alternatives, or one regular expression each with `useRegex`; the episode filter (`1x2;8-15;20-;`); the smart episode filter with REPACK and PROPER handling; `ignoreDays` from `lastMatch`; and rules tried in `priority` order, the first taking the article. Regular expressions are PCRE-like (lookahead and inline flags work), with a time limit per match. Only unread articles are downloaded, newest first, and an article is marked read once its torrent is added. Unlike qBittorrent, new articles are taken even when a feed's `lastBuildDate` didn't change. The seven `rss_*` preferences map to piecemeal's RSS settings.
@@ -158,5 +158,19 @@ piecemeal can serve a qBittorrent web UI such as VueTorrent at `/qbittorrent/`, 
 | Waiting in the queue | `queuedDL`, `queuedUP` |
 | Moving data | `moving` |
 | Error | `error` |
+
+## Share limits
+
+piecemeal's seeding goals are qBittorrent's share limits: a ratio, a seeding time and an inactive seeding time, a mode that says whether any one of them or all that are set end seeding, and an action. They are set globally (the `max_ratio*`, `max_seeding_time*`, `max_inactive_seeding_time*`, `share_limits_mode` and `max_ratio_act` preferences), per category and per torrent. A torrent's limit, action or mode applies unless it's `-2` or `Default`, then its category's unless that's `-2` or `Default` too, then the global one.
+
+| qBittorrent | piecemeal |
+| --- | --- |
+| `share_limit_action` `Default`, `Stop`, `Remove`, `RemoveWithContent` | `seedGoalAction` `default`, `stop`, `remove`, `removeWithData` |
+| `share_limits_mode` `Default`, `MatchAny`, `MatchAll` | `seedGoalMode` `default`, `any`, `all` |
+| `max_ratio_act` 0, 1, 3 | the global `seedGoalAction` `stop`, `remove`, `removeWithData` |
+
+- `EnableSuperSeeding` and `max_ratio_act` 2 aren't supported: anacrolix has no super seeding ([#46](https://github.com/sebdanielsson/piecemeal/issues/46)). Where a request sets the action to it, piecemeal answers 409; `setPreferences` ignores `max_ratio_act` 2.
+- The global `share_limits_mode` is `MatchAny` or `MatchAll`. As in qBittorrent, setting `Default` or any value but `MatchAll` stores `MatchAny`.
+- With `MatchAll`, a torrent reaches its goals once every limit that is set is reached; with no limits set it never does.
 
 Seed goals stop the torrent by default (`max_ratio_act` 0), which is what Radarr and Sonarr wait for before removing a finished download. Setting piecemeal's `seedGoalAction` to `remove` or `removeWithData` reports 1 or 3, and the \*arrs then warn that the client removes completed downloads.

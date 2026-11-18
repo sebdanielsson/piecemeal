@@ -174,8 +174,9 @@ func (m *managed) params() store.UpsertTorrentParams {
 		RatioLimit: r.RatioLimit, SeedingTimeLimit: r.SeedingTimeLimit,
 		InactiveSeedingTimeLimit: r.InactiveSeedingTimeLimit, FilePriorities: prio, Error: r.Error,
 		Trackers: jsonOrEmpty(m.trackers), WebSeeds: jsonOrEmpty(m.webSeeds), FilePaths: jsonOrEmpty(m.renames),
-		Comment:       r.Comment,
-		ContentLayout: cmp.Or(r.ContentLayout, LayoutOriginal),
+		Comment:        r.Comment,
+		ContentLayout:  cmp.Or(r.ContentLayout, LayoutOriginal),
+		SeedGoalAction: cmp.Or(r.SeedGoalAction, ActionDefault), SeedGoalMode: cmp.Or(r.SeedGoalMode, ModeDefault),
 	}
 }
 
@@ -223,6 +224,9 @@ type AddParams struct {
 	RatioLimit               *float64
 	SeedingTimeLimit         *int64
 	InactiveSeedingTimeLimit *int64
+	// SeedGoalAction and SeedGoalMode; empty is the default.
+	SeedGoalAction string
+	SeedGoalMode   string
 	// SkipChecking trusts existing data instead of hashing it.
 	SkipChecking bool
 	// ContentLayout is Original (the default), Subfolder or NoSubfolder.
@@ -324,6 +328,9 @@ func (e *Engine) Add(ctx context.Context, p AddParams) (string, error) {
 	if !validLayout(p.ContentLayout) {
 		return "", fmt.Errorf("%w: content layout %q", ErrInvalid, p.ContentLayout)
 	}
+	if err := validGoals(-2, -2, -2, p.SeedGoalAction, p.SeedGoalMode); err != nil {
+		return "", err
+	}
 	stopped := s.AddStopped
 	if p.Stopped != nil {
 		stopped = *p.Stopped
@@ -339,6 +346,8 @@ func (e *Engine) Add(ctx context.Context, p AddParams) (string, error) {
 			FirstLastPiece: p.FirstLastPiece, RatioLimit: -2, SeedingTimeLimit: -2,
 			InactiveSeedingTimeLimit: -2,
 			ContentLayout:            cmp.Or(p.ContentLayout, LayoutOriginal),
+			SeedGoalAction:           cmp.Or(p.SeedGoalAction, ActionDefault),
+			SeedGoalMode:             cmp.Or(p.SeedGoalMode, ModeDefault),
 		},
 	}
 	if mib != nil {
@@ -915,28 +924,6 @@ func (e *Engine) SetFirstLastPiece(ctx context.Context, on bool, hashes ...strin
 	return e.each(ctx, hashes, func(m *managed) error {
 		m.rec.FirstLastPiece = on
 		e.applyPiecePrioritiesLocked(m)
-		return nil
-	})
-}
-
-// ShareLimits are per-torrent seed goals. -2 follows the global setting,
-// -1 is unlimited. Times are in minutes.
-type ShareLimits struct {
-	RatioLimit               float64
-	SeedingTimeLimit         int64
-	InactiveSeedingTimeLimit int64
-}
-
-// SetShareLimits sets per-torrent seed goals.
-func (e *Engine) SetShareLimits(ctx context.Context, l ShareLimits, hashes ...string) error {
-	if (l.RatioLimit < 0 && l.RatioLimit != -1 && l.RatioLimit != -2) ||
-		l.SeedingTimeLimit < -2 || l.InactiveSeedingTimeLimit < -2 {
-		return fmt.Errorf("%w: share limits must be -2, -1 or at least 0", ErrInvalid)
-	}
-	return e.each(ctx, hashes, func(m *managed) error {
-		m.rec.RatioLimit = l.RatioLimit
-		m.rec.SeedingTimeLimit = l.SeedingTimeLimit
-		m.rec.InactiveSeedingTimeLimit = l.InactiveSeedingTimeLimit
 		return nil
 	})
 }

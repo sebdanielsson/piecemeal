@@ -2,6 +2,13 @@ import { CopyIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import type { Torrent, UpdateTorrentRequest } from "@/api/types";
 import { CategorySelect } from "@/components/form/category-select";
+import { OptionSelect } from "@/components/form/option-select";
+import {
+  optionLabel,
+  seedGoalActions,
+  seedGoalModes,
+  withDefault,
+} from "@/components/form/seed-goal-options";
 import { ShareLimitInput } from "@/components/form/share-limit-input";
 import { TagPicker } from "@/components/form/tag-picker";
 import { Button } from "@/components/ui/button";
@@ -14,6 +21,7 @@ import {
   formatEta,
   formatRate,
   formatRatio,
+  formatShareLimit,
   formatUnixTime,
 } from "@/lib/format";
 import { useUpdateTorrent } from "@/lib/mutations";
@@ -135,7 +143,7 @@ export function GeneralTab({ torrent: t }: { torrent: Torrent }) {
         />
         {/* A different torrent, or a change from elsewhere, starts the form over. */}
         <LimitsForm
-          key={`${t.hash}:${t.ratioLimit}:${t.seedingTimeLimit}:${t.inactiveSeedingTimeLimit}`}
+          key={`${t.hash}:${t.ratioLimit}:${t.seedingTimeLimit}:${t.inactiveSeedingTimeLimit}:${t.seedGoalAction}:${t.seedGoalMode}`}
           torrent={t}
           onSave={patch}
           saving={update.isPending}
@@ -145,7 +153,20 @@ export function GeneralTab({ torrent: t }: { torrent: Torrent }) {
   );
 }
 
-/** Seeding goals, saved together. */
+// The default option's label says what the default comes to, which is
+// known only while the torrent follows it.
+function inherit(own: number, effective: number, kind: "ratio" | "minutes"): string {
+  return own === -2 ? `Default (${formatShareLimit(effective, kind)})` : "Default";
+}
+
+function inheritOption(own: string, effective: string): string {
+  return own === "default" ? `Default (${effective.toLowerCase()})` : "Default";
+}
+
+/**
+ * Seeding goals, saved together. Default follows the category, then the
+ * global settings; its label says what that comes to.
+ */
 function LimitsForm({
   torrent: t,
   onSave,
@@ -159,7 +180,10 @@ function LimitsForm({
     ratioLimit: t.ratioLimit,
     seedingTimeLimit: t.seedingTimeLimit,
     inactiveSeedingTimeLimit: t.inactiveSeedingTimeLimit,
+    seedGoalAction: t.seedGoalAction,
+    seedGoalMode: t.seedGoalMode,
   };
+  const goals = t.seedGoals;
   const [draft, setDraft] = useState(current);
   const changed = (Object.keys(current) as (keyof typeof current)[]).filter(
     (k) => draft[k] !== current[k],
@@ -174,28 +198,59 @@ function LimitsForm({
         onSave(Object.fromEntries(changed.map((k) => [k, draft[k]])));
       }}
     >
-      <Item label="Stop at ratio" htmlFor="detail-ratio">
+      <Item label="Ratio goal" htmlFor="detail-ratio">
         <ShareLimitInput
           id="detail-ratio"
           kind="ratio"
           value={draft.ratioLimit}
           onChange={(v) => set("ratioLimit", v)}
+          inheritLabel={inherit(t.ratioLimit, goals.ratioLimit, "ratio")}
         />
       </Item>
-      <Item label="Stop after seeding" htmlFor="detail-seed-time">
+      <Item label="Seeding time goal" htmlFor="detail-seed-time">
         <ShareLimitInput
           id="detail-seed-time"
           kind="minutes"
           value={draft.seedingTimeLimit}
           onChange={(v) => set("seedingTimeLimit", v)}
+          inheritLabel={inherit(t.seedingTimeLimit, goals.seedingTimeLimit, "minutes")}
         />
       </Item>
-      <Item label="Stop when inactive for" htmlFor="detail-inactive">
+      <Item label="Inactive time goal" htmlFor="detail-inactive">
         <ShareLimitInput
           id="detail-inactive"
           kind="minutes"
           value={draft.inactiveSeedingTimeLimit}
           onChange={(v) => set("inactiveSeedingTimeLimit", v)}
+          inheritLabel={inherit(
+            t.inactiveSeedingTimeLimit,
+            goals.inactiveSeedingTimeLimit,
+            "minutes",
+          )}
+        />
+      </Item>
+      <Item label="Reached when" htmlFor="detail-goal-mode">
+        <OptionSelect
+          id="detail-goal-mode"
+          value={draft.seedGoalMode}
+          options={withDefault(
+            seedGoalModes,
+            inheritOption(t.seedGoalMode, optionLabel(seedGoalModes, goals.mode)),
+          )}
+          onChange={(v) => set("seedGoalMode", v)}
+          className="w-56"
+        />
+      </Item>
+      <Item label="Then" htmlFor="detail-goal-action">
+        <OptionSelect
+          id="detail-goal-action"
+          value={draft.seedGoalAction}
+          options={withDefault(
+            seedGoalActions,
+            inheritOption(t.seedGoalAction, optionLabel(seedGoalActions, goals.action)),
+          )}
+          onChange={(v) => set("seedGoalAction", v)}
+          className="w-56"
         />
       </Item>
       {changed.length > 0 && (

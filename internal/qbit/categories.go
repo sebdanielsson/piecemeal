@@ -40,9 +40,24 @@ func (s *Server) putCategory(w http.ResponseWriter, r *http.Request, create bool
 		http.Error(w, "Incorrect category name", http.StatusConflict)
 		return
 	}
-	c := engine.Category{Name: name}
-	if p := r.FormValue("savePath"); p != "" {
-		c.SavePath = s.absolute(p)
+	// editCategory changes only what it's given; since WebAPI 2.16.2 that
+	// may leave out savePath.
+	c := engine.NewCategory(name)
+	if !create {
+		for _, cur := range s.engine.Categories() {
+			if cur.Name == name {
+				c = cur
+			}
+		}
+	}
+	if r.Form.Has("savePath") {
+		c.SavePath = ""
+		if p := r.FormValue("savePath"); p != "" {
+			c.SavePath = s.absolute(p)
+		}
+	}
+	if !categoryShareLimits(w, r, &c) {
+		return
 	}
 	err := s.engine.PutCategory(r.Context(), c, create)
 	switch {

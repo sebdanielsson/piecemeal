@@ -180,8 +180,7 @@ func (s *Server) mappedPreferences() map[string]any {
 		"schedule_to_min":                clockPart(st.AltSpeedScheduleTo, 1),
 		"scheduler_days":                 schedulerDays(st.AltSpeedScheduleDays),
 
-		// Seeding goals. piecemeal applies any limit that is reached, like
-		// qBittorrent's default share limits mode.
+		// Seeding goals.
 		"max_ratio_enabled":                 st.RatioLimit >= 0,
 		"max_ratio":                         orDefault(st.RatioLimit, 1),
 		"max_seeding_time_enabled":          st.SeedingTimeLimit >= 0,
@@ -189,7 +188,7 @@ func (s *Server) mappedPreferences() map[string]any {
 		"max_inactive_seeding_time_enabled": st.InactiveSeedingTimeLimit >= 0,
 		"max_inactive_seeding_time":         int64(orDefault(float64(st.InactiveSeedingTimeLimit), 1440)),
 		"max_ratio_act":                     seedGoalAction(st.SeedGoalAction),
-		"share_limits_mode":                 "Default",
+		"share_limits_mode":                 shareLimitsMode(st.SeedGoalMode),
 
 		// Web UI
 		"locale":                                 "en",

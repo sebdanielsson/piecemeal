@@ -75,6 +75,8 @@ type AddTorrentRequest struct {
 	RatioLimit               *float64 `json:"ratioLimit,omitempty"`
 	SeedingTimeLimit         *int64   `json:"seedingTimeLimit,omitempty" doc:"Minutes."`
 	InactiveSeedingTimeLimit *int64   `json:"inactiveSeedingTimeLimit,omitempty" doc:"Minutes."`
+	SeedGoalAction           string   `json:"seedGoalAction,omitempty" enum:"default,stop,remove,removeWithData" doc:"What happens when the torrent reaches its seeding goals; default follows the category, then the global setting."`
+	SeedGoalMode             string   `json:"seedGoalMode,omitempty" enum:"default,any,all" doc:"Whether any goal or all of them must be met; default follows the category, then the global setting."`
 	DownloadLimit            int64    `json:"downloadLimit,omitempty" minimum:"0" deprecated:"true" doc:"Ignored: piecemeal has no per-torrent speed limits. Use the global limits."`
 	UploadLimit              int64    `json:"uploadLimit,omitempty" minimum:"0" deprecated:"true" doc:"Ignored: piecemeal has no per-torrent speed limits. Use the global limits."`
 	SkipChecking             bool     `json:"skipChecking,omitempty" doc:"Trust data already on disk instead of verifying it."`
@@ -100,9 +102,11 @@ type UpdateTorrentRequest struct {
 	Forced                   *bool     `json:"forced,omitempty"`
 	Sequential               *bool     `json:"sequential,omitempty"`
 	FirstLastPiece           *bool     `json:"firstLastPiece,omitempty"`
-	RatioLimit               *float64  `json:"ratioLimit,omitempty" doc:"-2 follows the global setting, -1 is unlimited."`
-	SeedingTimeLimit         *int64    `json:"seedingTimeLimit,omitempty" doc:"Minutes. -2 follows the global setting, -1 is unlimited."`
-	InactiveSeedingTimeLimit *int64    `json:"inactiveSeedingTimeLimit,omitempty" doc:"Minutes. -2 follows the global setting, -1 is unlimited."`
+	RatioLimit               *float64  `json:"ratioLimit,omitempty" doc:"-2 follows the category, then the global setting; -1 is unlimited."`
+	SeedingTimeLimit         *int64    `json:"seedingTimeLimit,omitempty" doc:"Minutes. -2 follows the category, then the global setting; -1 is unlimited."`
+	InactiveSeedingTimeLimit *int64    `json:"inactiveSeedingTimeLimit,omitempty" doc:"Minutes. -2 follows the category, then the global setting; -1 is unlimited."`
+	SeedGoalAction           *string   `json:"seedGoalAction,omitempty" enum:"default,stop,remove,removeWithData" doc:"What happens when the torrent reaches its seeding goals; default follows the category, then the global setting."`
+	SeedGoalMode             *string   `json:"seedGoalMode,omitempty" enum:"default,any,all" doc:"Whether any goal or all of them must be met; default follows the category, then the global setting."`
 	DownloadLimit            *int64    `json:"downloadLimit,omitempty" minimum:"0" deprecated:"true" doc:"Ignored: piecemeal has no per-torrent speed limits. Use the global limits."`
 	UploadLimit              *int64    `json:"uploadLimit,omitempty" minimum:"0" deprecated:"true" doc:"Ignored: piecemeal has no per-torrent speed limits. Use the global limits."`
 }
@@ -419,7 +423,7 @@ func (a *API) addTorrent(ctx context.Context, req AddTorrentRequest) (*addTorren
 		Tags: req.Tags, Stopped: req.Stopped, Sequential: req.Sequential, FirstLastPiece: req.FirstLastPiece,
 		Name: req.Name, RatioLimit: req.RatioLimit, SeedingTimeLimit: req.SeedingTimeLimit,
 		InactiveSeedingTimeLimit: req.InactiveSeedingTimeLimit, SkipChecking: req.SkipChecking,
-		ContentLayout: req.ContentLayout,
+		ContentLayout: req.ContentLayout, SeedGoalAction: req.SeedGoalAction, SeedGoalMode: req.SeedGoalMode,
 	}
 	if req.URL != "" {
 		res, err := a.Fetcher.Get(ctx, req.URL)
@@ -479,10 +483,17 @@ func (a *API) updateTorrent(ctx context.Context, hash string, u UpdateTorrentReq
 	if u.FirstLastPiece != nil {
 		errs = append(errs, e.SetFirstLastPiece(ctx, *u.FirstLastPiece, hash))
 	}
-	if u.RatioLimit != nil || u.SeedingTimeLimit != nil || u.InactiveSeedingTimeLimit != nil {
+	if u.RatioLimit != nil || u.SeedingTimeLimit != nil || u.InactiveSeedingTimeLimit != nil || u.SeedGoalAction != nil ||
+		u.SeedGoalMode != nil {
 		st, _ := e.Get(hash)
 		l := engine.ShareLimits{
 			RatioLimit: st.RatioLimit, SeedingTimeLimit: st.SeedingTimeLimit, InactiveSeedingTimeLimit: st.InactiveSeedingTimeLimit,
+		}
+		if u.SeedGoalAction != nil {
+			l.Action = *u.SeedGoalAction
+		}
+		if u.SeedGoalMode != nil {
+			l.Mode = *u.SeedGoalMode
 		}
 		if u.RatioLimit != nil {
 			l.RatioLimit = *u.RatioLimit

@@ -28,8 +28,13 @@ type AuditLog struct {
 }
 
 type Category struct {
-	Name     string
-	SavePath string
+	Name                     string
+	SavePath                 string
+	RatioLimit               float64
+	SeedingTimeLimit         int64
+	InactiveSeedingTimeLimit int64
+	SeedGoalAction           string
+	SeedGoalMode             string
 }
 
 type Kv struct {
@@ -122,6 +127,8 @@ type Torrent struct {
 	FilePaths                string
 	ContentLayout            string
 	Comment                  sql.NullString
+	SeedGoalAction           string
+	SeedGoalMode             string
 }
 
 type TorrentTag struct {

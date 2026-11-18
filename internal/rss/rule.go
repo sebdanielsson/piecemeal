@@ -45,10 +45,13 @@ type AddOptions struct {
 	ContentLayout string   `json:"contentLayout,omitempty" enum:"Original,Subfolder,NoSubfolder"`
 	SkipChecking  bool     `json:"skipChecking,omitempty"`
 	Forced        bool     `json:"forced,omitempty"`
-	// Seeding goals: -2 follows the global setting, -1 is unlimited.
+	// Seeding goals: -2 follows the category, then the global setting; -1
+	// is unlimited.
 	RatioLimit               float64 `json:"ratioLimit"`
 	SeedingTimeLimit         int64   `json:"seedingTimeLimit"`
 	InactiveSeedingTimeLimit int64   `json:"inactiveSeedingTimeLimit"`
+	SeedGoalAction           string  `json:"seedGoalAction,omitempty" enum:"default,stop,remove,removeWithData" doc:"What happens when the torrent reaches its seeding goals; absent or default follows the category, then the global setting."`
+	SeedGoalMode             string  `json:"seedGoalMode,omitempty" enum:"default,any,all" doc:"Whether any goal or all of them must be met; absent or default follows the category, then the global setting."`
 	// Extra keeps qBittorrent rule options piecemeal doesn't use, so
 	// qBittorrent clients get them back unchanged.
 	Extra map[string]json.RawMessage `json:"extra,omitempty" doc:"qBittorrent options piecemeal keeps but doesn't use."`
@@ -59,6 +62,23 @@ func NewRule() Rule {
 	return Rule{
 		Enabled: true,
 		Add:     AddOptions{RatioLimit: -2, SeedingTimeLimit: -2, InactiveSeedingTimeLimit: -2},
+	}
+}
+
+// upgrade moves the qBittorrent share limit action and mode, which
+// piecemeal 1.0 kept in Extra without applying them, into their fields.
+func (o *AddOptions) upgrade() {
+	var v string
+	if json.Unmarshal(o.Extra["share_limit_action"], &v) == nil {
+		o.SeedGoalAction = map[string]string{"Stop": "stop", "Remove": "remove", "RemoveWithContent": "removeWithData"}[v]
+	}
+	if json.Unmarshal(o.Extra["share_limits_mode"], &v) == nil {
+		o.SeedGoalMode = map[string]string{"MatchAny": "any", "MatchAll": "all"}[v]
+	}
+	delete(o.Extra, "share_limit_action")
+	delete(o.Extra, "share_limits_mode")
+	if len(o.Extra) == 0 {
+		o.Extra = nil
 	}
 }
 
