@@ -61,7 +61,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 1.2.3, 1.2 and latest. No bare major tag while on 0.x, where minors may break.
+      # 1.2.3, 1.2, 1 and latest. No bare major tag on 0.x, where minors may break.
       - name: Extract image metadata
         id: meta
         uses: docker/metadata-action@v6
@@ -70,6 +70,7 @@ jobs:
           tags: |
             type=semver,pattern={{version}},value=${{ needs.release-please.outputs.tag_name }}
             type=semver,pattern={{major}}.{{minor}},value=${{ needs.release-please.outputs.tag_name }}
+            type=semver,pattern={{major}},value=${{ needs.release-please.outputs.tag_name }},enable=${{ !startsWith(needs.release-please.outputs.tag_name, 'v0.') }}
 
       - name: Build and push image
         id: build
