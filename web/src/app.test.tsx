@@ -90,7 +90,7 @@ test("signing in with a password leads to the live torrent list", async () => {
   let signedIn = false;
   const calls = mockApi({
     "GET /auth/me": () => (signedIn ? json(admin) : json({ title: "Unauthorized" }, 401)),
-    "GET /auth/config": () => json({ localLogin: true, oidc: true }),
+    "GET /auth/config": () => json({ localLogin: true, oidc: true, oidcName: "Pocket ID" }),
     "POST /auth/login": (body) => {
       const { password } = body as { password: string };
       if (password !== "secret") {
@@ -109,8 +109,8 @@ test("signing in with a password leads to the live torrent list", async () => {
 
   expect(await screen.findByRole("heading", { name: "piecemeal" })).toBeTruthy();
   expect(
-    (await screen.findByRole("link", { name: /sign in with sso/i })).getAttribute("href"),
-  ).toBe("/api/piecemeal/v1/auth/oidc/login");
+    (await screen.findByRole("link", { name: /sign in with pocket id/i })).getAttribute("href"),
+  ).toBe("/api/piecemeal/v1/auth/oidc/login?next=%2F");
 
   await user.type(screen.getByLabelText("Password"), "nope");
   await user.click(screen.getByRole("button", { name: /^sign in$/i }));
@@ -178,6 +178,17 @@ test("filters, selection and removing torrents", async () => {
   );
   // Removed torrents leave the list without waiting for the stream.
   await vi.waitFor(() => expect(screen.getByText("No torrents yet")).toBeTruthy());
+});
+
+test("the sign-in page shows why an SSO sign-in failed", async () => {
+  mockApi({
+    "GET /auth/me": () => json({ title: "Unauthorized" }, 401),
+    "GET /auth/config": () => json({ localLogin: true, oidc: true }),
+  });
+  history.pushState({}, "", "/login?error=Your+account+is+not+allowed");
+  render(<App />);
+  expect((await screen.findByRole("alert")).textContent).toBe("Your account is not allowed");
+  expect(screen.getByRole("link", { name: /sign in with sso/i })).toBeTruthy();
 });
 
 test("a 401 from the API sends the user to the sign-in page", async () => {

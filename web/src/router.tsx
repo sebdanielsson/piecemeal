@@ -26,8 +26,12 @@ const rootRoute = createRootRouteWithContext<RouterContext>()({
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "login",
-  validateSearch: (search: Record<string, unknown>): { redirect?: string } =>
-    typeof search.redirect === "string" ? { redirect: search.redirect } : {},
+  // redirect: where to go after signing in. error: why an SSO sign-in
+  // failed, set by the server's OIDC callback.
+  validateSearch: (search: Record<string, unknown>): { redirect?: string; error?: string } => ({
+    ...(typeof search.redirect === "string" ? { redirect: search.redirect } : {}),
+    ...(typeof search.error === "string" ? { error: search.error } : {}),
+  }),
   component: LoginPage,
 });
 

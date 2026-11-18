@@ -21,7 +21,7 @@ export function safeRedirect(target: string | undefined): string {
 }
 
 export function LoginPage() {
-  const { redirect } = useSearch({ from: "/login" });
+  const { redirect, error: ssoError } = useSearch({ from: "/login" });
   const config = useQuery(authConfigQuery);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -54,6 +54,7 @@ export function LoginPage() {
 
   const localLogin = config.data?.localLogin ?? true;
   const oidc = config.data?.oidc ?? false;
+  const oidcName = config.data?.oidcName || "SSO";
 
   return (
     <main className="flex min-h-full items-center justify-center bg-muted/40 p-4">
@@ -69,16 +70,21 @@ export function LoginPage() {
           </div>
         ) : (
           <FieldGroup>
+            {ssoError && (
+              <p role="alert" className="text-center text-sm text-destructive">
+                {ssoError}
+              </p>
+            )}
             {oidc && (
               <a
-                href={`${apiPrefix}/auth/oidc/login`}
+                href={`${apiPrefix}/auth/oidc/login?next=${encodeURIComponent(safeRedirect(redirect))}`}
                 className={cn(
                   buttonVariants({ variant: localLogin ? "outline" : "default" }),
                   "w-full",
                 )}
               >
                 <KeyRoundIcon data-icon="inline-start" />
-                Sign in with SSO
+                Sign in with {oidcName}
               </a>
             )}
             {oidc && localLogin && <FieldSeparator>or</FieldSeparator>}
