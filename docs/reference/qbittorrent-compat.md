@@ -83,7 +83,7 @@ Status: **yes** is implemented, **partial** works with the differences noted, **
 
 | Endpoint | Status | Notes |
 | --- | --- | --- |
-| `info` | yes | `filter`, `category`, `tag`, `hashes`, `private`, `sort`, `reverse`, `limit` and `offset`; `includeFiles` and `includeTrackers` add the `files` and `trackers` lists (the trackers without the DHT, PeX and LSD rows). `availability` is the distributed copies among connected peers, -1 for complete torrents and ones not running, as qBittorrent reports seeds. `popularity` is the ratio per month of activity. `priority` is the queue position, 0 outside the queue, and -1 with queueing off. |
+| `info` | yes | `filter`, `category`, `tag`, `hashes`, `private`, `sort`, `reverse`, `limit` and `offset`; `includeFiles` and `includeTrackers` add the `files` and `trackers` lists (the trackers without the DHT, PeX and LSD rows). `availability` is the distributed copies among connected peers: -1 for complete torrents, as qBittorrent reports seeds, and 0 for torrents not running. `popularity` is the ratio per month of activity. `priority` is the queue position, 0 outside the queue, and -1 with queueing off. |
 | `properties` | yes | 404 for unknown hashes, 200 for magnets still fetching metadata. `availability` and `popularity` as in `info`. |
 | `files` | yes | `availability` is the share of a file's pieces some connected peer has, -1 for complete torrents. |
 | `trackers` | partial | Trackers and their tiers, with status "not contacted" and -1 counts: anacrolix doesn't expose announce results ([#44](https://github.com/sebdanielsson/piecemeal/issues/44)). DHT, PeX and LSD rows as in qBittorrent. |
@@ -112,7 +112,7 @@ Status: **yes** is implemented, **partial** works with the differences noted, **
 | `SSLParameters` | partial | Empty strings: piecemeal has no SSL torrents. |
 | `setAutoManagement`, `setDownloadPath` | partial | Accepted and ignored: piecemeal has no automatic torrent management or incomplete folder. |
 | `setSuperSeeding`, `setSSLParameters` | never | anacrolix has no super seeding or SSL torrents ([#46](https://github.com/sebdanielsson/piecemeal/issues/46), [#48](https://github.com/sebdanielsson/piecemeal/issues/48)). |
-| `setComment` | yes | Replaces the comment `info`, `properties` and `sync/maindata` show, kept across restarts; the torrent file and `export` keep the original. |
+| `setComment` | yes | 204. Replaces the comment `info`, `properties` and `sync/maindata` show, kept across restarts; the torrent file and `export` keep the original. |
 | `pieceAvailability` | yes | How many connected peers have each piece; `[]` for complete torrents, ones not running, and magnets without metadata. |
 | `fetchMetadata`, `parseMetadata`, `saveMetadata` | no | |
 

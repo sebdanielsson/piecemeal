@@ -232,7 +232,7 @@ func TestInfoListsAndAvailability(t *testing.T) {
 	}
 	e.get("torrents/info?includeFiles=true&includeTrackers=true").json(t, &full)
 	if len(full) != 1 || len(full[0].Files) != 2 || len(full[0].Trackers) != 1 ||
-		full[0].Trackers[0]["url"] != "udp://tracker.example:1337" || full[0].Availability != -1 {
+		full[0].Trackers[0]["url"] != "udp://tracker.example:1337" || full[0].Availability != 0 {
 		t.Fatalf("with lists: %+v", full)
 	}
 	var avail []int
@@ -241,14 +241,14 @@ func TestInfoListsAndAvailability(t *testing.T) {
 		t.Fatalf("availability of a stopped torrent: %v", avail)
 	}
 	expect(t, "unknown", e.get("torrents/pieceAvailability?hash=0000000000000000000000000000000000000000"), http.StatusNotFound)
-	expect(t, "setComment", e.post("torrents/setComment", url.Values{"hashes": {seed.Hash}, "comment": {"from the API"}}), http.StatusOK)
+	expect(t, "setComment", e.post("torrents/setComment", url.Values{"hashes": {seed.Hash}, "comment": {"from the API"}}), http.StatusNoContent)
 	expect(t, "setComment without hashes", e.post("torrents/setComment", url.Values{"comment": {"x"}}), http.StatusBadRequest)
 	var props map[string]any
 	e.get("torrents/properties?hash="+seed.Hash).json(t, &props)
 	if props["comment"] != "from the API" {
 		t.Fatalf("comment %v", props["comment"])
 	}
-	if props["availability"] != -1.0 || props["popularity"] != 0.0 {
+	if props["availability"] != 0.0 || props["popularity"] != 0.0 {
 		t.Fatalf("properties: availability %v popularity %v", props["availability"], props["popularity"])
 	}
 }

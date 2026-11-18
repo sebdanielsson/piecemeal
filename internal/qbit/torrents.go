@@ -423,15 +423,16 @@ func (s *Server) properties(w http.ResponseWriter, r *http.Request) {
 }
 
 // availability is libtorrent's distributed copies among connected peers,
-// with the per-piece counts it comes from. A complete torrent, or one not
-// running, reports -1, as qBittorrent does for seeds.
+// with the per-piece counts it comes from: -1 for a complete torrent, as
+// qBittorrent reports seeds, and 0 for one that isn't running or has no
+// metadata yet.
 func (s *Server) availability(t engine.Torrent) (float64, []int) {
 	if t.Complete {
 		return -1, nil
 	}
 	counts, err := s.engine.PieceAvailability(t.Hash)
 	if err != nil || counts == nil {
-		return -1, nil
+		return 0, nil
 	}
 	return engine.DistributedCopies(counts), counts
 }
@@ -768,7 +769,7 @@ func (s *Server) setComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	comment := r.FormValue("comment")
-	s.withHashes(w, r, func(hs []string) error {
+	s.withHashesStatus(w, r, http.StatusNoContent, func(hs []string) error {
 		return s.engine.SetComment(r.Context(), comment, resolveAll(s, hs)...)
 	})
 }
