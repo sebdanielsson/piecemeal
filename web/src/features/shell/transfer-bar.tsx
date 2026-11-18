@@ -14,8 +14,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { formatBytes, formatRate } from "@/lib/format";
 import { useTransfer } from "@/lib/live/hooks";
 import { streamStatus } from "@/lib/live/stream";
-import { useUpdateSettings } from "@/lib/mutations";
-import { meQuery, settingsQuery } from "@/lib/queries";
+import { useUpdateTransfer } from "@/lib/mutations";
+import { settingsQuery } from "@/lib/queries";
 import { useStore } from "@/lib/store";
 
 const connectionLabels = {
@@ -28,12 +28,11 @@ const connectionLabels = {
 export function TransferBar() {
   const transfer = useTransfer();
   const status = useStore(streamStatus);
-  const { data: me } = useQuery(meQuery);
   const { data: settings } = useQuery(settingsQuery);
-  const update = useUpdateSettings();
-  const alt = settings?.settings.altSpeedEnabled ?? transfer?.altSpeedEnabled ?? false;
+  const update = useUpdateTransfer();
+  const alt = transfer?.altSpeedEnabled ?? settings?.settings.altSpeedEnabled ?? false;
   const altLocked = settings?.locked.altSpeedEnabled;
-  const canToggle = Boolean(me?.isAdmin) && !altLocked && settings !== undefined;
+  const canToggle = transfer !== undefined && !altLocked;
 
   return (
     <footer
@@ -85,7 +84,7 @@ export function TransferBar() {
         </TooltipTrigger>
         <TooltipContent>
           Alternative speed limits {alt ? "on" : "off"}
-          {altLocked ? ` (set by ${altLocked})` : !me?.isAdmin ? " (admins can change this)" : ""}
+          {altLocked ? ` (set by ${altLocked})` : ""}
         </TooltipContent>
       </Tooltip>
       <div className="flex-1" />

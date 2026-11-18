@@ -80,8 +80,8 @@ function makeSessionColumns(isAdmin: boolean, onEnd: (s: Session) => void): Data
           {
             id: "user",
             header: "User",
-            cell: (s: Session) => s.userId,
-            sort: (s: Session) => s.userId,
+            cell: (s: Session) => s.username,
+            sort: (s: Session) => s.username,
           },
         ]
       : []),

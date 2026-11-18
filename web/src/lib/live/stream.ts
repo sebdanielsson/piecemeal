@@ -6,7 +6,6 @@ import type { QueryClient } from "@tanstack/react-query";
 import { apiPrefix } from "@/api/client";
 import type {
   Category,
-  Settings,
   SettingsResponse,
   SnapshotEvent,
   TorrentsEvent,
@@ -67,13 +66,9 @@ export function applyEvent(qc: QueryClient, type: string, data: unknown, now: nu
     case "tags":
       qc.setQueryData<string[]>(keys.tags, (data as { items: string[] | null }).items ?? []);
       break;
-    case "settings": {
-      const { settings } = data as { settings: Settings };
-      if (qc.getQueryData(keys.settings)) {
-        qc.setQueryData<SettingsResponse>(keys.settings, (prev) => prev && { ...prev, settings });
-      }
+    case "settings":
+      qc.setQueryData<SettingsResponse>(keys.settings, data as SettingsResponse);
       break;
-    }
   }
 }
 

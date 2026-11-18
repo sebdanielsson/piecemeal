@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { LockIcon } from "lucide-react";
 import { useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
-import type { Settings } from "@/api/types";
+import type { Settings, TransferLimits } from "@/api/types";
 import { LimitInput } from "@/components/form/limit-input";
 import { OptionSelect } from "@/components/form/option-select";
 import { ShareLimitInput } from "@/components/form/share-limit-input";
@@ -11,7 +11,7 @@ import { Field, FieldContent, FieldDescription, FieldLabel } from "@/components/
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
-import { useUpdateSettings } from "@/lib/mutations";
+import { transferSettingKeys, useUpdateSettings, useUpdateTransfer } from "@/lib/mutations";
 import { meQuery, settingsQuery } from "@/lib/queries";
 import { PageSection } from "../shell/page";
 
@@ -47,13 +47,32 @@ export function settingsDiff(base: Settings, draft: Settings): Partial<Settings>
 }
 
 /**
+ * Splits changed settings into the speed limits, which PATCH /transfer takes
+ * from any signed-in user, and the rest, which only admins may change.
+ */
+export function splitSettingsPatch(changes: Partial<Settings>): {
+  transfer: TransferLimits;
+  settings: Partial<Settings>;
+} {
+  const transfer: Record<string, unknown> = {};
+  const settings: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(changes)) {
+    (transferSettingKeys.has(k as Key) ? transfer : settings)[k] = v;
+  }
+  return { transfer: transfer as TransferLimits, settings: settings as Partial<Settings> };
+}
+
+/**
  * Edits groups of settings with one save bar. Settings pinned by an
- * environment variable, and everything for non-admins, are read-only.
+ * environment variable are read-only, and so is everything but the speed
+ * limits for non-admins.
  */
 export function SettingsForm({ groups, footer }: { groups: FieldGroupDef[]; footer?: ReactNode }) {
   const { data, isPending, isError, error } = useQuery(settingsQuery);
   const { data: me } = useQuery(meQuery);
-  const update = useUpdateSettings();
+  const updateSettings = useUpdateSettings();
+  const updateTransfer = useUpdateTransfer();
+  const saving = updateSettings.isPending || updateTransfer.isPending;
   const base = data?.settings;
   const [draft, setDraft] = useState<Settings | undefined>(base);
   // New settings from the server (loaded, saved, or changed elsewhere) reset
@@ -92,22 +111,35 @@ export function SettingsForm({ groups, footer }: { groups: FieldGroupDef[]; foot
     return <p className="text-destructive">Couldn't load the settings: {error?.message}</p>;
   }
   const admin = me?.isAdmin === true;
+  const editable = (key: Key) => admin || transferSettingKeys.has(key);
+  const fields = groups.flatMap((g) => g.fields);
+  const canSave = fields.some((f) => editable(f.key) && data.locked[f.key] === undefined);
+  const adminOnly = !admin && fields.some((f) => !transferSettingKeys.has(f.key));
 
-  const submit = (e: FormEvent) => {
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
-    update.mutate(changes, {
-      onSuccess: (res) => {
-        setDraft(res.settings);
-        toast.success("Settings saved");
-      },
-    });
+    const patch = splitSettingsPatch(changes);
+    try {
+      // The saved values come back through the settings cache, which the
+      // draft then matches.
+      if (Object.keys(patch.settings).length > 0) {
+        await updateSettings.mutateAsync(patch.settings);
+      }
+      if (Object.keys(patch.transfer).length > 0) {
+        await updateTransfer.mutateAsync(patch.transfer);
+      }
+      toast.success("Settings saved");
+    } catch {
+      // The mutation has shown the error.
+    }
   };
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-10">
-      {!admin && (
+    <form onSubmit={(e) => void submit(e)} className="flex flex-col gap-10">
+      {adminOnly && (
         <p className="border bg-muted/50 p-3 text-sm text-muted-foreground">
-          Only admins can change settings.
+          Only admins can change these settings
+          {fields.some((f) => transferSettingKeys.has(f.key)) ? ", except the speed limits." : "."}
         </p>
       )}
       {groups.map((g) => (
@@ -119,7 +151,7 @@ export function SettingsForm({ groups, footer }: { groups: FieldGroupDef[]; foot
                 def={f}
                 value={draft[f.key]}
                 lockedBy={data.locked[f.key]}
-                disabled={!admin}
+                disabled={!editable(f.key)}
                 onChange={(v) => setDraft((d) => d && { ...d, [f.key]: v })}
               />
             ))}
@@ -127,7 +159,7 @@ export function SettingsForm({ groups, footer }: { groups: FieldGroupDef[]; foot
         </PageSection>
       ))}
       {footer}
-      {admin && (
+      {canSave && (
         <div className="sticky bottom-0 -mx-4 flex items-center justify-end gap-2 border-t bg-background/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
           <span className="mr-auto text-xs text-muted-foreground" aria-live="polite">
             {dirty
@@ -143,8 +175,8 @@ export function SettingsForm({ groups, footer }: { groups: FieldGroupDef[]; foot
           >
             Reset
           </Button>
-          <Button type="submit" size="sm" disabled={!dirty || update.isPending}>
-            {update.isPending && <Spinner />}
+          <Button type="submit" size="sm" disabled={!dirty || saving}>
+            {saving && <Spinner />}
             Save
           </Button>
         </div>

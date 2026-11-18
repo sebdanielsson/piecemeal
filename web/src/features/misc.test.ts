@@ -3,7 +3,7 @@ import type { LogEntry, Settings } from "@/api/types";
 import { appendLog } from "./admin/log-page";
 import { describeUserAgent } from "./admin/sessions-page";
 import { cellSize, countPieces } from "./detail/pieces-tab";
-import { settingsDiff } from "./settings/settings-form";
+import { settingsDiff, splitSettingsPatch } from "./settings/settings-form";
 import { niceCeiling } from "./transfer/speed-chart";
 import { shouldStart } from "./torrents/torrent-actions";
 
@@ -67,4 +67,14 @@ test("settingsDiff lists only what changed", () => {
 test("toggling starts torrents if any is stopped", () => {
   expect(shouldStart([{ stopped: false }, { stopped: true }])).toBe(true);
   expect(shouldStart([{ stopped: false }])).toBe(false);
+});
+
+test("speed limits go to PATCH /transfer, everything else to PATCH /settings", () => {
+  expect(
+    splitSettingsPatch({ downloadLimit: 1024, altSpeedEnabled: true, utp: false, ratioLimit: 2 }),
+  ).toEqual({
+    transfer: { downloadLimit: 1024, altSpeedEnabled: true },
+    settings: { utp: false, ratioLimit: 2 },
+  });
+  expect(splitSettingsPatch({})).toEqual({ transfer: {}, settings: {} });
 });

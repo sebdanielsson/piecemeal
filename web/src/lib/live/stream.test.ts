@@ -51,19 +51,14 @@ test("torrents, categories and tags events update the cache", () => {
   expect(qc.getQueryData(keys.categories)).toEqual([]);
 });
 
-test("a settings event keeps which settings are locked", () => {
-  // Without loaded settings there is nothing to merge into.
-  applyEvent(qc, "settings", { settings: { addStopped: true } }, 0);
-  expect(qc.getQueryData(keys.settings)).toBeUndefined();
-  const loaded = {
+test("a settings event replaces the settings and which of them are locked", () => {
+  const event = { settings: { addStopped: true }, locked: { dht: "PIECEMEAL_DHT" } };
+  applyEvent(qc, "settings", event, 0);
+  expect(qc.getQueryData<SettingsResponse>(keys.settings)).toEqual(event);
+  applyEvent(qc, "settings", { settings: { addStopped: false }, locked: {} }, 0);
+  expect(qc.getQueryData<SettingsResponse>(keys.settings)).toEqual({
     settings: { addStopped: false },
-    locked: { dht: "PIECEMEAL_DHT" },
-  } as unknown as SettingsResponse;
-  qc.setQueryData(keys.settings, loaded);
-  applyEvent(qc, "settings", { settings: { addStopped: true } }, 0);
-  expect(qc.getQueryData(keys.settings)).toEqual({
-    settings: { addStopped: true },
-    locked: { dht: "PIECEMEAL_DHT" },
+    locked: {},
   });
 });
 

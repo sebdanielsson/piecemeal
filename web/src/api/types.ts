@@ -5,6 +5,7 @@ type Schemas = components["schemas"];
 export type Torrent = Schemas["Torrent"];
 export type TorrentState = Torrent["state"];
 export type TransferStatus = Schemas["TransferStatus"];
+export type TransferLimits = Schemas["TransferLimits"];
 export type Category = Schemas["Category"];
 export type Settings = Schemas["Settings"];
 export type SettingsResponse = Schemas["SettingsResponse"];

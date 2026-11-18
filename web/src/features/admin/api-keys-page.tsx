@@ -69,8 +69,8 @@ function makeKeyColumns(isAdmin: boolean, onDelete: (k: APIKey) => void): DataCo
           {
             id: "user",
             header: "User",
-            cell: (k: APIKey) => k.userId,
-            sort: (k: APIKey) => k.userId,
+            cell: (k: APIKey) => k.username,
+            sort: (k: APIKey) => k.username,
           },
         ]
       : []),

@@ -194,3 +194,36 @@ test("a 401 from the API sends the user to the sign-in page", async () => {
   expect(await screen.findByLabelText("Password")).toBeTruthy();
   expect(location.pathname).toBe("/login");
 });
+
+test("anyone signed in can switch the alternative speed limits, unless they are pinned", async () => {
+  const user = { ...admin, userId: 2, username: "viewer", name: "Viewer", isAdmin: false };
+  let locked: Record<string, string> = {};
+  const calls = mockApi({
+    "GET /auth/me": () => json(user),
+    "GET /settings": () => json({ settings: { altSpeedEnabled: false }, locked }),
+    "GET /categories": () => json({ items: [] }),
+    "GET /tags": () => json({ items: [] }),
+    "PATCH /transfer": (body) => json(transfer({ ...(body as object) })),
+  });
+  const u = userEvent.setup();
+  const { unmount } = render(<App />);
+  await screen.findByText("Loading torrents…");
+  snapshot();
+  const toggle = await screen.findByRole("button", { name: "Alternative speed limits" });
+  expect(toggle.getAttribute("aria-pressed")).toBe("false");
+  await u.click(toggle);
+  await vi.waitFor(() => expect(toggle.getAttribute("aria-pressed")).toBe("true"));
+  expect(calls.filter((c) => c.method === "PATCH")).toEqual([
+    { method: "PATCH", path: "/transfer", body: { altSpeedEnabled: true } },
+  ]);
+  unmount();
+
+  // Pinned by an environment variable: shown, but not switchable.
+  locked = { altSpeedEnabled: "PIECEMEAL_ALT_SPEED_ENABLED" };
+  FakeEventSource.reset();
+  render(<App />);
+  await screen.findByText("Loading torrents…");
+  snapshot();
+  const pinned = await screen.findByRole("button", { name: "Alternative speed limits" });
+  await vi.waitFor(() => expect(pinned.hasAttribute("disabled")).toBe(true));
+});

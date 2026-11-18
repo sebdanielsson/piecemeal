@@ -7,6 +7,8 @@ import type {
   Settings,
   SettingsResponse,
   TorrentFile,
+  TransferLimits,
+  TransferStatus,
   UpdateTorrentRequest,
 } from "@/api/types";
 import { errorMessage, unwrap } from "./api";
@@ -106,6 +108,35 @@ export function useSetFilePriority(hash: string) {
     onSettled: () => qc.invalidateQueries({ queryKey: keys.files(hash) }),
   });
 }
+
+/**
+ * Changes the global and alternative speed limits and the alternative speed
+ * toggle. Unlike settings, any signed-in user may. The settings event
+ * follows; the cached settings and transfer status update at once.
+ */
+export function useUpdateTransfer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: TransferLimits) => unwrap(api.PATCH("/transfer", { body: patch })),
+    onSuccess: (status, patch) => {
+      qc.setQueryData<TransferStatus>(keys.transfer, status);
+      qc.setQueryData<SettingsResponse>(
+        keys.settings,
+        (prev) => prev && { ...prev, settings: { ...prev.settings, ...patch } },
+      );
+    },
+    onError: (error) => toast.error(errorMessage(error)),
+  });
+}
+
+/** The settings PATCH /transfer changes, which every signed-in user may. */
+export const transferSettingKeys = new Set<keyof Settings>([
+  "altSpeedEnabled",
+  "downloadLimit",
+  "uploadLimit",
+  "altDownloadLimit",
+  "altUploadLimit",
+]);
 
 /** Changes settings (admins only); the response is the new settings. */
 export function useUpdateSettings() {
