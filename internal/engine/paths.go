@@ -74,3 +74,23 @@ func (e *Engine) PathAllowed(path string) bool {
 	_, err := e.confine(path)
 	return err == nil
 }
+
+// FreeSpace returns the free bytes on the filesystem holding path, which
+// must be inside an allowed root, or of its closest existing parent: -1
+// when unknown.
+func (e *Engine) FreeSpace(path string) (int64, error) {
+	p, err := e.confine(path)
+	if err != nil {
+		return 0, err
+	}
+	for {
+		if _, err := os.Stat(p); err == nil {
+			return freeSpace(p), nil
+		}
+		parent := filepath.Dir(p)
+		if parent == p {
+			return -1, nil
+		}
+		p = parent
+	}
+}

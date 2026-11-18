@@ -730,3 +730,16 @@ func (s *Service) usernames(ctx context.Context) (map[int64]string, error) {
 func (s *Service) Users(ctx context.Context) ([]store.User, error) {
 	return s.store.ListUsers(ctx)
 }
+
+// ClientKey identifies who is calling, for state kept per client such as
+// qBittorrent's sync: the session, the API key, or the Basic user.
+func (p *Principal) ClientKey() string {
+	switch {
+	case p.sessionHash != nil:
+		return "s:" + sessionID(p.sessionHash)
+	case p.APIKeyID != 0:
+		return fmt.Sprintf("k:%d", p.APIKeyID)
+	default:
+		return "u:" + p.Username
+	}
+}

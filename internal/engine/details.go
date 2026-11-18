@@ -334,3 +334,26 @@ func (e *Engine) PieceHashes(hash string) ([]string, error) {
 	}
 	return out, nil
 }
+
+// CompleteFile returns where a torrent's file is on disk, once all of it
+// is downloaded and verified.
+func (e *Engine) CompleteFile(hash string, index int) (string, error) {
+	files, err := e.Files(hash)
+	if err != nil {
+		return "", err
+	}
+	t, ok := e.Get(hash)
+	switch {
+	case !ok:
+		return "", ErrNotFound
+	case !t.HasMetadata:
+		return "", fmt.Errorf("%w: metadata not received yet", ErrInvalid)
+	case index < 0 || index >= len(files):
+		return "", fmt.Errorf("%w: no file %d", ErrInvalid, index)
+	case files[index].Progress < 1:
+		return "", fmt.Errorf("%w: file not complete", ErrInvalid)
+	case t.State == StateMoving:
+		return "", fmt.Errorf("%w: torrent is moving", ErrInvalid)
+	}
+	return e.confine(filepath.Join(t.SavePath, filepath.FromSlash(files[index].Path)))
+}

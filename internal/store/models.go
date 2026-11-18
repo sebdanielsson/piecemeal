@@ -32,6 +32,12 @@ type Category struct {
 	SavePath string
 }
 
+type Kv struct {
+	Namespace string
+	Key       string
+	Value     string
+}
+
 type Session struct {
 	TokenHash  []byte
 	UserID     int64

@@ -172,10 +172,10 @@ func effective[T int64 | float64](own, global T) T {
 	return own
 }
 
-// queuePriority is qBittorrent's priority field: the queue position, or -1
-// with queueing off or for complete torrents.
+// queuePriority is qBittorrent's priority field: the queue position, 0 for
+// torrents outside the queue (complete ones), and -1 with queueing off.
 func queuePriority(t engine.Torrent, queueing bool) int64 {
-	if !queueing || t.QueuePosition == 0 {
+	if !queueing {
 		return -1
 	}
 	return t.QueuePosition
@@ -262,7 +262,7 @@ func matches(t engine.Torrent, filter string) bool {
 }
 
 func (s *Server) info(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
+	q := r.Form
 	want := map[string]bool{}
 	for _, h := range hashes(r, "hashes") {
 		want[h] = true

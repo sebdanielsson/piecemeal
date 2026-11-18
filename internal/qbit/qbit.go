@@ -17,12 +17,14 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/sebdanielsson/piecemeal/internal/auth"
 	"github.com/sebdanielsson/piecemeal/internal/engine"
 	"github.com/sebdanielsson/piecemeal/internal/fetch"
 	"github.com/sebdanielsson/piecemeal/internal/logbuf"
 	"github.com/sebdanielsson/piecemeal/internal/settings"
+	"github.com/sebdanielsson/piecemeal/internal/store"
 )
 
 // The qBittorrent and WebAPI versions piecemeal reports. Clients choose
@@ -39,12 +41,20 @@ type Server struct {
 	settings *settings.Manager
 	auth     *auth.Service
 	fetcher  *fetch.Fetcher
+	store    *store.Store
 	logs     *logbuf.Buffer
 	log      *slog.Logger
 	// port is the HTTP listen port, which qBittorrent puts in its session
 	// cookie's name.
 	port   int
 	routes map[string]route
+	// altWebUI is set when piecemeal hosts an alternative qBittorrent web
+	// UI such as VueTorrent.
+	altWebUI bool
+	started  time.Time
+
+	mainSync syncStore[mainSnapshot]
+	peerSync syncStore[peerSnapshot]
 }
 
 // Deps are the services the API uses.
@@ -53,13 +63,19 @@ type Deps struct {
 	Settings *settings.Manager
 	Auth     *auth.Service
 	Fetcher  *fetch.Fetcher
+	Store    *store.Store
 	Logs     *logbuf.Buffer
 	Log      *slog.Logger
 	// HTTPPort is the port piecemeal serves HTTP on.
 	HTTPPort int
+	// AltWebUI is set when an alternative web UI is hosted.
+	AltWebUI bool
 }
 
 type route struct {
+	// method is POST for endpoints that change something and GET for
+	// reads, which accept POST too: some clients send every request as a
+	// POST.
 	method string
 	// public routes need no authentication.
 	public bool
@@ -72,7 +88,11 @@ const Prefix = "/api/v2/"
 // New creates the API.
 func New(d Deps) *Server {
 	s := &Server{
-		engine: d.Engine, settings: d.Settings, auth: d.Auth, fetcher: d.Fetcher, logs: d.Logs, log: d.Log, port: d.HTTPPort,
+		engine: d.Engine, settings: d.Settings, auth: d.Auth, fetcher: d.Fetcher, store: d.Store, logs: d.Logs, log: d.Log,
+		port: d.HTTPPort, altWebUI: d.AltWebUI, started: time.Now(),
+	}
+	if err := s.loadCookies(context.Background()); err != nil {
+		s.log.Warn("loading the download cookies", "error", err)
 	}
 	get, post := http.MethodGet, http.MethodPost
 	s.routes = map[string]route{
@@ -83,12 +103,25 @@ func New(d Deps) *Server {
 		"app/webapiVersion":               {get, false, s.text(WebAPIVersion)},
 		"app/buildInfo":                   {get, false, s.buildInfo},
 		"app/preferences":                 {get, false, s.preferences},
+		"app/setPreferences":              {post, false, s.setPreferences},
+		"app/processInfo":                 {get, false, s.processInfo},
+		"app/getFreeSpaceAtPath":          {get, false, s.getFreeSpaceAtPath},
+		"app/cookies":                     {get, false, s.cookies},
+		"app/setCookies":                  {post, false, s.setCookies},
+		"app/rotateAPIKey":                {post, false, s.rotateAPIKey},
+		"app/deleteAPIKey":                {post, false, s.deleteAPIKey},
 		"app/defaultSavePath":             {get, false, s.defaultSavePath},
 		"app/shutdown":                    {post, false, s.notSupported},
 		"app/sendTestEmail":               {post, false, s.notSupported},
 		"app/networkInterfaceList":        {get, false, s.networkInterfaceList},
 		"app/networkInterfaceAddressList": {get, false, s.networkInterfaceAddressList},
 		"app/getDirectoryContent":         {post, false, s.getDirectoryContent},
+
+		"clientdata/load":  {get, false, s.clientDataLoad},
+		"clientdata/store": {post, false, s.clientDataStore},
+
+		"sync/maindata":     {get, false, s.maindata},
+		"sync/torrentPeers": {get, false, s.torrentPeers},
 
 		"log/main":  {get, false, s.logMain},
 		"log/peers": {get, false, s.logPeers},
@@ -101,11 +134,15 @@ func New(d Deps) *Server {
 		"transfer/uploadLimit":           {get, false, s.globalLimit(false)},
 		"transfer/setDownloadLimit":      {post, false, s.setGlobalLimit(true)},
 		"transfer/setUploadLimit":        {post, false, s.setGlobalLimit(false)},
+		"transfer/getSpeedLimits":        {get, false, s.getSpeedLimits},
+		"transfer/setSpeedLimits":        {post, false, s.setSpeedLimits},
 		"transfer/banPeers":              {post, false, s.banPeers},
+		"transfer/pauseSession":          {post, false, s.notSupported},
+		"transfer/resumeSession":         {post, false, s.notSupported},
 
 		"torrentcreator/addTask":     {post, false, s.creatorAddTask},
 		"torrentcreator/status":      {get, false, s.creatorStatus},
-		"torrentcreator/torrentFile": {post, false, s.creatorTorrentFile},
+		"torrentcreator/torrentFile": {get, false, s.creatorTorrentFile},
 		"torrentcreator/deleteTask":  {post, false, s.creatorDeleteTask},
 
 		"torrents/info":        {get, false, s.info},
@@ -148,11 +185,14 @@ func New(d Deps) *Server {
 		"torrents/setSavePath":              {post, false, s.setLocation("path")},
 		"torrents/renameFile":               {post, false, s.renamePath},
 		"torrents/renameFolder":             {post, false, s.renamePath},
-		"torrents/downloadLimit":            {post, false, s.torrentLimits(true)},
-		"torrents/uploadLimit":              {post, false, s.torrentLimits(false)},
+		"torrents/downloadLimit":            {get, false, s.torrentLimits(true)},
+		"torrents/uploadLimit":              {get, false, s.torrentLimits(false)},
 		"torrents/count":                    {get, false, s.count},
 		"torrents/export":                   {get, false, s.export},
 		"torrents/pieceHashes":              {get, false, s.pieceHashes},
+		"torrents/downloadFile":             {get, false, s.downloadFile},
+		"torrents/SSLParameters":            {get, false, s.sslParameters},
+		"torrents/setSSLParameters":         {post, false, s.notSupported},
 		"torrents/setTags":                  {post, false, s.setTags},
 		"torrents/setAutoManagement":        {post, false, s.acceptIgnored},
 		"torrents/setDownloadPath":          {post, false, s.acceptIgnored},
@@ -177,31 +217,36 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Endpoint does not exist", http.StatusNotFound)
 		return
 	}
-	if r.Method != rt.method {
-		w.Header().Set("Allow", rt.method)
+	if r.Method != rt.method && (rt.method != http.MethodGet || r.Method != http.MethodPost) {
+		allow := rt.method
+		if allow == http.MethodGet {
+			allow = "GET, POST"
+		}
+		w.Header().Set("Allow", allow)
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if rt.public {
-		rt.h(w, r)
+	if !rt.public {
+		p, status := s.authenticate(r)
+		if p == nil {
+			http.Error(w, http.StatusText(status), status)
+			return
+		}
+		if rt.method != http.MethodGet && !p.CanWrite() {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+		r = r.WithContext(context.WithValue(r.Context(), principalKey{}, p))
+	}
+	// Bodies are read only once the caller is known.
+	if err := parseForm(w, r); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	p, status := s.authenticate(r)
-	if p == nil {
-		http.Error(w, http.StatusText(status), status)
-		return
+	if r.MultipartForm != nil {
+		defer func() { _ = r.MultipartForm.RemoveAll() }()
 	}
-	if r.Method != http.MethodGet && !p.CanWrite() {
-		http.Error(w, "Forbidden", http.StatusForbidden)
-		return
-	}
-	r2 := r.WithContext(context.WithValue(r.Context(), principalKey{}, p))
-	rt.h(w, r2)
-	// net/http only cleans up a multipart form parsed on the request it
-	// passed in, not on this copy: remove spilled temp files here.
-	if r2.MultipartForm != nil {
-		_ = r2.MultipartForm.RemoveAll()
-	}
+	rt.h(w, r)
 }
 
 type principalKey struct{}
@@ -349,10 +394,15 @@ func done(w http.ResponseWriter) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// parseForm reads a POST body, which qBittorrent clients send urlencoded or,
-// when a value is long or a file is attached, multipart. Bodies are capped
-// at 64 MiB, room for a few large torrent files.
+// parseForm reads the query string and a POST body, which qBittorrent
+// clients send urlencoded or, when a value is long or a file is attached,
+// multipart. Bodies are capped at 64 MiB, room for a few large torrent
+// files. ServeHTTP parses every request, so handlers just read r.Form;
+// parsing again is a no-op.
 func parseForm(w http.ResponseWriter, r *http.Request) error {
+	if r.Form != nil {
+		return nil
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, 64<<20)
 	ct, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if ct == "multipart/form-data" {

@@ -12,7 +12,6 @@ import (
 	"slices"
 	"syscall"
 
-	"github.com/anacrolix/torrent"
 	"github.com/anacrolix/torrent/metainfo"
 )
 
@@ -22,15 +21,27 @@ func (m *managed) currentTrackers() [][]string {
 	if m.trackers != nil {
 		return m.trackers
 	}
-	if m.rec.Metainfo != nil {
-		if mi, err := metainfo.Load(bytes.NewReader(m.rec.Metainfo)); err == nil {
-			return mi.UpvertedAnnounceList()
+	return m.meta.announce
+}
+
+// TrackerMap returns every announce URL in use with the torrents using it.
+func (e *Engine) TrackerMap() map[string][]string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	out := map[string][]string{}
+	for _, m := range e.torrents {
+		for _, tier := range m.currentTrackers() {
+			for _, u := range tier {
+				if !slices.Contains(out[u], m.rec.InfoHash) {
+					out[u] = append(out[u], m.rec.InfoHash)
+				}
+			}
 		}
 	}
-	if spec, err := torrent.TorrentSpecFromMagnetUri(m.rec.Magnet); err == nil {
-		return spec.Trackers
+	for _, hs := range out {
+		slices.Sort(hs)
 	}
-	return nil
+	return out
 }
 
 func (m *managed) currentWebSeeds() []string {
@@ -65,8 +76,10 @@ func (e *Engine) setTrackersLocked(m *managed, al [][]string) {
 		al = [][]string{}
 	}
 	m.trackers = al
+	announce := m.meta.announce
 	m.meta.tracker, m.meta.trackers = "", 0
 	m.setMagnetTrackers(al)
+	m.meta.announce = announce
 	if m.t != nil {
 		m.t.ModifyTrackers(al)
 	}

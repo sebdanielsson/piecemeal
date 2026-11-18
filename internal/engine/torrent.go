@@ -73,9 +73,13 @@ type metaFields struct {
 	comment, createdBy, tracker string
 	createdAt                   int64
 	trackers                    int
+	// announce is the torrent file's or magnet's announce list, parsed
+	// once.
+	announce [][]string
 }
 
 func (m *managed) setMagnetTrackers(al [][]string) {
+	m.meta.announce = al
 	if len(al) > 0 && len(al[0]) > 0 {
 		m.meta.tracker = al[0][0]
 	}
@@ -92,6 +96,7 @@ func (m *managed) setMetainfo(b []byte) {
 	}
 	m.meta = metaFields{comment: mi.Comment, createdBy: mi.CreatedBy, createdAt: mi.CreationDate}
 	al := mi.UpvertedAnnounceList()
+	m.meta.announce = al
 	if len(al) > 0 && len(al[0]) > 0 {
 		m.meta.tracker = al[0][0]
 	}
@@ -1076,8 +1081,10 @@ func (e *Engine) loadTorrents(ctx context.Context) error {
 			e.log.Warn("ignoring a stored tracker, web seed or file path override", "hash", r.InfoHash, "error", err)
 		}
 		if m.trackers != nil {
+			announce := m.meta.announce
 			m.meta.tracker, m.meta.trackers = "", 0
 			m.setMagnetTrackers(m.trackers)
+			m.meta.announce = announce
 		}
 		e.recordPathsLocked(m)
 		e.torrents[ih] = m

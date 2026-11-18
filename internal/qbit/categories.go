@@ -11,11 +11,7 @@ import (
 func (s *Server) categories(w http.ResponseWriter, _ *http.Request) {
 	out := map[string]any{}
 	for _, c := range s.engine.Categories() {
-		out[c.Name] = map[string]any{
-			"name": c.Name, "savePath": c.SavePath, "download_path": nil,
-			"ratio_limit": -2, "seeding_time_limit": -2, "inactive_seeding_time_limit": -2,
-			"share_limit_action": "Default", "share_limits_mode": "Default",
-		}
+		out[c.Name] = categoryObject(c)
 	}
 	writeJSON(w, out)
 }

@@ -10,11 +10,38 @@ import (
 )
 
 func (s *Server) buildInfo(w http.ResponseWriter, _ *http.Request) {
+	platform := "unknown"
+	switch runtime.GOOS {
+	case "linux", "windows":
+		platform = runtime.GOOS
+	case "darwin":
+		platform = "macos"
+	}
 	writeJSON(w, map[string]any{
 		"qt": "", "libtorrent": "", "boost": "", "openssl": "", "zlib": "",
 		"bitness":  strconv.IntSize,
-		"platform": runtime.GOOS,
+		"platform": platform,
 	})
+}
+
+func (s *Server) processInfo(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, map[string]int64{"launch_time": s.started.Unix()})
+}
+
+// getFreeSpaceAtPath reports the free space for a path inside the allowed
+// roots.
+func (s *Server) getFreeSpaceAtPath(w http.ResponseWriter, r *http.Request) {
+	path := r.FormValue("path")
+	if path == "" {
+		http.Error(w, "Missing required parameter: path", http.StatusBadRequest)
+		return
+	}
+	free, err := s.engine.FreeSpace(path)
+	if err != nil {
+		http.Error(w, "Not Found", http.StatusNotFound)
+		return
+	}
+	s.text(strconv.FormatInt(free, 10))(w, r)
 }
 
 func (s *Server) defaultSavePath(w http.ResponseWriter, r *http.Request) {
@@ -48,7 +75,18 @@ func encryptionMode(e string) int {
 // preferences reports piecemeal's settings under qBittorrent's preference
 // names. The *arrs read the save path, the seeding goals, the action at the
 // goal, queueing and DHT.
-func (s *Server) preferences(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) preferences(w http.ResponseWriter, r *http.Request) {
+	prefs := defaultPreferences()
+	for k, v := range s.mappedPreferences() {
+		prefs[k] = v
+	}
+	prefs["web_ui_api_key"] = s.apiKeyMarker(r)
+	writeJSON(w, prefs)
+}
+
+// mappedPreferences are the preferences that come from piecemeal's own
+// settings and state.
+func (s *Server) mappedPreferences() map[string]any {
 	st := s.settings.Get()
 	limit := func(v int64) int64 {
 		if v <= 0 {
@@ -148,10 +186,10 @@ func (s *Server) preferences(w http.ResponseWriter, _ *http.Request) {
 		"bypass_local_auth":                      false,
 		"bypass_auth_subnet_whitelist_enabled":   false,
 		"bypass_auth_subnet_whitelist":           "",
-		"alternative_webui_enabled":              false,
+		"alternative_webui_enabled":              s.altWebUI,
 		"use_https":                              false,
 	}
-	writeJSON(w, p)
+	return p
 }
 
 // btProtocol is qBittorrent's bittorrent_protocol: 0 TCP and uTP, 1 TCP.

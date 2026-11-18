@@ -68,7 +68,7 @@ func newEnv(t *testing.T, environ ...string) *env {
 		t.Fatal(err)
 	}
 	logs := logbuf.New(100)
-	srv := httptest.NewServer(New(Deps{Engine: e, Settings: sm, Auth: a, Fetcher: fetch.New(nil), Logs: logs, Log: log, HTTPPort: 8080}))
+	srv := httptest.NewServer(New(Deps{Engine: e, Settings: sm, Auth: a, Fetcher: fetch.New(nil), Store: st, Logs: logs, Log: log, HTTPPort: 8080}))
 	t.Cleanup(srv.Close)
 	jar, _ := cookiejar.New(nil)
 	return &env{t: t, srv: srv, engine: e, auth: a, client: &http.Client{Jar: jar}, save: save}
@@ -78,6 +78,12 @@ type response struct {
 	status int
 	body   []byte
 	header http.Header
+}
+
+// newEnvClient is another client of the same server, with its own cookies.
+func newEnvClient(e *env) *env {
+	jar, _ := cookiejar.New(nil)
+	return &env{t: e.t, srv: e.srv, engine: e.engine, auth: e.auth, client: &http.Client{Jar: jar}, save: e.save}
 }
 
 func (r response) json(t *testing.T, v any) {
@@ -225,6 +231,7 @@ func TestAPIKeyScopes(t *testing.T) {
 		t.Fatal("a key-authenticated request got a cookie")
 	}
 	expect(t, "read-only key reads", e.get("torrents/info", "Authorization", "Bearer "+roKey), http.StatusOK)
+	expect(t, "read-only key reads by POST", e.post("torrents/info", nil, "Authorization", "Bearer "+roKey), http.StatusOK)
 	expect(t, "read-only key writes", e.post("torrents/createTags", url.Values{"tags": {"x"}}, "Authorization", "Bearer "+roKey), http.StatusForbidden)
 }
 

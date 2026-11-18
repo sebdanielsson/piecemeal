@@ -29,6 +29,7 @@ Startup configuration comes from environment variables:
 | `PIECEMEAL_DOWNLOAD_DIR` | `/downloads` in the image | Default save path. |
 | `PIECEMEAL_ALLOWED_ROOTS` | the download dir | Comma-separated directories every save path must be inside. |
 | `PIECEMEAL_WATCH_DIR` | off | Directory polled for `.torrent` and `.magnet` files. |
+| `PIECEMEAL_QBITTORRENT_WEBUI_DIR` | off | A qBittorrent web UI such as VueTorrent, served at `/qbittorrent/`. See [qBittorrent compatibility](docs/qbittorrent-compat.md#vuetorrent-and-other-qbittorrent-web-uis). |
 | `PIECEMEAL_NATPMP_GATEWAY` | off | NAT-PMP gateway (such as a VPN's) to forward the peer port through. piecemeal listens on whatever port it gets and follows changes. |
 | `PIECEMEAL_LISTEN_HOST` | all | Address to bind peer listeners to. |
 | `PIECEMEAL_DISABLE_IPV6` | `false` | No IPv6 peers, for IPv4-only tunnels. |

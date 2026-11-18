@@ -724,7 +724,7 @@ export interface components {
     File: {
       /** Format: int64 */
       index: number;
-      /** @description Path inside the torrent, with / separators. */
+      /** @description Path relative to the save path, with / separators, after the content layout and any renames. */
       path: string;
       /** Format: int64 */
       pieceEnd: number;
@@ -882,15 +882,40 @@ export interface components {
       altDownloadLimit: number;
       /** @description Use the alternative limits. */
       altSpeedEnabled: boolean;
+      /** @description Turn the alternative limits on and off on a schedule. */
+      altSpeedSchedule: boolean;
+      /**
+       * @description The days the schedule applies, by the day it starts.
+       * @enum {string}
+       */
+      altSpeedScheduleDays:
+        | "everyDay"
+        | "weekdays"
+        | "weekends"
+        | "monday"
+        | "tuesday"
+        | "wednesday"
+        | "thursday"
+        | "friday"
+        | "saturday"
+        | "sunday";
+      /** @description When the alternative limits start, HH:MM local time. */
+      altSpeedScheduleFrom: string;
+      /** @description When they end, HH:MM local time; earlier than the start means the next day. */
+      altSpeedScheduleTo: string;
       /**
        * Format: int64
        * @description Alternative upload limit, used while altSpeedEnabled is on.
        */
       altUploadLimit: number;
+      /** @description Peers to refuse: IP addresses or CIDR ranges, one per line. */
+      bannedIPs: string;
       /** @description Where torrents are saved when neither the request nor its category names a path. */
       defaultSavePath: string;
       /** @description Use the DHT to find peers. */
       dht: boolean;
+      /** @description Slow torrents don't count toward the limits. */
+      dontCountSlowTorrents: boolean;
       /**
        * Format: int64
        * @description Global download limit in bytes per second, 0 for unlimited.
@@ -906,6 +931,25 @@ export interface components {
        * @description Stop seeding after this many minutes without upload, -1 for unlimited.
        */
       inactiveSeedingTimeLimit: number;
+      /** @description Refuse peers in the ranges of the IP filter file. */
+      ipFilterEnabled: boolean;
+      /** @description An IP filter file: eMule .dat, PeerGuardian .p2p, or one IP address or CIDR range per line. */
+      ipFilterPath: string;
+      /**
+       * Format: int64
+       * @description Torrents downloading at once, -1 for unlimited.
+       */
+      maxActiveDownloads: number;
+      /**
+       * Format: int64
+       * @description Torrents running at once, -1 for unlimited.
+       */
+      maxActiveTorrents: number;
+      /**
+       * Format: int64
+       * @description Torrents seeding at once, -1 for unlimited.
+       */
+      maxActiveUploads: number;
       /**
        * Format: int64
        * @description Established peer connections per torrent.
@@ -923,6 +967,8 @@ export interface components {
       peerPort: number;
       /** @description Exchange peers with other peers. */
       pex: boolean;
+      /** @description Run only a limited number of torrents at a time; the rest wait in the queue. */
+      queueingEnabled: boolean;
       /**
        * Format: double
        * @description Stop seeding at this upload ratio, -1 for unlimited.
@@ -938,6 +984,21 @@ export interface components {
        * @description Stop seeding after this many minutes, -1 for unlimited.
        */
       seedingTimeLimit: number;
+      /**
+       * Format: int64
+       * @description A torrent below this download rate, in bytes per second, is slow.
+       */
+      slowDownloadRate: number;
+      /**
+       * Format: int64
+       * @description Seconds a torrent must stay below the slow rates to count as slow.
+       */
+      slowTorrentTime: number;
+      /**
+       * Format: int64
+       * @description A torrent below this upload rate, in bytes per second, is slow.
+       */
+      slowUploadRate: number;
       /**
        * Format: int64
        * @description Global upload limit in bytes per second, 0 for unlimited.
@@ -1014,7 +1075,9 @@ export interface components {
        * @description Unix time, 0 if never completed.
        */
       completedAt: number;
-      /** @description The torrent's root directory, or its file for single-file torrents. */
+      /** @enum {string} */
+      contentLayout: "Original" | "Subfolder" | "NoSubfolder";
+      /** @description The torrent's file, or its top folder, or the save path when its files share no folder. */
       contentPath: string;
       /**
        * Format: int64
@@ -1088,6 +1151,8 @@ export interface components {
        * @description -2 follows the global setting, -1 is unlimited.
        */
       ratioLimit: number;
+      /** @description The torrent's top folder, empty when it has none. */
+      rootPath: string;
       savePath: string;
       /**
        * Format: int64
@@ -2275,15 +2340,40 @@ export interface operations {
           altDownloadLimit?: number;
           /** @description Use the alternative limits. */
           altSpeedEnabled?: boolean;
+          /** @description Turn the alternative limits on and off on a schedule. */
+          altSpeedSchedule?: boolean;
+          /**
+           * @description The days the schedule applies, by the day it starts.
+           * @enum {string}
+           */
+          altSpeedScheduleDays?:
+            | "everyDay"
+            | "weekdays"
+            | "weekends"
+            | "monday"
+            | "tuesday"
+            | "wednesday"
+            | "thursday"
+            | "friday"
+            | "saturday"
+            | "sunday";
+          /** @description When the alternative limits start, HH:MM local time. */
+          altSpeedScheduleFrom?: string;
+          /** @description When they end, HH:MM local time; earlier than the start means the next day. */
+          altSpeedScheduleTo?: string;
           /**
            * Format: int64
            * @description Alternative upload limit, used while altSpeedEnabled is on.
            */
           altUploadLimit?: number;
+          /** @description Peers to refuse: IP addresses or CIDR ranges, one per line. */
+          bannedIPs?: string;
           /** @description Where torrents are saved when neither the request nor its category names a path. */
           defaultSavePath?: string;
           /** @description Use the DHT to find peers. */
           dht?: boolean;
+          /** @description Slow torrents don't count toward the limits. */
+          dontCountSlowTorrents?: boolean;
           /**
            * Format: int64
            * @description Global download limit in bytes per second, 0 for unlimited.
@@ -2299,6 +2389,25 @@ export interface operations {
            * @description Stop seeding after this many minutes without upload, -1 for unlimited.
            */
           inactiveSeedingTimeLimit?: number;
+          /** @description Refuse peers in the ranges of the IP filter file. */
+          ipFilterEnabled?: boolean;
+          /** @description An IP filter file: eMule .dat, PeerGuardian .p2p, or one IP address or CIDR range per line. */
+          ipFilterPath?: string;
+          /**
+           * Format: int64
+           * @description Torrents downloading at once, -1 for unlimited.
+           */
+          maxActiveDownloads?: number;
+          /**
+           * Format: int64
+           * @description Torrents running at once, -1 for unlimited.
+           */
+          maxActiveTorrents?: number;
+          /**
+           * Format: int64
+           * @description Torrents seeding at once, -1 for unlimited.
+           */
+          maxActiveUploads?: number;
           /**
            * Format: int64
            * @description Established peer connections per torrent.
@@ -2316,6 +2425,8 @@ export interface operations {
           peerPort?: number;
           /** @description Exchange peers with other peers. */
           pex?: boolean;
+          /** @description Run only a limited number of torrents at a time; the rest wait in the queue. */
+          queueingEnabled?: boolean;
           /**
            * Format: double
            * @description Stop seeding at this upload ratio, -1 for unlimited.
@@ -2331,6 +2442,21 @@ export interface operations {
            * @description Stop seeding after this many minutes, -1 for unlimited.
            */
           seedingTimeLimit?: number;
+          /**
+           * Format: int64
+           * @description A torrent below this download rate, in bytes per second, is slow.
+           */
+          slowDownloadRate?: number;
+          /**
+           * Format: int64
+           * @description Seconds a torrent must stay below the slow rates to count as slow.
+           */
+          slowTorrentTime?: number;
+          /**
+           * Format: int64
+           * @description A torrent below this upload rate, in bytes per second, is slow.
+           */
+          slowUploadRate?: number;
           /**
            * Format: int64
            * @description Global upload limit in bytes per second, 0 for unlimited.

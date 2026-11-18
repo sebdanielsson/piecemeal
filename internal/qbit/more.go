@@ -2,11 +2,13 @@ package qbit
 
 import (
 	"errors"
-	"fmt"
 	"log/slog"
+	"maps"
+	"mime"
 	"net"
 	"net/http"
 	"net/netip"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -44,46 +46,71 @@ func (s *Server) setSpeedLimitsMode(w http.ResponseWriter, r *http.Request) {
 	s.setSetting(w, r, map[string]any{"altSpeedEnabled": mode == "1"})
 }
 
-// limitSetting is the setting the global limit endpoints work on: the
-// alternative one while the alternative limits are on, as in qBittorrent.
-func (s *Server) limitSetting(download bool) string {
-	alt := s.settings.Get().AltSpeedEnabled
-	switch {
-	case download && alt:
-		return "altDownloadLimit"
-	case download:
+// limitSetting is the setting behind the global limit endpoints: always
+// the normal limit, whatever the alternative mode.
+func limitSetting(download bool) string {
+	if download {
 		return "downloadLimit"
-	case alt:
-		return "altUploadLimit"
-	default:
-		return "uploadLimit"
 	}
+	return "uploadLimit"
 }
 
 func (s *Server) globalLimit(download bool) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		t := s.engine.Transfer()
-		v := t.UploadLimit
+		st := s.settings.Get()
+		v := st.UploadLimit
 		if download {
-			v = t.DownloadLimit
+			v = st.DownloadLimit
 		}
-		s.text(strconv.FormatInt(v, 10))(w, r)
+		s.text(strconv.FormatInt(max(v, 0), 10))(w, r)
 	}
 }
 
 func (s *Server) setGlobalLimit(download bool) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if err := parseForm(w, r); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
 		limit, err := strconv.ParseInt(r.FormValue("limit"), 10, 64)
 		if err != nil {
 			http.Error(w, "limit must be a number", http.StatusBadRequest)
 			return
 		}
-		s.setSetting(w, r, map[string]any{s.limitSetting(download): max(limit, 0)})
+		s.setSetting(w, r, map[string]any{limitSetting(download): roundLimit(limit)})
 	}
+}
+
+var speedLimitKeys = map[string]string{
+	"dl_limit": "downloadLimit", "up_limit": "uploadLimit",
+	"alt_dl_limit": "altDownloadLimit", "alt_up_limit": "altUploadLimit",
+}
+
+func (s *Server) getSpeedLimits(w http.ResponseWriter, _ *http.Request) {
+	st := s.settings.Get()
+	writeJSON(w, map[string]int64{
+		"dl_limit": max(st.DownloadLimit, 0), "up_limit": max(st.UploadLimit, 0),
+		"alt_dl_limit": max(st.AltDownloadLimit, 0), "alt_up_limit": max(st.AltUploadLimit, 0),
+	})
+}
+
+func (s *Server) setSpeedLimits(w http.ResponseWriter, r *http.Request) {
+	values := map[string]any{}
+	var missing []string
+	for _, k := range slices.Sorted(maps.Keys(speedLimitKeys)) {
+		v := r.FormValue(k)
+		if v == "" {
+			missing = append(missing, k)
+			continue
+		}
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			http.Error(w, k+" must be a number", http.StatusBadRequest)
+			return
+		}
+		values[speedLimitKeys[k]] = roundLimit(n)
+	}
+	if len(missing) > 0 {
+		http.Error(w, "Missing required parameters: "+strings.Join(missing, ", "), http.StatusBadRequest)
+		return
+	}
+	s.setSetting(w, r, values)
 }
 
 // setSetting changes settings from a qBittorrent endpoint.
@@ -128,7 +155,7 @@ const (
 )
 
 func (s *Server) logMain(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
+	q := r.Form
 	want := func(name string) bool {
 		v, err := strconv.ParseBool(q.Get(name))
 		return err != nil || v // default true
@@ -156,7 +183,7 @@ func (s *Server) logMain(w http.ResponseWriter, r *http.Request) {
 		if e.Attrs != "" {
 			msg += " " + e.Attrs
 		}
-		out = append(out, map[string]any{"id": e.ID, "message": msg, "timestamp": e.Time.UnixMilli(), "type": typ})
+		out = append(out, map[string]any{"id": e.ID, "message": msg, "timestamp": e.Time.Unix(), "type": typ})
 	}
 	writeJSON(w, out)
 }
@@ -168,9 +195,10 @@ func (s *Server) logPeers(w http.ResponseWriter, _ *http.Request) {
 
 // app/*
 
-func (s *Server) notSupported(w http.ResponseWriter, r *http.Request) {
-	_ = parseForm(w, r)
-	http.Error(w, "Not supported by piecemeal", http.StatusMethodNotAllowed)
+// notSupported answers endpoints for features piecemeal doesn't have with
+// 409, qBittorrent's status for a valid request it can't carry out.
+func (s *Server) notSupported(w http.ResponseWriter, _ *http.Request) {
+	http.Error(w, "Not supported by piecemeal", http.StatusConflict)
 }
 
 func (s *Server) networkInterfaceList(w http.ResponseWriter, _ *http.Request) {
@@ -184,7 +212,7 @@ func (s *Server) networkInterfaceList(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) networkInterfaceAddressList(w http.ResponseWriter, r *http.Request) {
 	out := []string{}
-	name := r.URL.Query().Get("iface")
+	name := r.FormValue("iface")
 	ifaces, _ := net.Interfaces()
 	for _, i := range ifaces {
 		if name != "" && i.Name != name {
@@ -293,60 +321,89 @@ func (s *Server) editWebSeeds(how string) func(http.ResponseWriter, *http.Reques
 	}
 }
 
-func (s *Server) addTrackers(w http.ResponseWriter, r *http.Request) {
-	if err := parseForm(w, r); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+// trackerTargets resolves the hash parameter of addTrackers and
+// removeTrackers: one hash, several separated by |, or all (also * for
+// removeTrackers). single is set when one hash was named, which must then
+// exist.
+func (s *Server) trackerTargets(w http.ResponseWriter, r *http.Request) (hs []string, single, ok bool) {
+	v := strings.TrimSpace(r.FormValue("hash"))
+	if v == "" {
+		http.Error(w, "Missing required parameter: hash", http.StatusBadRequest)
+		return nil, false, false
 	}
-	t, ok := s.lookup(w, r)
+	if v == "*" {
+		v = "all"
+	}
+	r.Form.Set("hash", v)
+	all := hashes(r, "hash")
+	if len(all) == 1 && all[0] != "all" {
+		t, ok := s.lookup(w, r)
+		return []string{t.Hash}, true, ok
+	}
+	return resolveAll(s, s.known(all)), false, true
+}
+
+// trackerURLs splits a list of tracker URLs. VueTorrent percent-encodes
+// each URL before joining them, so encoded ones are decoded.
+func trackerURLs(v, sep string) []string {
+	var out []string
+	for _, u := range strings.Split(v, sep) {
+		u = strings.TrimSpace(u)
+		if !strings.Contains(u, "://") {
+			if d, err := url.QueryUnescape(u); err == nil {
+				u = d
+			}
+		}
+		if u != "" {
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
+// eachTracker runs fn on the target torrents. With one torrent named its
+// error is the answer; with several, torrents fn fails on are skipped.
+func (s *Server) eachTracker(w http.ResponseWriter, r *http.Request, fn func(hash string) error) {
+	hs, single, ok := s.trackerTargets(w, r)
 	if !ok {
 		return
 	}
-	var urls []string
-	for _, u := range strings.Split(r.FormValue("urls"), "\n") {
-		if u = strings.TrimSpace(u); u != "" {
-			urls = append(urls, u)
+	for _, h := range hs {
+		err := fn(h)
+		if err != nil && (single || errors.Is(err, engine.ErrInvalid)) {
+			s.trackerError(w, err)
+			return
 		}
 	}
-	if err := s.engine.AddTrackers(r.Context(), t.Hash, urls); err != nil {
-		s.trackerError(w, err)
-		return
-	}
 	done(w)
+}
+
+func (s *Server) addTrackers(w http.ResponseWriter, r *http.Request) {
+	urls := trackerURLs(r.FormValue("urls"), "\n")
+	s.eachTracker(w, r, func(h string) error { return s.engine.AddTrackers(r.Context(), h, urls) })
 }
 
 func (s *Server) editTracker(w http.ResponseWriter, r *http.Request) {
-	if err := parseForm(w, r); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
 	t, ok := s.lookup(w, r)
 	if !ok {
 		return
 	}
-	// origUrl and newUrl since WebAPI 2.10; before that, url and... the same.
-	from, to := r.FormValue("origUrl"), r.FormValue("newUrl")
-	if err := s.engine.EditTracker(r.Context(), t.Hash, from, to); err != nil {
+	// The old URL is url since WebAPI 2.13 and origUrl before; clients send
+	// both.
+	from := r.FormValue("url")
+	if from == "" {
+		from = r.FormValue("origUrl")
+	}
+	if err := s.engine.EditTracker(r.Context(), t.Hash, from, r.FormValue("newUrl")); err != nil {
 		s.trackerError(w, err)
 		return
 	}
-	done(w)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) removeTrackers(w http.ResponseWriter, r *http.Request) {
-	if err := parseForm(w, r); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	t, ok := s.lookup(w, r)
-	if !ok {
-		return
-	}
-	if err := s.engine.RemoveTrackers(r.Context(), t.Hash, strings.Split(r.FormValue("urls"), "|")); err != nil {
-		s.trackerError(w, err)
-		return
-	}
-	done(w)
+	urls := trackerURLs(r.FormValue("urls"), "|")
+	s.eachTracker(w, r, func(h string) error { return s.engine.RemoveTrackers(r.Context(), h, urls) })
 }
 
 func (s *Server) trackerError(w http.ResponseWriter, err error) {
@@ -478,8 +535,80 @@ func (s *Server) export(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/x-bittorrent")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", t.Hash+".torrent"))
+	w.Header().Set("Content-Disposition", attachment(t.Name, t.Hash, ".torrent"))
 	_, _ = w.Write(b)
+}
+
+// attachment is a Content-Disposition naming the file after the torrent,
+// or its hash when the name is unusable.
+func attachment(name, hash, ext string) string {
+	name = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f || r == '/' || r == '\\' {
+			return '_'
+		}
+		return r
+	}, strings.TrimSpace(name))
+	if name != "" {
+		if v := mime.FormatMediaType("attachment", map[string]string{"filename": name + ext}); v != "" {
+			return v
+		}
+	}
+	return mime.FormatMediaType("attachment", map[string]string{"filename": hash + ext})
+}
+
+// downloadFile serves a complete file of a torrent, named by its index or
+// its path as in torrents/files.
+func (s *Server) downloadFile(w http.ResponseWriter, r *http.Request) {
+	t, ok := s.lookup(w, r)
+	if !ok {
+		return
+	}
+	want := r.FormValue("file")
+	if want == "" {
+		http.Error(w, "Missing required parameter: file", http.StatusBadRequest)
+		return
+	}
+	files, err := s.engine.Files(t.Hash)
+	if err != nil {
+		s.engineError(w, err)
+		return
+	}
+	index := slices.IndexFunc(files, func(f engine.File) bool { return f.Path == want })
+	if n, err := strconv.Atoi(want); index < 0 && err == nil {
+		index = n
+	}
+	path, err := s.engine.CompleteFile(t.Hash, index)
+	if err != nil {
+		if errors.Is(err, engine.ErrNotFound) {
+			s.engineError(w, err)
+		} else {
+			http.Error(w, err.Error(), http.StatusConflict)
+		}
+		return
+	}
+	f, err := os.Open(path) //nolint:gosec // CompleteFile confines the path to the allowed roots
+	if err != nil {
+		http.Error(w, "file not found on disk", http.StatusConflict)
+		return
+	}
+	defer func() { _ = f.Close() }()
+	fi, err := f.Stat()
+	if err != nil || !fi.Mode().IsRegular() {
+		http.Error(w, "file not found on disk", http.StatusConflict)
+		return
+	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Disposition", attachment(filepath.Base(path), t.Hash, ""))
+	http.ServeContent(w, r, "", fi.ModTime(), f)
+}
+
+// sslParameters reports that no torrent has SSL parameters: SSL torrents
+// are a libtorrent extension piecemeal doesn't support.
+func (s *Server) sslParameters(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.lookup(w, r); ok {
+		writeJSON(w, map[string]string{"ssl_certificate": "", "ssl_private_key": "", "ssl_dh_params": ""})
+	}
 }
 
 func (s *Server) pieceHashes(w http.ResponseWriter, r *http.Request) {
@@ -572,7 +701,7 @@ func (s *Server) creatorAddTask(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) creatorStatus(w http.ResponseWriter, r *http.Request) {
-	id := r.URL.Query().Get("taskID")
+	id := r.FormValue("taskID")
 	out := []map[string]any{}
 	stamp := func(t *time.Time) any {
 		if t == nil {
