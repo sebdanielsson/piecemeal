@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"bytes"
+	"fmt"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -277,4 +279,58 @@ func (e *Engine) SavePathOf(hash string) (string, error) {
 		return m.rec.SavePath, nil
 	}
 	return filepath.Join(m.rec.SavePath, m.info.BestName()), nil
+}
+
+// TorrentFile returns a torrent's .torrent file, once its metadata is
+// known, with its current trackers and web seeds.
+func (e *Engine) TorrentFile(hash string) ([]byte, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	m, err := e.get(hash)
+	if err != nil {
+		return nil, err
+	}
+	if m.rec.Metainfo == nil {
+		return nil, fmt.Errorf("%w: metadata not received yet", ErrInvalid)
+	}
+	mi, err := metainfo.Load(bytes.NewReader(m.rec.Metainfo))
+	if err != nil {
+		return nil, err
+	}
+	if m.trackers != nil {
+		mi.AnnounceList = m.trackers
+		mi.Announce = ""
+		if len(m.trackers) > 0 && len(m.trackers[0]) > 0 {
+			mi.Announce = m.trackers[0][0]
+		}
+	}
+	if m.webSeeds != nil {
+		mi.UrlList = m.webSeeds
+	}
+	var buf bytes.Buffer
+	if err := mi.Write(&buf); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// PieceHashes returns a torrent's v1 piece hashes, hex.
+func (e *Engine) PieceHashes(hash string) ([]string, error) {
+	e.mu.Lock()
+	m, err := e.get(hash)
+	if err != nil {
+		e.mu.Unlock()
+		return nil, err
+	}
+	info := m.info
+	e.mu.Unlock()
+	if info == nil {
+		return []string{}, nil
+	}
+	out := make([]string, 0, info.NumPieces())
+	for i := range info.NumPieces() {
+		p := info.Piece(i)
+		out = append(out, p.V1Hash().Unwrap().HexString())
+	}
+	return out, nil
 }
