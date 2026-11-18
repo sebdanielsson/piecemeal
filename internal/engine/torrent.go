@@ -1125,6 +1125,29 @@ func (e *Engine) AddPeers(ctx context.Context, addrs []string, hashes ...string)
 	})
 }
 
+// dialPendingLocked makes a running torrent dial the peers it knows but
+// isn't connecting to, given its status st from this tick. anacrolix
+// (v1.61.0 and later) opens no connections while its download rate limiter
+// is out of tokens, and only tries again on events such as a peer being
+// added, a piece completing or a connection closing. Peers added in that
+// window, by AddPeers or a magnet's x.pe, were never dialled when the
+// torrent had no other activity (issue #37). Setting the connection limit
+// to its current value makes anacrolix try now; nothing is dialled that it
+// wouldn't dial on its next event.
+func (e *Engine) dialPendingLocked(m *managed, st *Torrent, maxConns int) {
+	connected := st.Seeds + st.Peers
+	// The status counts known peers, including those being dialled, as
+	// SwarmPeers. Only look closer when some aren't connected and there is
+	// room for them.
+	if m.t == nil || connected >= maxConns || st.SwarmPeers <= connected {
+		return
+	}
+	// A dial in progress makes anacrolix try again when it ends.
+	if ts := m.t.Stats(); ts.PendingPeers > 0 && ts.HalfOpenPeers == 0 {
+		m.t.SetMaxEstablishedConns(maxConns)
+	}
+}
+
 // saveLocked writes a torrent's record now.
 func (e *Engine) saveLocked(m *managed) {
 	if err := e.store.UpsertTorrent(e.ctxOrBackground(), m.params()); err != nil {
