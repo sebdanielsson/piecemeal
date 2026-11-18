@@ -255,6 +255,12 @@ func (e *Engine) Add(ctx context.Context, p AddParams) (string, error) {
 		info   *metainfo.Info
 		spec   *torrent.TorrentSpec
 	)
+	// A magnet whose metadata was fetched beforehand is added with it.
+	if p.Magnet != "" && p.Metainfo == nil {
+		if mi := e.fetchedForMagnet(p.Magnet); mi != nil {
+			p.Metainfo, p.Magnet = mi, ""
+		}
+	}
 	switch {
 	case p.Magnet != "" && p.Metainfo == nil:
 		var err error
@@ -454,6 +460,8 @@ func (e *Engine) attachLocked(m *managed, opts ...attachOpts) error {
 		spec.Webseeds = m.webSeeds
 	}
 	e.recordPathsLocked(m)
+	// A metadata fetch for the same torrent would take this add over.
+	e.takeFetchedLocked(spec.InfoHash)
 
 	t, _, err := e.client.AddTorrentSpec(spec)
 	if err != nil {
