@@ -39,4 +39,5 @@ VOLUME ["/data"]
 # 8080 serves the APIs and web UI; 6881 is the default peer port.
 EXPOSE 8080 6881/tcp 6881/udp
 USER nonroot:nonroot
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s CMD ["/piecemeal", "healthcheck"]
 ENTRYPOINT ["/piecemeal"]

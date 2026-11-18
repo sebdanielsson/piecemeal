@@ -6,6 +6,7 @@
 //	piecemeal                 run the daemon, configured by PIECEMEAL_* variables
 //	piecemeal hash-password   read a password on stdin, print its argon2id hash
 //	piecemeal openapi         print the native API's OpenAPI document
+//	piecemeal healthcheck     check /healthz of the piecemeal on PIECEMEAL_ADDR, for container healthchecks
 //	piecemeal version         print the version
 package main
 
@@ -17,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -69,6 +71,12 @@ func realMain() int {
 		return 0
 	case "openapi":
 		if err := writeOpenAPI(os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
+	case "healthcheck":
+		if err := healthcheck(os.Getenv("PIECEMEAL_ADDR")); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
@@ -317,6 +325,31 @@ func hashPassword(in *os.File, out io.Writer) error {
 	}
 	_, err = fmt.Fprintln(out, h)
 	return err
+}
+
+// healthcheck asks the local piecemeal listening on addr (":8080" when
+// empty) for /healthz. Images built on distroless have no curl or wget.
+func healthcheck(addr string) error {
+	if addr == "" {
+		addr = ":8080"
+	}
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return fmt.Errorf("PIECEMEAL_ADDR %q: %w", addr, err)
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get("http://" + net.JoinHostPort(host, port) + "/healthz") //nolint:gosec // the local server's own address
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("/healthz: %s", resp.Status)
+	}
+	return nil
 }
 
 func writeOpenAPI(w io.Writer) error {
