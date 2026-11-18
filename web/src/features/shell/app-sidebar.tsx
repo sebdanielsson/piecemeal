@@ -64,7 +64,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { unwrap } from "@/lib/api";
 import { countTorrents, stateFilterLabels, stateFilters, type StateFilter } from "@/lib/filters";
 import type { TorrentMap } from "@/lib/live/reducer";
-import { categoriesQuery, meQuery, tagsQuery, torrentsQuery } from "@/lib/queries";
+import { categoriesQuery, forgetSession, meQuery, tagsQuery, torrentsQuery } from "@/lib/queries";
 import { readStorage, writeStorage } from "@/lib/storage";
 import { useTheme, type ThemePreference } from "@/lib/theme";
 import { openAddDialog } from "../torrents/add-store";
@@ -392,7 +392,7 @@ function UserMenu({ name, onShowShortcuts }: { name: string; onShowShortcuts: ()
     mutationFn: () => unwrap(api.POST("/auth/logout")),
     onSettled: async () => {
       await navigate({ to: "/login", search: {} });
-      queryClient.clear();
+      forgetSession(queryClient);
     },
   });
   return (

@@ -2,7 +2,7 @@
 // the event stream (live/stream.ts), so their queries never fetch; everything
 // else is fetched and, where the stream carries it, kept current by events.
 
-import { queryOptions, skipToken } from "@tanstack/react-query";
+import { queryOptions, skipToken, type QueryClient } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import type { Category, Principal, SettingsResponse, TransferStatus } from "@/api/types";
 import { ApiError, unwrap } from "./api";
@@ -102,3 +102,12 @@ export const systemQuery = queryOptions({
   staleTime: 30_000,
   refetchInterval: 30_000,
 });
+
+/**
+ * Drops everything cached for the signed-in user, after leaving the app for
+ * the sign-in page. The sign-in methods stay, since that page shows them.
+ */
+export function forgetSession(qc: QueryClient): void {
+  qc.setQueryData(keys.me, null);
+  qc.removeQueries({ predicate: (q) => q.queryKey[0] !== "auth" });
+}

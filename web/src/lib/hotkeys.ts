@@ -19,6 +19,20 @@ export function isTypingTarget(target: EventTarget | null): boolean {
   return false;
 }
 
+// Keys that controls use themselves: Enter and Space press a button, arrows
+// move through tabs and menus.
+const controlKeys = new Set(["Enter", "Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
+
+/** Whether the key press belongs to a focused control rather than a shortcut. */
+export function isControlTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof Element &&
+    target.closest(
+      'button, a[href], summary, [role="button"], [role="checkbox"], [role="switch"], [role="tab"], [role="menuitem"], [role="option"], [role="slider"], [role="separator"]',
+    ) !== null
+  );
+}
+
 /** Whether a dialog, menu or sheet is open, which owns the keyboard. */
 export function isOverlayOpen(): boolean {
   return (
@@ -53,7 +67,11 @@ export function useHotkeys(bindings: Bindings, enabled = true): void {
     if (e.defaultPrevented || e.isComposing || isTypingTarget(e.target) || isOverlayOpen()) {
       return;
     }
-    const handler = bindings[bindingName(e)];
+    const name = bindingName(e);
+    if (controlKeys.has(name) && isControlTarget(e.target)) {
+      return;
+    }
+    const handler = bindings[name];
     if (handler) {
       e.preventDefault();
       handler(e);

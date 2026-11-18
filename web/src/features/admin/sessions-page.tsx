@@ -21,7 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { errorMessage, unwrap } from "@/lib/api";
 import { formatDateTime, formatRelative } from "@/lib/format";
-import { keys, meQuery } from "@/lib/queries";
+import { forgetSession, keys, meQuery } from "@/lib/queries";
 import { Page } from "../shell/page";
 
 /** A short description of a browser from its user agent. */
@@ -134,7 +134,7 @@ export function SessionsPage() {
       setEnding(null);
       if (s.current) {
         await navigate({ to: "/login", search: {} });
-        qc.clear();
+        forgetSession(qc);
         return;
       }
       void qc.invalidateQueries({ queryKey: keys.sessions });

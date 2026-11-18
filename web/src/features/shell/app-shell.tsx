@@ -6,7 +6,7 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { setUnauthorizedHandler } from "@/lib/api";
 import { useHotkeys } from "@/lib/hotkeys";
 import { connectLiveStream } from "@/lib/live/stream";
-import { keys } from "@/lib/queries";
+import { forgetSession, keys } from "@/lib/queries";
 import { useStore } from "@/lib/store";
 import { addDialog, extractMagnets, isTorrentFile, openAddDialog } from "../torrents/add-store";
 import { AppSidebar } from "./app-sidebar";
@@ -33,7 +33,7 @@ export function AppShell() {
         to: "/login",
         search: { redirect: router.state.location.href },
         replace: true,
-      });
+      }).then(() => forgetSession(queryClient));
     };
     setUnauthorizedHandler(onUnauthorized);
     const disconnect = connectLiveStream(queryClient, { onUnauthorized });
