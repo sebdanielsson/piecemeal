@@ -8,6 +8,10 @@ description: Answers to common questions about piecemeal, from why it exists to 
 
 For a home server that the \*arrs drive, the usual choice is qBittorrent, whose web UI and API grew out of a desktop app, or Transmission, which the \*arrs support less well. piecemeal is built for that one job: a headless daemon with the qBittorrent API the \*arrs expect, a web UI designed for a browser, real users and SSO, and the operational pieces (metrics, health checks, backups, audit log, VPN port forwarding) a server needs.
 
+## How does it compare with qBittorrent, Transmission and Deluge?
+
+See the [comparison](../reference/comparison.md), feature by feature, including what piecemeal doesn't do.
+
 ## Is it a fork of qBittorrent?
 
 No. piecemeal shares no code with qBittorrent, which is GPL. Its qBittorrent API is written from the API documentation and from the behaviour of a real qBittorrent 5.3, which CI compares it against. piecemeal is MIT licensed.
