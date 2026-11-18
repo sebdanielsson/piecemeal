@@ -25,6 +25,7 @@ import (
 	"github.com/sebdanielsson/piecemeal/internal/natpmp"
 	"github.com/sebdanielsson/piecemeal/internal/rss"
 	"github.com/sebdanielsson/piecemeal/internal/settings"
+	"github.com/sebdanielsson/piecemeal/internal/store"
 )
 
 // Prefix is where the API is served.
@@ -49,7 +50,9 @@ type Deps struct {
 	// OIDC is nil when OIDC sign-in isn't configured.
 	OIDC *auth.OIDC
 	RSS  *rss.Manager
-	Log  *slog.Logger
+	// Store is for backups.
+	Store *store.Store
+	Log   *slog.Logger
 	// System is static information for GET /system.
 	System SystemInfo
 }
@@ -114,6 +117,7 @@ func New(mux *http.ServeMux, d Deps) *API {
 	a.registerRSS()
 	a.registerSystem()
 	a.registerAdmin()
+	a.registerBackup()
 	a.registerEvents()
 	return a
 }

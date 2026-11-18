@@ -1,9 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
-import { MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
+import { DownloadIcon, MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { formatDateTime, formatRelative } from "@/lib/format";
-import { systemQuery } from "@/lib/queries";
+import { apiPrefix } from "@/api/client";
+import { buttonVariants } from "@/components/ui/button";
+import { meQuery, systemQuery } from "@/lib/queries";
 import { useTheme, type ThemePreference } from "@/lib/theme";
 import { Page, PageSection } from "../shell/page";
 import { settingsGroups } from "./groups";
@@ -13,7 +15,15 @@ export function SettingsPage() {
   return (
     <Page title="Settings" description="Changes apply at once, without restarting piecemeal.">
       <Appearance />
-      <SettingsForm groups={settingsGroups} footer={<SystemInfo />} />
+      <SettingsForm
+        groups={settingsGroups}
+        footer={
+          <>
+            <SystemInfo />
+            <Backup />
+          </>
+        }
+      />
     </Page>
   );
 }
@@ -41,6 +51,30 @@ function Appearance() {
           Dark
         </ToggleGroupItem>
       </ToggleGroup>
+    </PageSection>
+  );
+}
+
+function Backup() {
+  const { data: me } = useQuery(meQuery);
+  if (!me?.isAdmin) {
+    return null;
+  }
+  return (
+    <PageSection
+      title="Backup"
+      description="Settings, users, API keys, torrents, categories, tags and RSS, but not the downloaded data. Restore it with piecemeal restore FILE while piecemeal is stopped."
+    >
+      <div>
+        <a
+          href={`${apiPrefix}/admin/backup`}
+          download
+          className={buttonVariants({ size: "sm", variant: "outline" })}
+        >
+          <DownloadIcon data-icon="inline-start" />
+          Download backup
+        </a>
+      </div>
     </PageSection>
   );
 }

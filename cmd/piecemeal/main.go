@@ -7,6 +7,8 @@
 //	piecemeal hash-password   read a password on stdin, print its argon2id hash
 //	piecemeal openapi         print the native API's OpenAPI document
 //	piecemeal healthcheck     check /healthz of the piecemeal on PIECEMEAL_ADDR, for container healthchecks
+//	piecemeal backup FILE     copy the database in PIECEMEAL_DATA_DIR to FILE; works while piecemeal runs
+//	piecemeal restore FILE    replace the database with a backup; piecemeal must be stopped
 //	piecemeal version         print the version
 package main
 
@@ -84,6 +86,16 @@ func realMain() int {
 			return 1
 		}
 		return 0
+	case "backup", "restore":
+		if len(os.Args) != 3 {
+			fmt.Fprintf(os.Stderr, "usage: piecemeal %s FILE\n", cmd)
+			return 2
+		}
+		if err := backupOrRestore(context.Background(), cmd, os.Args[2], os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q; see the package documentation\n", cmd)
 		return 2
@@ -127,6 +139,11 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, logs *logbuf.
 			return err
 		}
 	}
+	unlock, err := store.LockDataDir(cfg.DataDir)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	st, err := store.Open(ctx, cfg.DataDir)
 	if err != nil {
 		return err
@@ -309,7 +326,7 @@ func routes(d routeDeps) (*http.ServeMux, *api.API) {
 	}
 	nativeAPI := api.New(mux, api.Deps{
 		Version: version, StartedAt: time.Now(), Engine: d.engine, Settings: d.settings, Auth: d.auth,
-		Fetcher: fetcher, Logs: d.logs, NATPMP: d.mapper, OIDC: d.oidc, RSS: d.rss, Log: d.log.With("component", "api"),
+		Fetcher: fetcher, Logs: d.logs, NATPMP: d.mapper, OIDC: d.oidc, RSS: d.rss, Store: d.store, Log: d.log.With("component", "api"),
 		System: api.SystemInfo{
 			DataDir: d.cfg.DataDir, DownloadDir: d.cfg.DownloadDir, WatchDir: d.cfg.WatchDir, AllowedRoots: d.cfg.AllowedRoots,
 		},
@@ -402,6 +419,31 @@ func hashPassword(in *os.File, out io.Writer) error {
 		return err
 	}
 	_, err = fmt.Fprintln(out, h)
+	return err
+}
+
+// backupOrRestore runs the backup and restore commands on the data
+// directory of the configuration in the environment.
+func backupOrRestore(ctx context.Context, cmd, file string, out io.Writer) error {
+	cfg, err := config.FromOS()
+	if err != nil {
+		return fmt.Errorf("configuration: %w", err)
+	}
+	if cmd == "backup" {
+		if err := store.BackupFile(ctx, cfg.DataDir, file); err != nil {
+			return err
+		}
+		_, err := fmt.Fprintf(out, "backed up %s to %s\n", cfg.DataDir, file)
+		return err
+	}
+	replaced, err := store.Restore(ctx, cfg.DataDir, file)
+	if err != nil {
+		return err
+	}
+	if replaced != "" {
+		_, _ = fmt.Fprintf(out, "kept the database it replaced as %s\n", replaced)
+	}
+	_, err = fmt.Fprintf(out, "restored %s into %s\n", file, cfg.DataDir)
 	return err
 }
 
