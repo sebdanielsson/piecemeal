@@ -9,3 +9,6 @@ node_modules/
 # Local
 .env
 .DS_Store
+
+# End-to-end test state
+/test/e2e/tmp/
