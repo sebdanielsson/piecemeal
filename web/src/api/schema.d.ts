@@ -1398,6 +1398,11 @@ export interface components {
       ipFilterPath: string;
       /**
        * Format: int64
+       * @description Torrents whose data is checked at once; the rest wait, queued for checking.
+       */
+      maxActiveCheckingTorrents: number;
+      /**
+       * Format: int64
        * @description Torrents downloading at once, -1 for unlimited.
        */
       maxActiveDownloads: number;
@@ -1668,6 +1673,7 @@ export interface components {
       state:
         | "metadata"
         | "checking"
+        | "queuedForChecking"
         | "downloading"
         | "stalledDownloading"
         | "seeding"
@@ -3677,6 +3683,11 @@ export interface operations {
           ipFilterEnabled?: boolean;
           /** @description An IP filter file: eMule .dat, PeerGuardian .p2p, or one IP address or CIDR range per line. */
           ipFilterPath?: string;
+          /**
+           * Format: int64
+           * @description Torrents whose data is checked at once; the rest wait, queued for checking.
+           */
+          maxActiveCheckingTorrents?: number;
           /**
            * Format: int64
            * @description Torrents downloading at once, -1 for unlimited.

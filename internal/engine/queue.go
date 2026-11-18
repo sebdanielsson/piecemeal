@@ -120,13 +120,15 @@ func (e *Engine) queueLocked() []*managed {
 }
 
 // scheduleLocked starts and queues torrents to keep within the limits, or
-// starts every runnable torrent when queueing is off.
+// starts every runnable torrent when queueing is off. Torrents in the check
+// queue are left to it: they join this queue once their data is checked.
 func (e *Engine) scheduleLocked(now time.Time) {
+	e.scheduleChecksLocked()
 	s := e.settings.Get()
 	var downloads, seeds []*managed
 	active := map[*managed]bool{}
 	for _, m := range e.torrents {
-		if m.rec.Stopped || m.moving || m.rec.Error != "" {
+		if m.rec.Stopped || m.moving || m.rec.Error != "" || m.check != checkNone {
 			m.queued = false
 			continue
 		}
@@ -168,7 +170,7 @@ func (e *Engine) scheduleLocked(now time.Time) {
 		}
 	}
 	for _, m := range e.torrents {
-		if m.rec.Stopped || m.moving || m.rec.Error != "" {
+		if m.rec.Stopped || m.moving || m.rec.Error != "" || m.check != checkNone {
 			continue
 		}
 		if active[m] {

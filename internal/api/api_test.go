@@ -375,3 +375,13 @@ func TestBackupDownload(t *testing.T) {
 		t.Fatalf("backup: %d %q %.20q", resp.StatusCode, resp.Header.Get("Content-Disposition"), b)
 	}
 }
+
+func TestCheckingFilterIncludesQueued(t *testing.T) {
+	for state, want := range map[engine.State]bool{
+		engine.StateChecking: true, engine.StateQueuedForChecking: true, engine.StateQueued: false,
+	} {
+		if got := MatchesFilter(engine.Torrent{State: state}, FilterChecking); got != want {
+			t.Errorf("checking filter on %s: %v, want %v", state, got, want)
+		}
+	}
+}

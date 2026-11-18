@@ -281,6 +281,7 @@ func (e *Engine) RenamePath(hash, oldPath, newPath string) error {
 			errs = append(errs, err)
 		}
 	}
+	e.scheduleChecksLocked() // a check the rename interrupted starts over
 	e.saveLocked(m)
 	e.refreshLocked(m)
 	return errors.Join(errs...)

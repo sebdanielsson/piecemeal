@@ -57,8 +57,12 @@ type managed struct {
 	boosted map[int]types.PiecePriority
 	// seqFrom is where the search for the next missing piece starts, for
 	// sequential download.
-	seqFrom  int
-	checking bool
+	seqFrom int
+	// check is where the torrent is in the check queue (see check.go);
+	// checkAll hashes every piece, for a recheck; checkSeq orders the queue.
+	check    checkState
+	checkAll bool
+	checkSeq uint64
 	dirty    bool
 	rates    rates
 	timesAt  time.Time
@@ -375,6 +379,11 @@ func (e *Engine) Add(ctx context.Context, p AddParams) (string, error) {
 	e.torrents[ih] = m
 	if p.SkipChecking && m.info != nil {
 		e.markCompleteLocked(m)
+	} else if check, done := e.needsCheckLocked(m); check {
+		// Data already on disk: it's checked in its turn before the torrent
+		// runs.
+		m.completed = done
+		e.queueCheckLocked(m, false)
 	}
 	e.normalizeQueueLocked()
 	if !stopped && !s.QueueingEnabled {
@@ -396,10 +405,15 @@ type attachOpts struct {
 	skipChecking bool
 }
 
-// attachLocked adds a stopped or newly loaded torrent to the client.
+// attachLocked adds a stopped or newly loaded torrent to the client. A
+// torrent waiting for a check stays out until scheduleChecksLocked gives it
+// a slot.
 func (e *Engine) attachLocked(m *managed, opts ...attachOpts) error {
 	if m.moving {
 		return fmt.Errorf("%w: the torrent is being moved", ErrInvalid)
+	}
+	if m.check == checkPending {
+		return nil
 	}
 	var o attachOpts
 	if len(opts) > 0 {
@@ -422,9 +436,17 @@ func (e *Engine) attachLocked(m *managed, opts ...attachOpts) error {
 			return fmt.Errorf("stored magnet URI: %w", err)
 		}
 	}
+	checking := m.check == checkActive
 	spec.DisplayName = m.rec.Name
 	spec.Storage = e.storage
 	spec.DisableInitialPieceCheck = o.skipChecking
+	// Storage opens once the torrent may hash: for a check, after transfers
+	// are disallowed; for a magnet, once awaitInfo knows whether its data
+	// needs a check.
+	spec.DeferStorageOpen = checking || m.rec.Metainfo == nil
+	// A recheck: completion read from the database counts only once the
+	// piece has been hashed again.
+	spec.IgnoreUnverifiedPieceCompletion = checking && m.checkAll
 	if m.trackers != nil {
 		spec.Trackers = m.trackers
 	}
@@ -436,6 +458,18 @@ func (e *Engine) attachLocked(m *managed, opts ...attachOpts) error {
 	t, _, err := e.client.AddTorrentSpec(spec)
 	if err != nil {
 		return err
+	}
+	if checking {
+		// anacrolix v1.63.0 ignores AddTorrentOpts.DisallowDataDownload and
+		// DisallowDataUpload, so they're set here, while the storage is
+		// still closed and nothing can be transferred.
+		t.DisallowDataDownload()
+		t.DisallowDataUpload()
+		if err := t.OpenStorage(e.ctxOrBackground(), nil); err != nil {
+			t.Drop()
+			e.forgetInfo(m.hash)
+			return fmt.Errorf("opening storage: %w", err)
+		}
 	}
 	m.t = t
 	m.seenDown, m.seenUp = 0, 0
@@ -474,11 +508,29 @@ func (e *Engine) awaitInfo(m *managed, t *torrent.Torrent) {
 	}
 	m.setMetainfo(buf.Bytes())
 	m.dirty = true
-	e.onInfoLocked(m)
-	if err := e.store.UpsertTorrent(e.ctxOrBackground(), m.params()); err != nil {
-		e.log.Error("saving metainfo", "hash", m.hash.HexString(), "error", err)
-	}
 	e.log.Info("metadata received", "hash", m.rec.InfoHash, "name", t.Name())
+	if check, done := e.needsCheckLocked(m); check {
+		// Its data is already on disk: it waits for its turn to be checked,
+		// out of the client.
+		m.nameFromInfo()
+		e.detachLocked(m)
+		m.completed = done
+		e.queueCheckLocked(m, false)
+		e.saveLocked(m)
+		e.scheduleChecksLocked()
+		e.refreshLocked(m)
+		return
+	}
+	if err := t.OpenStorage(e.ctxOrBackground(), nil); err != nil {
+		e.log.Error("opening storage", "hash", m.rec.InfoHash, "error", err)
+		e.detachLocked(m)
+		m.setError(fmt.Errorf("opening storage: %w", err))
+		e.saveLocked(m)
+		e.refreshLocked(m)
+		return
+	}
+	e.onInfoLocked(m)
+	e.saveLocked(m)
 }
 
 func (e *Engine) ctxOrBackground() context.Context {
@@ -492,19 +544,9 @@ func (e *Engine) ctxOrBackground() context.Context {
 // priorities and starts downloading.
 func (e *Engine) onInfoLocked(m *managed) {
 	t := m.t
-	info := t.Info()
-	m.info = info
-	// Until the metadata arrives a magnet's torrent is named by its dn
-	// parameter or hash. Then the real name takes over, unless it was
-	// renamed.
-	placeholder := m.rec.Name == "" || m.rec.Name == m.rec.InfoHash
-	if spec, err := magnetSpec(m.rec.Magnet); err == nil && m.rec.Name == spec.DisplayName {
-		placeholder = true
-	}
-	if placeholder && m.rec.Name != info.BestName() {
-		m.rec.Name = info.BestName()
+	m.info = t.Info()
+	if m.nameFromInfo() {
 		t.SetDisplayName(m.rec.Name)
-		m.dirty = true
 	}
 	files := t.Files()
 	if m.filePrio != nil && len(m.filePrio) != len(files) {
@@ -518,6 +560,23 @@ func (e *Engine) onInfoLocked(m *managed) {
 		f.SetPriority(p.piecePriority())
 	}
 	e.applyPiecePrioritiesLocked(m)
+}
+
+// nameFromInfo names a torrent after its info, and reports whether that
+// changed its name. Until the metadata arrives a magnet's torrent is named
+// by its dn parameter or hash; then the real name takes over, unless it was
+// renamed.
+func (m *managed) nameFromInfo() bool {
+	placeholder := m.rec.Name == "" || m.rec.Name == m.rec.InfoHash
+	if spec, err := magnetSpec(m.rec.Magnet); err == nil && m.rec.Name == spec.DisplayName {
+		placeholder = true
+	}
+	if !placeholder || m.rec.Name == m.info.BestName() {
+		return false
+	}
+	m.rec.Name = m.info.BestName()
+	m.dirty = true
+	return true
 }
 
 // applyPiecePrioritiesLocked sets the piece-level priorities piecemeal
@@ -607,8 +666,12 @@ func (e *Engine) sequentialWindowLocked(m *managed, raise func(int, types.PieceP
 	}
 }
 
-// detachLocked drops a torrent from the client, keeping its record.
+// detachLocked drops a torrent from the client, keeping its record. A check
+// in progress gives up its slot and waits for another.
 func (e *Engine) detachLocked(m *managed) {
+	if m.check == checkActive {
+		m.check = checkPending
+	}
 	if m.t == nil {
 		return
 	}
@@ -661,6 +724,8 @@ func (e *Engine) each(ctx context.Context, hashes []string, fn func(m *managed) 
 			errs = append(errs, fmt.Errorf("%s: %w", m.rec.InfoHash, err))
 		}
 	}
+	// Starting, stopping or rechecking can free or need a check slot.
+	e.scheduleChecksLocked()
 	err := e.store.Tx(ctx, func(q *store.Queries) error {
 		for _, m := range targets {
 			if err := q.UpsertTorrent(ctx, m.params()); err != nil {
@@ -685,8 +750,8 @@ func (e *Engine) Start(ctx context.Context, hashes ...string) error {
 		if m.t != nil {
 			return nil
 		}
-		if queueing {
-			// The scheduler skips torrents in error: starting one retries
+		if queueing || m.check != checkNone {
+			// The schedulers skip torrents in error: starting one retries
 			// it, as attachLocked does with queueing off.
 			m.rec.Error = ""
 			return nil
@@ -711,12 +776,18 @@ func (e *Engine) allLocked() []*managed {
 }
 
 // Stop stops torrents: they leave the swarm, and keep their data and record.
+// Stopping cancels a recheck; data of unknown completion is still checked
+// when the torrent starts again.
 func (e *Engine) Stop(ctx context.Context, hashes ...string) error {
 	return e.each(ctx, hashes, func(m *managed) error {
 		m.rec.Stopped = true
 		m.rec.Forced = false
 		m.queued = false
 		e.detachLocked(m)
+		if m.checkAll {
+			m.check, m.checkAll = checkNone, false
+			e.loadCompletionLocked(m)
+		}
 		return nil
 	})
 }
@@ -733,28 +804,23 @@ func (e *Engine) SetForced(ctx context.Context, forced bool, hashes ...string) e
 	})
 }
 
-// Recheck verifies a torrent's data against its piece hashes.
+// Recheck verifies torrents' data against their piece hashes. They wait in
+// the check queue for their turn; until their data is verified again they
+// neither download nor seed. Stopped torrents are checked too and stay
+// stopped.
 func (e *Engine) Recheck(ctx context.Context, hashes ...string) error {
 	return e.each(ctx, hashes, func(m *managed) error {
-		if m.t == nil || m.info == nil {
+		if m.info == nil || m.moving || (m.check == checkActive && m.checkAll) {
 			return nil
 		}
-		t := m.t
-		m.checking = true
-		go func() {
-			err := t.VerifyDataContext(e.ctxOrBackground())
-			e.mu.Lock()
-			defer e.mu.Unlock()
-			m.checking = false
-			if e.torrents[m.hash] != m {
-				return // removed meanwhile
-			}
-			if err != nil && m.t == t {
-				e.log.Warn("recheck", "hash", m.rec.InfoHash, "error", err)
-			}
-			m.seqFrom = 0
-			e.refreshLocked(m)
-		}()
+		// A check of only the pieces of unknown completion starts over as
+		// a full one, in its place in the queue.
+		e.detachLocked(m)
+		m.queued = false
+		m.rec.Error = ""
+		m.completed = 0
+		m.seqFrom = 0
+		e.queueCheckLocked(m, true)
 		return nil
 	})
 }
@@ -959,6 +1025,7 @@ func (e *Engine) Remove(ctx context.Context, deleteData bool, hashes ...string) 
 		}
 		removals = append(removals, r)
 	}
+	e.scheduleChecksLocked()
 	e.mu.Unlock()
 
 	var errs []error
@@ -1063,6 +1130,7 @@ func (e *Engine) loadTorrents(ctx context.Context) error {
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	toCheck := 0
 	for _, r := range rows {
 		var ih metainfo.Hash
 		if err := ih.FromHexString(r.InfoHash); err != nil {
@@ -1091,8 +1159,8 @@ func (e *Engine) loadTorrents(ctx context.Context) error {
 		}
 		e.recordPathsLocked(m)
 		e.torrents[ih] = m
-		if m.info != nil {
-			m.completed = e.completedFromStore(m)
+		if e.loadCompletionLocked(m) {
+			toCheck++
 		}
 		if !r.Stopped && !e.settings.Get().QueueingEnabled {
 			if err := e.attachLocked(m); err != nil {
@@ -1101,21 +1169,8 @@ func (e *Engine) loadTorrents(ctx context.Context) error {
 			}
 		}
 	}
-	e.log.Info("torrents loaded", "count", len(rows))
+	e.log.Info("torrents loaded", "count", len(rows), "toCheck", toCheck)
 	return nil
-}
-
-// completedFromStore sums the pieces the completion database marks
-// complete, for a torrent that isn't running.
-func (e *Engine) completedFromStore(m *managed) int64 {
-	var n int64
-	for i := range m.info.NumPieces() {
-		c, err := e.pc.Get(metainfo.PieceKey{InfoHash: m.hash, Index: i})
-		if err == nil && c.Ok && c.Complete {
-			n += m.info.Piece(i).Length()
-		}
-	}
-	return n
 }
 
 // AddPeers gives running torrents peer addresses (host:port) to connect to.

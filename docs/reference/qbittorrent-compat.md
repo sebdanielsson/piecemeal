@@ -37,8 +37,8 @@ Status: **yes** is implemented, **partial** works with the differences noted, **
 | `webapiVersion` | yes | `2.16.2` |
 | `buildInfo` | yes | `libtorrent` names the anacrolix/torrent version; `qt`, `boost`, `openssl` and `zlib` are empty, since piecemeal uses none of them. |
 | `processInfo` | yes | |
-| `preferences` | yes | All 241 keys of qBittorrent 5.3.0 with their types. Keys piecemeal maps come from its settings (download, speed, connection, queueing, seeding goals, IP filter, schedule, Web UI); the rest report qBittorrent's defaults and are fixed. `web_ui_api_key` is the prefix of the caller's key from `rotateAPIKey`, or empty: piecemeal stores only key hashes. `web_ui_host_header_validation_enabled` and `web_ui_domain_list` report `PIECEMEAL_ALLOWED_HOSTS`. |
-| `setPreferences` | partial | Applies the keys piecemeal maps and ignores the rest, so writing back the whole object works. Keys pinned by environment variables are ignored. A mapped key with a bad value fails the whole request with 400; a `json` that isn't an object is ignored, as in qBittorrent. Rate limits are rounded down to whole KiB/s, as qBittorrent does. `web_ui_password` is ignored: manage users in piecemeal. |
+| `preferences` | yes | All 241 keys of qBittorrent 5.3.0 with their types. Keys piecemeal maps come from its settings (download, speed, connection, queueing, `max_active_checking_torrents`, seeding goals, IP filter, schedule, Web UI); the rest report qBittorrent's defaults and are fixed. `web_ui_api_key` is the prefix of the caller's key from `rotateAPIKey`, or empty: piecemeal stores only key hashes. `web_ui_host_header_validation_enabled` and `web_ui_domain_list` report `PIECEMEAL_ALLOWED_HOSTS`. |
+| `setPreferences` | partial | Applies the keys piecemeal maps and ignores the rest, so writing back the whole object works. Keys pinned by environment variables are ignored. A mapped key with a bad value fails the whole request with 400; a `json` that isn't an object is ignored, as in qBittorrent. Rate limits are rounded down to whole KiB/s, as qBittorrent does. `max_active_checking_torrents` below 1 is stored as 1. `web_ui_password` is ignored: manage users in piecemeal. |
 | `defaultSavePath` | yes | |
 | `networkInterfaceList`, `networkInterfaceAddressList` | yes | Listed for the settings page; piecemeal binds with `PIECEMEAL_LISTEN_HOST`, so choosing one has no effect. |
 | `getDirectoryContent` | yes | Only inside the allowed roots; 404 elsewhere. With `withMetadata`, objects with the name, type, size and dates; Linux reports no creation time, so `creation_date` is the inode change time there. |
@@ -92,7 +92,7 @@ Status: **yes** is implemented, **partial** works with the differences noted, **
 | `delete` | yes | Unknown hashes are ignored. |
 | `start`, `stop` | yes | |
 | `pause`, `resume` | yes | Aliases of `stop` and `start`, for WebAPI before 2.11. |
-| `recheck`, `reannounce` | yes | `reannounce` announces to every tracker; it doesn't take `trackers`/`urls`. |
+| `recheck`, `reannounce` | yes | Rechecks wait their turn, as in qBittorrent: see `max_active_checking_torrents`. Stopped torrents are checked too and stay stopped; stopping a torrent cancels its recheck. `reannounce` announces to every tracker; it doesn't take `trackers`/`urls`. |
 | `setForceStart` | yes | |
 | `setShareLimits` | partial | `ratioLimit`, `seedingTimeLimit`, `inactiveSeedingTimeLimit`; missing ones default to -2. `shareLimitAction` and `shareLimitsMode` are ignored: the global seed goal action applies, and any limit reached ends seeding. qBittorrent 5.3.0 requires those two; piecemeal doesn't, for older clients. |
 | `downloadLimit`, `uploadLimit` | yes | 0 for every torrent: piecemeal has no per-torrent speed limits, so none applies. `dl_limit` and `up_limit` in `info` and `properties` are -1. |
@@ -151,7 +151,7 @@ piecemeal can serve a qBittorrent web UI such as VueTorrent at `/qbittorrent/`, 
 | Downloading, nothing for 30 s | `stalledDL`, `forcedDL` |
 | Complete, uploading in the last 30 s | `uploading`, `forcedUP` |
 | Complete, nothing for 30 s | `stalledUP`, `forcedUP` |
-| Checking | `checkingDL`, `checkingUP` |
+| Checking its data, or queued for checking | `checkingDL`, or `checkingUP` when it had finished downloading, as qBittorrent 5.3.0 reports both |
 | Stopped, including at a seed goal | `stoppedDL`, `stoppedUP` |
 | Waiting in the queue | `queuedDL`, `queuedUP` |
 | Moving data | `moving` |

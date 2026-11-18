@@ -272,6 +272,9 @@ func preferencesToSettings(in map[string]any, cur settings.Settings) (map[string
 		}
 	}
 
+	// qBittorrent takes any number; piecemeal checks at least one torrent
+	// at a time.
+	integer("max_active_checking_torrents", "maxActiveCheckingTorrents", func(n int64) int64 { return max(n, 1) })
 	boolean("queueing_enabled", "queueingEnabled")
 	integer("max_active_downloads", "maxActiveDownloads", nil)
 	integer("max_active_uploads", "maxActiveUploads", nil)

@@ -351,7 +351,7 @@ func MatchesFilter(t engine.Torrent, filter string) bool {
 	case FilterStalled:
 		return t.State == engine.StateStalledDownloading || t.State == engine.StateStalledSeeding
 	case FilterChecking:
-		return t.State == engine.StateChecking
+		return t.State == engine.StateChecking || t.State == engine.StateQueuedForChecking
 	case FilterErrored:
 		return t.State == engine.StateError
 	default:

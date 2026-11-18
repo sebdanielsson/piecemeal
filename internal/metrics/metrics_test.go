@@ -29,7 +29,7 @@ piecemeal_torrent_uploaded_bytes_total{hash="aa",name="x"} 42
 	if err := testutil.CollectAndCompare(c, strings.NewReader(want), "piecemeal_torrent_uploaded_bytes_total"); err != nil {
 		t.Fatal(err)
 	}
-	if n := testutil.CollectAndCount(c, "piecemeal_torrents"); n != 10 {
+	if n := testutil.CollectAndCount(c, "piecemeal_torrents"); n != 11 {
 		t.Fatalf("piecemeal_torrents has %d series, want one per state", n)
 	}
 }

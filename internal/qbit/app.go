@@ -160,6 +160,7 @@ func (s *Server) mappedPreferences() map[string]any {
 		"lsd":                            false,
 		"encryption":                     encryptionMode(st.Encryption),
 		"anonymous_mode":                 false,
+		"max_active_checking_torrents":   st.MaxActiveCheckingTorrents,
 		"queueing_enabled":               st.QueueingEnabled,
 		"max_active_downloads":           st.MaxActiveDownloads,
 		"max_active_uploads":             st.MaxActiveUploads,

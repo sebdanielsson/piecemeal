@@ -46,7 +46,7 @@ An Intel Core i7-2600 from 2011 with 15 GB of RAM, of which ZFS's cache (ARC) ta
 | `GET /api/v2/sync/maindata`, incremental | p50 18 ms, 78 KiB | p50 15 ms, 80 KiB |
 | Removing them with their data | 235 ms | 294 ms |
 
-On the same server, 254 GiB in 20 torrents imported from Transmission verified at about 30 MB/s, slower than above because piecemeal checks every torrent at once and the drives seek between them. Meanwhile it seeded the pieces it had checked and answered API requests in about 45 ms.
+On the same server, 254 GiB in 20 torrents imported from Transmission verified at about 30 MB/s when piecemeal checked all 20 at once: the drives sought between them. API requests took about 45 ms meanwhile. piecemeal now checks one torrent at a time by default, as qBittorrent does (`maxActiveCheckingTorrents`); the others wait, queued for checking, and neither download nor seed until their data is checked.
 
 ### A laptop
 

@@ -71,6 +71,9 @@ type Settings struct {
 	SlowUploadRate        int64 `json:"slowUploadRate" minimum:"0" doc:"A torrent below this upload rate, in bytes per second, is slow."`
 	SlowTorrentTime       int64 `json:"slowTorrentTime" minimum:"0" doc:"Seconds a torrent must stay below the slow rates to count as slow."`
 
+	// Checking
+	MaxActiveCheckingTorrents int `json:"maxActiveCheckingTorrents" minimum:"1" doc:"Torrents whose data is checked at once; the rest wait, queued for checking."`
+
 	// IP filter
 	IPFilterEnabled bool   `json:"ipFilterEnabled" doc:"Refuse peers in the ranges of the IP filter file."`
 	IPFilterPath    string `json:"ipFilterPath" doc:"An IP filter file: eMule .dat, PeerGuardian .p2p, or one IP address or CIDR range per line."`
@@ -128,6 +131,9 @@ func Defaults(defaultSavePath string) Settings {
 		RSSMaxArticles:           50,
 		RSSDownloadRepacks:       true,
 		RSSSmartEpisodeFilters:   DefaultSmartEpisodeFilters,
+
+		// One at a time, so hard drives read one torrent's data at a time.
+		MaxActiveCheckingTorrents: 1,
 	}
 }
 
@@ -172,6 +178,9 @@ func (s Settings) Validate() error {
 		if v < -1 {
 			errs = append(errs, fmt.Errorf("%s: must be -1 or at least 0", name))
 		}
+	}
+	if s.MaxActiveCheckingTorrents < 1 {
+		errs = append(errs, errors.New("maxActiveCheckingTorrents: must be at least 1"))
 	}
 	if s.SlowDownloadRate < 0 || s.SlowUploadRate < 0 || s.SlowTorrentTime < 0 {
 		errs = append(errs, errors.New("slow torrent thresholds: must not be negative"))
