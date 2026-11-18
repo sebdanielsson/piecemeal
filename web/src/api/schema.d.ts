@@ -381,6 +381,26 @@ export interface paths {
     patch: operations["setTorrentFilePriority"];
     trace?: never;
   };
+  "/torrents/{hash}/files/rename": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Rename a file or folder
+     * @description Renames the file or folder on disk too. Paths are relative to the save path with / separators.
+     */
+    post: operations["renameTorrentPath"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/torrents/{hash}/peers": {
     parameters: {
       query?: never;
@@ -484,6 +504,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/torrents/{hash}/torrent-file": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Download a torrent's .torrent file
+     * @description With the torrent's current trackers and web seeds. 422 until the metadata is known.
+     */
+    get: operations["getTorrentFile"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/torrents/{hash}/trackers": {
     parameters: {
       query?: never;
@@ -493,7 +533,26 @@ export interface paths {
     };
     /** List a torrent's trackers */
     get: operations["listTorrentTrackers"];
-    put?: never;
+    /** Replace a torrent's trackers */
+    put: operations["setTorrentTrackers"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/torrents/{hash}/web-seeds": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List a torrent's web seeds */
+    get: operations["listTorrentWebSeeds"];
+    /** Replace a torrent's web seeds */
+    put: operations["setTorrentWebSeeds"];
     post?: never;
     delete?: never;
     options?: never;
@@ -569,6 +628,11 @@ export interface components {
     };
     AddTorrentRequest: {
       category?: string;
+      /**
+       * @description Original keeps the torrent's own layout, Subfolder puts a single file in a folder, NoSubfolder drops the top folder.
+       * @enum {string}
+       */
+      contentLayout?: "Original" | "Subfolder" | "NoSubfolder";
       /** Format: int64 */
       downloadLimit?: number;
       firstLastPiece?: boolean;
@@ -635,13 +699,20 @@ export interface components {
         | "remove"
         | "setCategory"
         | "addTags"
-        | "removeTags";
+        | "removeTags"
+        | "move"
+        | "queueTop"
+        | "queueBottom"
+        | "queueUp"
+        | "queueDown";
       /** @description With setCategory; empty removes the category. */
       category?: string;
       /** @description With remove: also delete the files. */
       deleteData?: boolean;
       /** @description Infohashes, or ["all"]. */
       hashes: string[] | null;
+      /** @description With move: where to move the data. */
+      savePath?: string;
       /** @description With addTags and removeTags; removeTags without tags removes all. */
       tags?: string[] | null;
     };
@@ -842,6 +913,11 @@ export interface components {
       /** @description Where torrents in this category are saved; empty uses the default save path. */
       savePath: string;
     };
+    RenamePathInputBody: {
+      newPath: string;
+      /** @description A file's or folder's path as listTorrentFiles reports it. */
+      oldPath: string;
+    };
     Session: {
       /** Format: date-time */
       createdAt: string;
@@ -871,6 +947,10 @@ export interface components {
        * @enum {integer}
        */
       priority: 0 | 1 | 6 | 7;
+    };
+    SetTrackersInputBody: {
+      /** @description Announce URLs by tier, in order. Empty tiers are dropped. */
+      tiers: (string[] | null)[] | null;
     };
     Settings: {
       /** @description Add new torrents stopped. */
@@ -1391,6 +1471,8 @@ export interface components {
        * @description -2 follows the global setting, -1 is unlimited.
        */
       ratioLimit?: number;
+      /** @description Moves the data there in the background; the state is moving until it's done. */
+      savePath?: string;
       /**
        * Format: int64
        * @description Minutes. -2 follows the global setting, -1 is unlimited.
@@ -1419,6 +1501,10 @@ export interface components {
     };
     UsersOutputBody: {
       items: components["schemas"]["User"][] | null;
+    };
+    WebSeedsBody: {
+      /** @description BEP 19 web seed URLs. */
+      urls: string[] | null;
     };
   };
   responses: never;
@@ -3251,6 +3337,67 @@ export interface operations {
       };
     };
   };
+  renameTorrentPath: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Infohash, lowercase hex. */
+        hash: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RenamePathInputBody"];
+      };
+    };
+    responses: {
+      /** @description No Content */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Unprocessable Entity */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+    };
+  };
   listTorrentPeers: {
     parameters: {
       query?: never;
@@ -3666,6 +3813,67 @@ export interface operations {
       };
     };
   };
+  getTorrentFile: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Infohash, lowercase hex. */
+        hash: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The .torrent file. */
+      200: {
+        headers: {
+          "Content-Disposition"?: string;
+          "Content-Type"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/x-bittorrent": string;
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Unprocessable Entity */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+    };
+  };
   listTorrentTrackers: {
     parameters: {
       query?: never;
@@ -3685,6 +3893,191 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["TrackersOutputBody"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Unprocessable Entity */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+    };
+  };
+  setTorrentTrackers: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Infohash, lowercase hex. */
+        hash: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["SetTrackersInputBody"];
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["TrackersOutputBody"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Unprocessable Entity */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+    };
+  };
+  listTorrentWebSeeds: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Infohash, lowercase hex. */
+        hash: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["WebSeedsBody"];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Unprocessable Entity */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+    };
+  };
+  setTorrentWebSeeds: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Infohash, lowercase hex. */
+        hash: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["WebSeedsBody"];
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["WebSeedsBody"];
         };
       };
       /** @description Unauthorized */

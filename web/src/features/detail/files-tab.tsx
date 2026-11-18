@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ChevronRightIcon, FileIcon, FolderIcon, FolderOpenIcon } from "lucide-react";
+import { ChevronRightIcon, FileIcon, FolderIcon, FolderOpenIcon, PencilIcon } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { cn } from "cn";
 import { api } from "@/api/client";
@@ -21,6 +21,7 @@ import {
 import { formatBytes, formatPercent } from "@/lib/format";
 import { useSetFilePriority } from "@/lib/mutations";
 import { keys } from "@/lib/queries";
+import { RenamePathDialog } from "./rename-path-dialog";
 
 const rowHeight = 34;
 const mixed = "mixed";
@@ -44,6 +45,7 @@ export function FilesTab({ torrent }: { torrent: Torrent }) {
   );
   const rows = useMemo(() => flattenTree(tree, open), [tree, open]);
   const setPriority = useSetFilePriority(hash);
+  const [renaming, setRenaming] = useState<{ path: string; folder: boolean }>();
   const scrollRef = useRef<HTMLDivElement>(null);
   // The app doesn't use the React Compiler, which this rule is about.
   // oxlint-disable-next-line react/incompatible-library
@@ -120,11 +122,18 @@ export function FilesTab({ torrent }: { torrent: Torrent }) {
                 expanded={open.has(row.node.path)}
                 onToggle={toggle}
                 onPriority={(indices, priority) => setPriority.mutate({ indices, priority })}
+                onRename={(path, folder) => setRenaming({ path, folder })}
               />
             );
           })}
         </div>
       </div>
+      <RenamePathDialog
+        hash={hash}
+        path={renaming?.path}
+        folder={renaming?.folder ?? false}
+        onClose={() => setRenaming(undefined)}
+      />
     </div>
   );
 }
@@ -135,12 +144,14 @@ function FileRow({
   expanded,
   onToggle,
   onPriority,
+  onRename,
 }: {
   row: FlatRow;
   start: number;
   expanded: boolean;
   onToggle: (path: string) => void;
   onPriority: (indices: number[], priority: FilePriority) => void;
+  onRename: (path: string, folder: boolean) => void;
 }) {
   const progress = nodeProgress(node);
   const folder = node.kind === "folder";
@@ -191,6 +202,16 @@ function FileRow({
           </span>
         </span>
       )}
+      <Button
+        size="icon-xs"
+        variant="ghost"
+        className="shrink-0 text-muted-foreground"
+        aria-label={`Rename ${node.name}`}
+        title="Rename"
+        onClick={() => onRename(node.path, folder)}
+      >
+        <PencilIcon />
+      </Button>
       <span className="hidden w-20 shrink-0 text-right text-xs tabular sm:block">
         {formatBytes(node.size)}
       </span>

@@ -4,6 +4,7 @@ import { useMemo, useRef, useState, type DragEvent, type FormEvent } from "react
 import { toast } from "sonner";
 import { api } from "@/api/client";
 import type { AddTorrentRequest } from "@/api/types";
+import { OptionSelect, type Option } from "@/components/form/option-select";
 import { CategorySelect } from "@/components/form/category-select";
 import { TagPicker } from "@/components/form/tag-picker";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,14 @@ import { categoriesQuery, keys, settingsQuery } from "@/lib/queries";
 import { isTorrentFile, type AddRequest } from "./add-store";
 
 type Tab = "magnet" | "file" | "url";
+
+type ContentLayout = NonNullable<AddTorrentRequest["contentLayout"]>;
+
+const layoutOptions: Option<ContentLayout>[] = [
+  { value: "Original", label: "As in the torrent" },
+  { value: "Subfolder", label: "Always in a folder" },
+  { value: "NoSubfolder", label: "Without the top folder" },
+];
 
 /** Reads a file as base64, for AddTorrentRequest.torrentFile. */
 export function fileToBase64(file: Blob): Promise<string> {
@@ -79,6 +88,7 @@ export function AddTorrentDialog({
   const [sequential, setSequential] = useState(false);
   const [firstLastPiece, setFirstLastPiece] = useState(false);
   const [skipChecking, setSkipChecking] = useState(false);
+  const [layout, setLayout] = useState<ContentLayout>("Original");
   const [busy, setBusy] = useState(false);
   const [failures, setFailures] = useState<Failure[]>([]);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -132,6 +142,7 @@ export function AddTorrentDialog({
       sequential: sequential || undefined,
       firstLastPiece: firstLastPiece || undefined,
       skipChecking: skipChecking || undefined,
+      contentLayout: layout === "Original" ? undefined : layout,
     };
     const failed: Failure[] = [];
     let added = 0;
@@ -313,10 +324,21 @@ export function AddTorrentDialog({
                 />
               </Field>
             </div>
-            <Field>
-              <FieldLabel htmlFor="add-tags">Tags</FieldLabel>
-              <TagPicker id="add-tags" label="Tags" value={tags} onChange={setTags} />
-            </Field>
+            <div className="grid gap-5 sm:grid-cols-2">
+              <Field>
+                <FieldLabel htmlFor="add-tags">Tags</FieldLabel>
+                <TagPicker id="add-tags" label="Tags" value={tags} onChange={setTags} />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="add-layout">Content layout</FieldLabel>
+                <OptionSelect
+                  id="add-layout"
+                  value={layout}
+                  onChange={setLayout}
+                  options={layoutOptions}
+                />
+              </Field>
+            </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <CheckOption checked={startStopped} onChange={setStopped} label="Add stopped" />
               <CheckOption

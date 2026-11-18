@@ -22,6 +22,7 @@ export interface TorrentActionInput {
   category?: string;
   tags?: string[];
   deleteData?: boolean;
+  savePath?: string;
 }
 
 const actionVerbs: Record<BulkActionName, string> = {
@@ -34,6 +35,11 @@ const actionVerbs: Record<BulkActionName, string> = {
   setCategory: "Set the category of",
   addTags: "Tagged",
   removeTags: "Untagged",
+  move: "Moving",
+  queueTop: "Moved to the top of the queue:",
+  queueBottom: "Moved to the bottom of the queue:",
+  queueUp: "Moved up the queue:",
+  queueDown: "Moved down the queue:",
 };
 
 /**
@@ -52,6 +58,7 @@ export function useTorrentAction() {
             category: input.category,
             tags: input.tags,
             deleteData: input.deleteData,
+            savePath: input.savePath,
           },
         }),
       );
@@ -61,7 +68,7 @@ export function useTorrentAction() {
       if (input.action === "remove") {
         qc.setQueryData<TorrentMap>(keys.torrents, (prev) => removeTorrents(prev, input.hashes));
       }
-      if (input.action === "remove" || input.hashes.length > 1) {
+      if (input.action === "remove" || input.action === "move" || input.hashes.length > 1) {
         toast.success(`${actionVerbs[input.action]} ${plural(input.hashes.length, "torrent")}`);
       }
     },
@@ -105,6 +112,39 @@ export function useSetFilePriority(hash: string) {
       qc.setQueryData(keys.files(hash), ctx?.prev);
       toast.error(errorMessage(error));
     },
+    onSettled: () => qc.invalidateQueries({ queryKey: keys.files(hash) }),
+  });
+}
+
+/** Replaces a torrent's trackers and web seeds. */
+export function useSetTrackers(hash: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ tiers, webSeeds }: { tiers: string[][]; webSeeds: string[] }) => {
+      const path = { hash };
+      await unwrap(api.PUT("/torrents/{hash}/trackers", { params: { path }, body: { tiers } }));
+      await unwrap(
+        api.PUT("/torrents/{hash}/web-seeds", { params: { path }, body: { urls: webSeeds } }),
+      );
+    },
+    onSuccess: () => toast.success("Saved the trackers"),
+    onError: (error) => toast.error(errorMessage(error)),
+    onSettled: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: keys.trackers(hash) }),
+        qc.invalidateQueries({ queryKey: keys.webSeeds(hash) }),
+      ]),
+  });
+}
+
+/** Renames a file or folder of a torrent, on disk too. */
+export function useRenamePath(hash: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: { oldPath: string; newPath: string }) => {
+      await unwrap(api.POST("/torrents/{hash}/files/rename", { params: { path: { hash } }, body }));
+    },
+    onError: (error) => toast.error(errorMessage(error)),
     onSettled: () => qc.invalidateQueries({ queryKey: keys.files(hash) }),
   });
 }

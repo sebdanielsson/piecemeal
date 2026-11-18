@@ -11,6 +11,7 @@ import { Field, FieldContent, FieldDescription, FieldLabel } from "@/components/
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { transferSettingKeys, useUpdateSettings, useUpdateTransfer } from "@/lib/mutations";
 import { meQuery, settingsQuery } from "@/lib/queries";
 import { PageSection } from "../shell/page";
@@ -18,7 +19,12 @@ import { PageSection } from "../shell/page";
 type Key = keyof Settings;
 
 export type FieldDef =
-  | { key: Key; label: string; description?: string; kind: "text" | "path" | "bool" | "limit" }
+  | {
+      key: Key;
+      label: string;
+      description?: string;
+      kind: "text" | "path" | "bool" | "limit" | "time" | "lines";
+    }
   | { key: Key; label: string; description?: string; kind: "int"; min?: number; max?: number }
   | { key: Key; label: string; description?: string; kind: "ratio" | "minutes" }
   | {
@@ -269,6 +275,30 @@ function SettingField({
           disabled={off}
           min={def.min}
           max={def.max}
+        />
+      );
+      break;
+    case "time":
+      control = (
+        <Input
+          id={id}
+          type="time"
+          value={String(value)}
+          disabled={off}
+          onChange={(e) => e.target.value && onChange(e.target.value)}
+          className="max-w-40 tabular"
+        />
+      );
+      break;
+    case "lines":
+      control = (
+        <Textarea
+          id={id}
+          value={String(value)}
+          disabled={off}
+          onChange={(e) => onChange(e.target.value)}
+          rows={4}
+          className="max-w-xl font-mono text-xs"
         />
       );
       break;

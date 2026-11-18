@@ -314,3 +314,19 @@ func copyFile(from, to string) (err error) {
 	_, err = io.Copy(out, in)
 	return err
 }
+
+// SetTrackers replaces a torrent's announce list. Each inner list is a
+// tier; empty tiers are dropped.
+func (e *Engine) SetTrackers(ctx context.Context, hash string, tiers [][]string) error {
+	for _, tier := range tiers {
+		for _, u := range tier {
+			if err := validAnnounceURL(u); err != nil {
+				return err
+			}
+		}
+	}
+	return e.each(ctx, []string{hash}, func(m *managed) error {
+		e.setTrackersLocked(m, cloneTiers(tiers))
+		return nil
+	})
+}

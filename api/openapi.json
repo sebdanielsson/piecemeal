@@ -77,6 +77,15 @@
           "category": {
             "type": "string"
           },
+          "contentLayout": {
+            "description": "Original keeps the torrent's own layout, Subfolder puts a single file in a folder, NoSubfolder drops the top folder.",
+            "enum": [
+              "Original",
+              "Subfolder",
+              "NoSubfolder"
+            ],
+            "type": "string"
+          },
           "downloadLimit": {
             "format": "int64",
             "minimum": 0,
@@ -247,7 +256,12 @@
               "remove",
               "setCategory",
               "addTags",
-              "removeTags"
+              "removeTags",
+              "move",
+              "queueTop",
+              "queueBottom",
+              "queueUp",
+              "queueDown"
             ],
             "type": "string"
           },
@@ -269,6 +283,10 @@
               "array",
               "null"
             ]
+          },
+          "savePath": {
+            "description": "With move: where to move the data.",
+            "type": "string"
           },
           "tags": {
             "description": "With addTags and removeTags; removeTags without tags removes all.",
@@ -816,6 +834,25 @@
         ],
         "type": "object"
       },
+      "RenamePathInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "newPath": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "oldPath": {
+            "description": "A file's or folder's path as listTorrentFiles reports it.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "oldPath",
+          "newPath"
+        ],
+        "type": "object"
+      },
       "Session": {
         "additionalProperties": false,
         "properties": {
@@ -920,6 +957,31 @@
         "required": [
           "indices",
           "priority"
+        ],
+        "type": "object"
+      },
+      "SetTrackersInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "tiers": {
+            "description": "Announce URLs by tier, in order. Empty tiers are dropped.",
+            "items": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "tiers"
         ],
         "type": "object"
       },
@@ -1952,6 +2014,10 @@
             "format": "double",
             "type": "number"
           },
+          "savePath": {
+            "description": "Moves the data there in the background; the state is moving until it's done.",
+            "type": "string"
+          },
           "seedingTimeLimit": {
             "description": "Minutes. -2 follows the global setting, -1 is unlimited.",
             "format": "int64",
@@ -2036,6 +2102,25 @@
         },
         "required": [
           "items"
+        ],
+        "type": "object"
+      },
+      "WebSeedsBody": {
+        "additionalProperties": false,
+        "properties": {
+          "urls": {
+            "description": "BEP 19 web seed URLs.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "urls"
         ],
         "type": "object"
       }
@@ -4673,6 +4758,92 @@
         ]
       }
     },
+    "/torrents/{hash}/files/rename": {
+      "post": {
+        "description": "Renames the file or folder on disk too. Paths are relative to the save path with / separators.",
+        "operationId": "renameTorrentPath",
+        "parameters": [
+          {
+            "description": "Infohash, lowercase hex.",
+            "in": "path",
+            "name": "hash",
+            "required": true,
+            "schema": {
+              "description": "Infohash, lowercase hex.",
+              "pattern": "^[0-9a-f]{40}$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenamePathInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Rename a file or folder",
+        "tags": [
+          "Torrents"
+        ]
+      }
+    },
     "/torrents/{hash}/peers": {
       "get": {
         "operationId": "listTorrentPeers",
@@ -5248,6 +5419,103 @@
         ]
       }
     },
+    "/torrents/{hash}/torrent-file": {
+      "get": {
+        "description": "With the torrent's current trackers and web seeds. 422 until the metadata is known.",
+        "operationId": "getTorrentFile",
+        "parameters": [
+          {
+            "description": "Infohash, lowercase hex.",
+            "in": "path",
+            "name": "hash",
+            "required": true,
+            "schema": {
+              "description": "Infohash, lowercase hex.",
+              "pattern": "^[0-9a-f]{40}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/x-bittorrent": {
+                "schema": {
+                  "contentMediaType": "application/octet-stream",
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The .torrent file.",
+            "headers": {
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Type": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Download a torrent's .torrent file",
+        "tags": [
+          "Torrents"
+        ]
+      }
+    },
     "/torrents/{hash}/trackers": {
       "get": {
         "operationId": "listTorrentTrackers",
@@ -5325,6 +5593,268 @@
           }
         ],
         "summary": "List a torrent's trackers",
+        "tags": [
+          "Torrents"
+        ]
+      },
+      "put": {
+        "operationId": "setTorrentTrackers",
+        "parameters": [
+          {
+            "description": "Infohash, lowercase hex.",
+            "in": "path",
+            "name": "hash",
+            "required": true,
+            "schema": {
+              "description": "Infohash, lowercase hex.",
+              "pattern": "^[0-9a-f]{40}$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetTrackersInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackersOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Replace a torrent's trackers",
+        "tags": [
+          "Torrents"
+        ]
+      }
+    },
+    "/torrents/{hash}/web-seeds": {
+      "get": {
+        "operationId": "listTorrentWebSeeds",
+        "parameters": [
+          {
+            "description": "Infohash, lowercase hex.",
+            "in": "path",
+            "name": "hash",
+            "required": true,
+            "schema": {
+              "description": "Infohash, lowercase hex.",
+              "pattern": "^[0-9a-f]{40}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebSeedsBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "List a torrent's web seeds",
+        "tags": [
+          "Torrents"
+        ]
+      },
+      "put": {
+        "operationId": "setTorrentWebSeeds",
+        "parameters": [
+          {
+            "description": "Infohash, lowercase hex.",
+            "in": "path",
+            "name": "hash",
+            "required": true,
+            "schema": {
+              "description": "Infohash, lowercase hex.",
+              "pattern": "^[0-9a-f]{40}$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebSeedsBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebSeedsBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Replace a torrent's web seeds",
         "tags": [
           "Torrents"
         ]

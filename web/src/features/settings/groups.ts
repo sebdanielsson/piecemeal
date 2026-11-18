@@ -19,6 +19,34 @@ export const altSpeedGroup: FieldGroupDef = {
   ],
 };
 
+export const scheduleGroup: FieldGroupDef = {
+  title: "Alternative speed schedule",
+  description:
+    "Turns the alternative limits on and off at set times, in piecemeal's local time. A window that ends before it starts runs past midnight.",
+  fields: [
+    { key: "altSpeedSchedule", label: "Follow the schedule", kind: "bool" },
+    { key: "altSpeedScheduleFrom", label: "From", kind: "time" },
+    { key: "altSpeedScheduleTo", label: "To", kind: "time" },
+    {
+      key: "altSpeedScheduleDays",
+      label: "On",
+      kind: "select",
+      options: [
+        { value: "everyDay", label: "Every day" },
+        { value: "weekdays", label: "Weekdays" },
+        { value: "weekends", label: "Weekends" },
+        { value: "monday", label: "Monday" },
+        { value: "tuesday", label: "Tuesday" },
+        { value: "wednesday", label: "Wednesday" },
+        { value: "thursday", label: "Thursday" },
+        { value: "friday", label: "Friday" },
+        { value: "saturday", label: "Saturday" },
+        { value: "sunday", label: "Sunday" },
+      ],
+    },
+  ],
+};
+
 export const settingsGroups: FieldGroupDef[] = [
   {
     title: "Downloads",
@@ -39,6 +67,55 @@ export const settingsGroups: FieldGroupDef[] = [
   },
   speedGroup,
   altSpeedGroup,
+  scheduleGroup,
+  {
+    title: "Queueing",
+    description:
+      "Limits how many torrents run at once; the rest wait in the queue. Forced torrents don't count.",
+    fields: [
+      { key: "queueingEnabled", label: "Queue torrents", kind: "bool" },
+      { key: "maxActiveDownloads", label: "Active downloads", kind: "int", min: 0 },
+      { key: "maxActiveUploads", label: "Active uploads", kind: "int", min: 0 },
+      { key: "maxActiveTorrents", label: "Active torrents", kind: "int", min: 0 },
+      {
+        key: "dontCountSlowTorrents",
+        label: "Don't count slow torrents",
+        description: "Torrents below the rates below for long enough let another one start.",
+        kind: "bool",
+      },
+      { key: "slowDownloadRate", label: "Slow download rate", kind: "limit" },
+      { key: "slowUploadRate", label: "Slow upload rate", kind: "limit" },
+      {
+        key: "slowTorrentTime",
+        label: "Slow for (seconds)",
+        kind: "int",
+        min: 0,
+      },
+    ],
+  },
+  {
+    title: "IP filtering",
+    fields: [
+      {
+        key: "ipFilterEnabled",
+        label: "Use an IP filter",
+        description: "Refuse peers in the ranges of a filter file.",
+        kind: "bool",
+      },
+      {
+        key: "ipFilterPath",
+        label: "Filter file",
+        description: "eMule .dat, PeerGuardian .p2p, or one CIDR per line.",
+        kind: "path",
+      },
+      {
+        key: "bannedIPs",
+        label: "Banned addresses",
+        description: "One IP address per line. Always refused, filter or not.",
+        kind: "lines",
+      },
+    ],
+  },
   {
     title: "Connection",
     fields: [

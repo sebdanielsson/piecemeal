@@ -1,8 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 import {
+  ArrowDownIcon,
+  ArrowDownToLineIcon,
+  ArrowUpIcon,
+  ArrowUpToLineIcon,
   CopyIcon,
+  DownloadIcon,
   FastForwardIcon,
   FolderIcon,
+  FolderInputIcon,
+  ListOrderedIcon,
   MegaphoneIcon,
   PauseIcon,
   PlayIcon,
@@ -11,6 +18,7 @@ import {
   TagIcon,
   Trash2Icon,
 } from "lucide-react";
+import { apiPrefix } from "@/api/client";
 import type { Torrent } from "@/api/types";
 import {
   ContextMenuCheckboxItem,
@@ -38,7 +46,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { copyText } from "@/lib/clipboard";
 import { useTorrentAction } from "@/lib/mutations";
-import { categoriesQuery, tagsQuery } from "@/lib/queries";
+import { categoriesQuery, settingsQuery, tagsQuery } from "@/lib/queries";
 
 const dropdownParts = {
   Item: DropdownMenuItem,
@@ -73,6 +81,14 @@ export function shouldStart(torrents: readonly Pick<Torrent, "stopped">[]): bool
 
 const noCategory = "\u0000none";
 
+/** Downloads a torrent's .torrent file through the browser. */
+function exportTorrent(hash: string) {
+  const a = document.createElement("a");
+  a.href = `${apiPrefix}/torrents/${hash}/torrent-file`;
+  a.download = "";
+  a.click();
+}
+
 /**
  * Every action on the selected torrents, as menu items. The same items fill
  * the toolbar's menu and the list's right-click menu.
@@ -82,12 +98,14 @@ export function TorrentActionItems({
   kind,
   onRemove,
   onNewTag,
+  onMove,
   compact,
 }: {
   torrents: Torrent[];
   kind: "dropdown" | "context";
   onRemove: () => void;
   onNewTag: () => void;
+  onMove: () => void;
   /** Leave out start and stop, which the toolbar shows as buttons. */
   compact?: boolean;
 }) {
@@ -95,6 +113,9 @@ export function TorrentActionItems({
   const action = useTorrentAction();
   const { data: categories = [] } = useQuery(categoriesQuery);
   const { data: tags = [] } = useQuery(tagsQuery);
+  const { data: settings } = useQuery(settingsQuery);
+  const queueing = settings?.settings.queueingEnabled ?? false;
+  const single = torrents.length === 1 ? torrents[0] : undefined;
   const hashes = torrents.map((t) => t.hash);
   const run = (name: Parameters<typeof action.mutate>[0]["action"], extra = {}) =>
     action.mutate({ action: name, hashes, ...extra });
@@ -190,6 +211,43 @@ export function TorrentActionItems({
         </P.SubContent>
       </P.Sub>
       <P.Separator />
+      <P.Item onClick={onMove}>
+        <FolderInputIcon />
+        Move…
+      </P.Item>
+      {queueing && (
+        <P.Sub>
+          <P.SubTrigger>
+            <ListOrderedIcon />
+            Queue
+          </P.SubTrigger>
+          <P.SubContent>
+            <P.Item onClick={() => run("queueTop")}>
+              <ArrowUpToLineIcon />
+              Move to top
+            </P.Item>
+            <P.Item onClick={() => run("queueUp")}>
+              <ArrowUpIcon />
+              Move up
+            </P.Item>
+            <P.Item onClick={() => run("queueDown")}>
+              <ArrowDownIcon />
+              Move down
+            </P.Item>
+            <P.Item onClick={() => run("queueBottom")}>
+              <ArrowDownToLineIcon />
+              Move to bottom
+            </P.Item>
+          </P.SubContent>
+        </P.Sub>
+      )}
+      <P.Separator />
+      {single?.hasMetadata && (
+        <P.Item onClick={() => exportTorrent(single.hash)}>
+          <DownloadIcon />
+          Export .torrent
+        </P.Item>
+      )}
       <P.Item
         onClick={() =>
           void copyText(
