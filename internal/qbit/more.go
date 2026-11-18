@@ -196,9 +196,18 @@ func (s *Server) logMain(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, out)
 }
 
-func (s *Server) logPeers(w http.ResponseWriter, _ *http.Request) {
-	// piecemeal doesn't log blocked or banned peer connections.
-	writeJSON(w, []any{})
+func (s *Server) logPeers(w http.ResponseWriter, r *http.Request) {
+	after := int64(-1)
+	if v, err := strconv.ParseInt(r.FormValue("last_known_id"), 10, 64); err == nil {
+		after = v
+	}
+	out := []map[string]any{}
+	for _, e := range s.engine.PeerLog(after) {
+		out = append(out, map[string]any{
+			"id": e.ID, "ip": e.IP, "timestamp": e.Time.Unix(), "blocked": e.Blocked, "reason": e.Reason,
+		})
+	}
+	writeJSON(w, out)
 }
 
 // app/*
@@ -259,15 +268,40 @@ func (s *Server) getDirectoryContent(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Not Found", http.StatusNotFound)
 		return
 	}
-	out := []string{}
+	withMetadata, _ := formBool(r, "withMetadata")
+	paths := []string{}
+	objects := []map[string]any{}
 	for _, e := range entries {
 		isDir := e.IsDir()
 		if (mode == "dirs" && !isDir) || (mode == "files" && isDir) {
 			continue
 		}
-		out = append(out, filepath.Join(dir, e.Name()))
+		if !withMetadata {
+			paths = append(paths, filepath.Join(dir, e.Name()))
+			continue
+		}
+		// qBittorrent 5.1's objects: dates in Unix seconds, size for files.
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		created, accessed := fileTimes(info)
+		obj := map[string]any{
+			"name": e.Name(), "type": "file", "creation_date": created.Unix(),
+			"last_access_date": accessed.Unix(), "last_modification_date": info.ModTime().Unix(),
+		}
+		if isDir {
+			obj["type"] = "dir"
+		} else {
+			obj["size"] = info.Size()
+		}
+		objects = append(objects, obj)
 	}
-	writeJSON(w, out)
+	if withMetadata {
+		writeJSON(w, objects)
+		return
+	}
+	writeJSON(w, paths)
 }
 
 // torrents/*

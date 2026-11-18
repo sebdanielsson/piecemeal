@@ -372,6 +372,9 @@ func (e *Engine) statusLocked(m *managed) *Torrent {
 		st.ContentPath = r.SavePath
 	}
 	st.Comment, st.CreatedBy, st.CreatedAt, st.Tracker = m.meta.comment, m.meta.createdBy, m.meta.createdAt, m.meta.tracker
+	if r.Comment.Valid {
+		st.Comment = r.Comment.String
+	}
 	st.Ratio = ratio(r.Uploaded, r.Downloaded, st.Completed)
 
 	if m.t != nil {

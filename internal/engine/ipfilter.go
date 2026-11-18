@@ -142,10 +142,18 @@ func lastInPrefix(p netip.Prefix) netip.Addr {
 // peerFilter is the blocklist the client checks connections against.
 // Its list is swapped when the filter settings change, without recreating
 // the client.
-type peerFilter struct{ list atomic.Pointer[iplist.IPList] }
+// Refused addresses go to the peer log.
+type peerFilter struct {
+	list atomic.Pointer[iplist.IPList]
+	log  *peerLog
+}
 
 func (f *peerFilter) Lookup(ip net.IP) (iplist.Range, bool) {
-	return f.list.Load().Lookup(ip)
+	r, ok := f.list.Load().Lookup(ip)
+	if ok && f.log != nil {
+		f.log.add(ip, r.Description)
+	}
+	return r, ok
 }
 
 func (f *peerFilter) NumRanges() int { return f.list.Load().NumRanges() }

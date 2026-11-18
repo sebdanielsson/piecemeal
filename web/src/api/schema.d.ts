@@ -1857,6 +1857,8 @@ export interface components {
     UpdateTorrentRequest: {
       /** @description Empty removes the category. */
       category?: string;
+      /** @description Replaces the comment shown for the torrent; the torrent file is unchanged. */
+      comment?: string;
       /**
        * Format: int64
        * @deprecated

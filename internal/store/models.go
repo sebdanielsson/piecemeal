@@ -121,6 +121,7 @@ type Torrent struct {
 	WebSeeds                 string
 	FilePaths                string
 	ContentLayout            string
+	Comment                  sql.NullString
 }
 
 type TorrentTag struct {

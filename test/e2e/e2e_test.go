@@ -403,6 +403,8 @@ func TestContractQBittorrent(t *testing.T) {
 		{name: "removeTrackers encoded", method: http.MethodPost, path: "/torrents/removeTrackers", form: "hash=5555555555555555555555555555555555555555&urls=" + url.QueryEscape(url.QueryEscape("udp://tracker.invalid:1337"))},
 		{name: "webseeds", method: http.MethodGet, path: "/torrents/webseeds?hash=5555555555555555555555555555555555555555", same: true},
 		{name: "setTags", method: http.MethodPost, path: "/torrents/setTags", form: "hashes=5555555555555555555555555555555555555555&tags=c"},
+		{name: "setComment", method: http.MethodPost, path: "/torrents/setComment", form: "hashes=5555555555555555555555555555555555555555&comment=contract"},
+		{name: "pieceAvailability without metadata", method: http.MethodGet, path: "/torrents/pieceAvailability?hash=5555555555555555555555555555555555555555", same: true},
 		{name: "export without metadata", method: http.MethodGet, path: "/torrents/export?hash=5555555555555555555555555555555555555555"},
 		{name: "pieceHashes without metadata", method: http.MethodGet, path: "/torrents/pieceHashes?hash=5555555555555555555555555555555555555555", same: true},
 		{name: "SSLParameters", method: http.MethodGet, path: "/torrents/SSLParameters?hash=5555555555555555555555555555555555555555"},

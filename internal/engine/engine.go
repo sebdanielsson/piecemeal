@@ -167,6 +167,7 @@ func New(ctx context.Context, cfg Config, st *store.Store, sm *settings.Manager,
 		down:     rate.NewLimiter(rate.Inf, 1<<20),
 		up:       rate.NewLimiter(rate.Inf, 1<<20),
 	}
+	e.filter.log = newPeerLog()
 	opts := storage.NewFileClientOpts{
 		ClientBaseDir:   cfg.DataDir,
 		PieceCompletion: nopClosePieceCompletion{pc},

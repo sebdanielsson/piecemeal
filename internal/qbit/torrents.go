@@ -182,7 +182,9 @@ func (s *Server) torrent(t engine.Torrent) Torrent {
 	if createdAt == 0 {
 		createdAt = -1
 	}
+	avail, _ := s.availability(t)
 	return Torrent{
+		Availability: avail, Popularity: popularity(t),
 		ConnectionsCount: t.Seeds + t.Peers, ConnectionsLimit: st.MaxConnectionsPerTorrent,
 		CreatedBy: t.CreatedBy, CreationDate: createdAt, PieceSize: t.PieceSize, PiecesHave: t.PiecesHave,
 		PiecesNum: t.Pieces,
@@ -288,7 +290,36 @@ func (s *Server) info(w http.ResponseWriter, r *http.Request) {
 	if limit, err := strconv.Atoi(q.Get("limit")); err == nil && limit > 0 && limit < len(out) {
 		out = out[:limit]
 	}
-	writeJSON(w, out)
+	withFiles, _ := formBool(r, "includeFiles")
+	withTrackers, _ := formBool(r, "includeTrackers")
+	if !withFiles && !withTrackers {
+		writeJSON(w, out)
+		return
+	}
+	// qBittorrent 5.1 and 5.2 add the files and trackers lists on request.
+	extended := make([]torrentWithLists, len(out))
+	for i, t := range out {
+		extended[i].Torrent = t
+		et, ok := s.engine.Get(t.Hash)
+		if !ok {
+			continue
+		}
+		if withFiles {
+			extended[i].Files, _ = s.fileObjects(et, nil)
+		}
+		if withTrackers {
+			extended[i].Trackers, _ = s.trackerObjects(et, false)
+		}
+	}
+	writeJSON(w, extended)
+}
+
+// torrentWithLists is a torrents/info entry with includeFiles or
+// includeTrackers.
+type torrentWithLists struct {
+	Torrent
+	Files    []map[string]any `json:"files,omitzero"`
+	Trackers []map[string]any `json:"trackers,omitzero"`
 }
 
 // sortBy sorts by any field name of the response.
@@ -353,6 +384,7 @@ func (s *Server) properties(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	avail, _ := s.availability(t)
 	minusOne := func(v int64) int64 {
 		if v == 0 {
 			return -1
@@ -386,18 +418,49 @@ func (s *Server) properties(w http.ResponseWriter, r *http.Request) {
 		"seeds_total": t.Seeds, "total_size": minusOne(t.TotalSize),
 		"up_speed_avg": avg(t.Uploaded, t.ActiveTime), "up_speed": t.UpRate,
 		"private": t.Private, "is_private": t.Private, "has_metadata": t.HasMetadata, "progress": t.Progress,
-		"popularity": 0, "availability": 0,
+		"popularity": popularity(t), "availability": avail,
 	})
+}
+
+// availability is libtorrent's distributed copies among connected peers,
+// with the per-piece counts it comes from: -1 for a complete torrent, as
+// qBittorrent reports seeds, and 0 for one that isn't running or has no
+// metadata yet.
+func (s *Server) availability(t engine.Torrent) (float64, []int) {
+	if t.Complete {
+		return -1, nil
+	}
+	counts, err := s.engine.PieceAvailability(t.Hash)
+	if err != nil || counts == nil {
+		return 0, nil
+	}
+	return engine.DistributedCopies(counts), counts
+}
+
+// popularity is qBittorrent's ratio per month of activity.
+func popularity(t engine.Torrent) float64 {
+	if t.ActiveTime <= 0 {
+		return 0
+	}
+	const month = 30 * 24 * 60 * 60
+	return ratio(t.Ratio) * month / float64(t.ActiveTime)
+}
+
+func (s *Server) pieceAvailability(w http.ResponseWriter, r *http.Request) {
+	t, ok := s.lookup(w, r)
+	if !ok {
+		return
+	}
+	_, counts := s.availability(t)
+	if counts == nil {
+		counts = []int{}
+	}
+	writeJSON(w, counts)
 }
 
 func (s *Server) files(w http.ResponseWriter, r *http.Request) {
 	t, ok := s.lookup(w, r)
 	if !ok {
-		return
-	}
-	files, err := s.engine.Files(t.Hash)
-	if err != nil {
-		s.engineError(w, err)
 		return
 	}
 	var only map[int]bool
@@ -409,18 +472,40 @@ func (s *Server) files(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	out, err := s.fileObjects(t, only)
+	if err != nil {
+		s.engineError(w, err)
+		return
+	}
+	writeJSON(w, out)
+}
+
+// fileObjects is a torrent's files as torrents/files lists them, all of
+// them when only is nil.
+func (s *Server) fileObjects(t engine.Torrent, only map[int]bool) ([]map[string]any, error) {
+	files, err := s.engine.Files(t.Hash)
+	if err != nil {
+		return nil, err
+	}
+	_, counts := s.availability(t)
 	out := []map[string]any{}
 	for _, f := range files {
 		if only != nil && !only[f.Index] {
 			continue
 		}
 		last := max(f.PieceEnd-1, f.PieceStart)
+		// As qBittorrent: -1 for a seed, else the share of the file's
+		// pieces some connected peer has.
+		avail := -1.0
+		if counts != nil {
+			avail = engine.AvailableFraction(counts, f.PieceStart, f.PieceEnd)
+		}
 		out = append(out, map[string]any{
 			"index": f.Index, "name": f.Path, "size": f.Size, "progress": f.Progress, "priority": int(f.Priority),
-			"is_seed": f.Progress >= 1, "piece_range": []int{f.PieceStart, last}, "availability": 0,
+			"is_seed": f.Progress >= 1, "piece_range": []int{f.PieceStart, last}, "availability": avail,
 		})
 	}
-	writeJSON(w, out)
+	return out, nil
 }
 
 // Tracker status codes.
@@ -434,32 +519,44 @@ func (s *Server) trackers(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	trs, err := s.engine.Trackers(t.Hash)
+	out, err := s.trackerObjects(t, true)
 	if err != nil {
 		s.engineError(w, err)
 		return
 	}
-	st := s.settings.Get()
-	pseudo := func(name string, enabled bool) map[string]any {
-		status := trackerDisabled
-		if enabled && !t.Private {
-			status = 2
-		}
-		return map[string]any{
-			"url": name, "status": status, "tier": -1, "num_peers": 0, "num_seeds": 0, "num_leeches": 0,
-			"num_downloaded": 0, "msg": "",
-		}
+	writeJSON(w, out)
+}
+
+// trackerObjects is a torrent's trackers as torrents/trackers lists them,
+// with the DHT, PeX and LSD rows first when pseudo is set.
+func (s *Server) trackerObjects(t engine.Torrent, pseudo bool) ([]map[string]any, error) {
+	trs, err := s.engine.Trackers(t.Hash)
+	if err != nil {
+		return nil, err
 	}
-	out := []map[string]any{
-		pseudo("** [DHT] **", st.DHT), pseudo("** [PeX] **", st.PEX), pseudo("** [LSD] **", false),
+	out := []map[string]any{}
+	if pseudo {
+		st := s.settings.Get()
+		row := func(name string, enabled bool) map[string]any {
+			status := trackerDisabled
+			if enabled && !t.Private {
+				status = 2
+			}
+			return map[string]any{
+				"url": name, "status": status, "tier": -1, "num_peers": 0, "num_seeds": 0, "num_leeches": 0,
+				"num_downloaded": 0, "msg": "",
+			}
+		}
+		out = append(out, row("** [DHT] **", st.DHT), row("** [PeX] **", st.PEX), row("** [LSD] **", false))
 	}
+	// anacrolix doesn't expose announce results (#44).
 	for _, tr := range trs {
 		out = append(out, map[string]any{
 			"url": tr.URL, "status": trackerNotContacted, "tier": tr.Tier, "num_peers": -1, "num_seeds": -1,
 			"num_leeches": -1, "num_downloaded": -1, "msg": "",
 		})
 	}
-	writeJSON(w, out)
+	return out, nil
 }
 
 func (s *Server) pieceStates(w http.ResponseWriter, r *http.Request) {
@@ -667,6 +764,16 @@ func (s *Server) setForceStart(w http.ResponseWriter, r *http.Request) {
 }
 
 // withHashes runs fn on the known torrents in hashes and answers 200.
+func (s *Server) setComment(w http.ResponseWriter, r *http.Request) {
+	if !required(w, r, "hashes") {
+		return
+	}
+	comment := r.FormValue("comment")
+	s.withHashesStatus(w, r, http.StatusNoContent, func(hs []string) error {
+		return s.engine.SetComment(r.Context(), comment, resolveAll(s, hs)...)
+	})
+}
+
 func (s *Server) withHashes(w http.ResponseWriter, r *http.Request, fn func(hs []string) error) {
 	s.withHashesStatus(w, r, http.StatusOK, fn)
 }
