@@ -8,6 +8,9 @@ export default defineConfig({
     "A self-hosted BitTorrent client in Go: a qBittorrent-compatible API for Radarr, Sonarr and Prowlarr, a modern web UI, and SSO.",
   logo: { image: "./logo.svg", text: "piecemeal" },
   github: { owner: "sebdanielsson", repo: "piecemeal", branch: "main" },
+  // Explicit, so local builds produce the same canonical URLs, sitemap and
+  // Open Graph cards as Vercel's.
+  deployment: { site: "https://piecemeal-flax.vercel.app" },
 
   // The docs are the Markdown files in the repository's docs/ folder, so
   // they read the same on GitHub. plan.md is the internal design plan.
@@ -48,6 +51,21 @@ export default defineConfig({
   },
 
   markdown: { externalLinks: true },
+
+  // Docs pages get generated cards in the site's dark palette; the home
+  // page has its own, og/home.html rendered to public/og-home.png.
+  seo: {
+    og: {
+      logo: "/og-logo.svg",
+      palette: {
+        accent: "oklch(0.72 0.13 155)",
+        background: "oklch(0.147 0.004 49.3)",
+        foreground: "#fafaf9",
+        muted: "#a8a29e",
+        border: "#292524",
+      },
+    },
+  },
 
   footer: {
     copyright: "© 2026 Sebastian Danielsson · MIT License",
