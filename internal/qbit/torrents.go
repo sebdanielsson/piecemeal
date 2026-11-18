@@ -9,6 +9,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -219,11 +220,7 @@ func magnet(t engine.Torrent) string {
 	if t.Magnet != "" {
 		return t.Magnet
 	}
-	return "magnet:?xt=urn:btih:" + t.Hash + "&dn=" + urlQueryEscape(t.Name)
-}
-
-func urlQueryEscape(s string) string {
-	return strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(s, "%", "%25"), "&", "%26"), " ", "+")
+	return "magnet:?xt=urn:btih:" + t.Hash + "&dn=" + url.QueryEscape(t.Name)
 }
 
 // matches reports whether a torrent passes a torrents/info filter.

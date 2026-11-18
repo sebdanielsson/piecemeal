@@ -24,6 +24,9 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/crypto/argon2"
+	"golang.org/x/sync/singleflight"
+
 	"github.com/sebdanielsson/piecemeal/internal/store"
 )
 
@@ -108,9 +111,11 @@ type Service struct {
 	// verifying bounds concurrent password verifications.
 	verifying chan struct{}
 
-	basicMu sync.Mutex
-	basicOK map[[32]byte]time.Time
-	now     func() time.Time
+	basicMu     sync.Mutex
+	basicOK     map[[32]byte]time.Time
+	basicSalt   []byte
+	basicFlight singleflight.Group
+	now         func() time.Time
 
 	adminID int64
 
@@ -161,7 +166,7 @@ func New(ctx context.Context, cfg Config, st *store.Store, log *slog.Logger) (*S
 	}
 	s := &Service{
 		cfg: cfg, store: st, log: log, limiter: newLoginLimiter(5, 15*time.Minute), now: time.Now,
-		verifying: make(chan struct{}, 2), basicOK: map[[32]byte]time.Time{},
+		verifying: make(chan struct{}, 2), basicOK: map[[32]byte]time.Time{}, basicSalt: []byte(randomToken(16)),
 		touched: map[string]time.Time{},
 	}
 	u, err := st.GetUserByUsername(ctx, cfg.AdminUsername)
@@ -202,21 +207,31 @@ func (s *Service) Login(ctx context.Context, r *http.Request, username, password
 // them. Successes are remembered for a few minutes, so clients that send
 // Basic on every request don't pay for a password hash each time.
 func (s *Service) Basic(ctx context.Context, r *http.Request, username, password string) (*Principal, error) {
-	key := sha256.Sum256([]byte(username + "\x00" + password))
+	// The cache key is a cheap argon2id hash with a per-process salt, so the
+	// cache never holds anything a password could be recovered from.
+	key := [32]byte(argon2.IDKey([]byte(username+"\x00"+password), s.basicSalt, 1, 4*1024, 1, 32))
 	now := s.now()
 	s.basicMu.Lock()
 	exp, ok := s.basicOK[key]
 	s.basicMu.Unlock()
 	if !ok || now.After(exp) {
-		if err := s.checkPassword(ctx, r, username, password); err != nil {
+		// Parallel requests with the same credentials share one check, so a
+		// burst of correct ones can't trip the lockout.
+		_, err, _ := s.basicFlight.Do(string(key[:]), func() (any, error) {
+			if err := s.checkPassword(ctx, r, username, password); err != nil {
+				return nil, err
+			}
+			s.basicMu.Lock()
+			if len(s.basicOK) > 1000 {
+				clear(s.basicOK)
+			}
+			s.basicOK[key] = now.Add(5 * time.Minute)
+			s.basicMu.Unlock()
+			return nil, nil
+		})
+		if err != nil {
 			return nil, err
 		}
-		s.basicMu.Lock()
-		if len(s.basicOK) > 1000 {
-			clear(s.basicOK)
-		}
-		s.basicOK[key] = now.Add(5 * time.Minute)
-		s.basicMu.Unlock()
 	}
 	u, err := s.store.GetUser(ctx, s.adminID)
 	if err != nil {

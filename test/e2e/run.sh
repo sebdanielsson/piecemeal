@@ -7,6 +7,10 @@
 set -eu
 cd "$(dirname "$0")"
 
+# go run needs the web UI's embed directory, which CI doesn't build here.
+mkdir -p ../../internal/webui/dist
+[ -n "$(ls -A ../../internal/webui/dist)" ] || touch ../../internal/webui/dist/.keep
+
 password=e2e-admin-password
 PIECEMEAL_ADMIN_PASSWORD_HASH=$(printf '%s\n' "$password" | go run ../../cmd/piecemeal hash-password)
 export PIECEMEAL_ADMIN_PASSWORD_HASH

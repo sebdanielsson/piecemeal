@@ -206,3 +206,24 @@ func TestTemporaryPasswordGoesToItsWriterOnly(t *testing.T) {
 		t.Fatalf("password %q leaked into the log: %s", pw, logs.String())
 	}
 }
+
+func TestParallelBasicWithTheRightPasswordDoesntLockOut(t *testing.T) {
+	s, _ := newService(t)
+	ctx := context.Background()
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	failed := 0
+	for range 12 {
+		wg.Go(func() {
+			if _, err := s.Basic(ctx, httptest.NewRequest(http.MethodGet, "/", nil), "admin", "secret"); err != nil {
+				mu.Lock()
+				failed++
+				mu.Unlock()
+			}
+		})
+	}
+	wg.Wait()
+	if failed != 0 {
+		t.Fatalf("%d of 12 parallel requests with the right password failed", failed)
+	}
+}

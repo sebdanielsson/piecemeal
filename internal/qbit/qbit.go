@@ -150,7 +150,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
-	rt.h(w, r.WithContext(context.WithValue(r.Context(), principalKey{}, p)))
+	r2 := r.WithContext(context.WithValue(r.Context(), principalKey{}, p))
+	rt.h(w, r2)
+	// net/http only cleans up a multipart form parsed on the request it
+	// passed in, not on this copy: remove spilled temp files here.
+	if r2.MultipartForm != nil {
+		_ = r2.MultipartForm.RemoveAll()
+	}
 }
 
 type principalKey struct{}
@@ -242,8 +248,11 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, auth.ErrBadCredentials):
 		http.Error(w, "Fails.", http.StatusUnauthorized)
 		return
-	case errors.Is(err, auth.ErrLockedOut), errors.Is(err, auth.ErrLocalDisabled):
+	case errors.Is(err, auth.ErrLockedOut):
 		http.Error(w, "Your IP address has been banned after too many failed authentication attempts.", http.StatusForbidden)
+		return
+	case errors.Is(err, auth.ErrLocalDisabled):
+		http.Error(w, "Password sign-in is turned off; use an API key.", http.StatusForbidden)
 		return
 	case err != nil:
 		s.log.Error("qBittorrent login", "error", err)

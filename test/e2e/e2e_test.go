@@ -242,7 +242,9 @@ func TestRadarrGrab(t *testing.T) {
 		"addOptions": map[string]any{"searchForMovie": false},
 	}, &movie)
 	if s != http.StatusCreated {
-		t.Fatalf("add movie (needs Radarr's metadata service): %d", s)
+		// This step needs Radarr's metadata service on the internet, not
+		// piecemeal; an outage there shouldn't fail piecemeal's CI.
+		t.Skipf("adding the movie failed (%d): Radarr's metadata service may be down", s)
 	}
 
 	magnet, err := os.ReadFile("tmp/shared/seed.magnet")
@@ -255,7 +257,6 @@ func TestRadarrGrab(t *testing.T) {
 	}
 	hash := strings.TrimSpace(string(hashBytes))
 	var decisions []map[string]any
-	var single map[string]any
 	body := map[string]any{
 		"title": "Big.Buck.Bunny.2008.1080p.BluRay.x264-PIECEMEAL", "magnetUrl": strings.TrimSpace(string(magnet)),
 		"protocol": "torrent", "downloadProtocol": "torrent", "publishDate": time.Now().UTC().Format(time.RFC3339),
@@ -272,7 +273,7 @@ func TestRadarrGrab(t *testing.T) {
 		}
 	}
 	if len(decisions) == 0 {
-		t.Fatalf("release push returned no decision: %v", single)
+		t.Fatalf("release push returned no decision: %v", raw)
 	}
 	if rejected, _ := decisions[0]["rejected"].(bool); rejected {
 		t.Fatalf("Radarr rejected the release: %v", decisions[0]["rejections"])

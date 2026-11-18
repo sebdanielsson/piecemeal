@@ -38,9 +38,9 @@ Status: **yes** is implemented, **partial** works with the differences noted, **
 
 | Endpoint | Status | Notes |
 | --- | --- | --- |
-| `info` | yes | `filter`, `category`, `tag`, `hashes`, `private`, `sort`, `reverse`, `limit` and `offset`. Not yet `includeFiles` and `includeTrackers`. `availability` is -1 and `priority` is -1 (no queueing yet). |
+| `info` | yes | `filter`, `category`, `tag`, `hashes`, `private`, `sort`, `reverse`, `limit` and `offset`. Not yet `includeFiles` and `includeTrackers`. `availability` is 0, as qBittorrent reports for torrents without connected peers, and `priority` is -1 (no queueing yet). |
 | `properties` | yes | 404 for unknown hashes, 200 for magnets still fetching metadata. |
-| `files` | yes | `availability` is -1. |
+| `files` | yes | `availability` is 0. |
 | `trackers` | partial | Trackers and their tiers, with status "not contacted" and -1 counts: anacrolix doesn't expose announce results. DHT, PeX and LSD rows as in qBittorrent. |
 | `pieceStates` | yes | |
 | `add` | partial | `urls` (magnets, and http(s) links fetched with SSRF protection), `torrents`, `savepath`, `category` (created if missing), `tags`, `stopped`/`paused`, `skip_checking`/`seedMode`, `rename`, `upLimit`, `dlLimit`, `ratioLimit`, `seedingTimeLimit`, `inactiveSeedingTimeLimit`, `sequentialDownload`, `firstLastPiecePrio`, `forced`. Synchronous. Answers 200 with qBittorrent 5.2's JSON counts, 409 when every torrent was already there, 415 for invalid torrent files. `contentLayout` and `autoTMM` are ignored: content always goes under the torrent's name, as `Original` does. |

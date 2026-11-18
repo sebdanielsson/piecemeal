@@ -49,7 +49,7 @@ type Torrent struct {
 	Uploaded    int64    `json:"uploaded" doc:"Payload bytes uploaded, all time."`
 	SessionDown int64    `json:"sessionDownloaded" doc:"Payload bytes downloaded since piecemeal started."`
 	SessionUp   int64    `json:"sessionUploaded" doc:"Payload bytes uploaded since piecemeal started."`
-	MultiFile   bool     `json:"multiFile" doc:"The torrent has a root folder with several files in it."`
+	MultiFile   bool     `json:"multiFile" doc:"The torrent's files are in a root folder, even if there is only one."`
 	Trackers    int      `json:"trackers" doc:"Number of trackers."`
 	DownRate    int64    `json:"downloadRate" doc:"Bytes per second."`
 	UpRate      int64    `json:"uploadRate" doc:"Bytes per second."`
