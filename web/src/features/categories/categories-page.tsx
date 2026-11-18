@@ -6,6 +6,14 @@ import { toast } from "sonner";
 import { api } from "@/api/client";
 import type { Category } from "@/api/types";
 import { DataTable, type DataColumn } from "@/components/data/data-table";
+import { OptionSelect } from "@/components/form/option-select";
+import {
+  optionLabel,
+  seedGoalActions,
+  seedGoalModes,
+  withDefault,
+} from "@/components/form/seed-goal-options";
+import { ShareLimitInput } from "@/components/form/share-limit-input";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,7 +37,7 @@ import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui
 import { Input } from "@/components/ui/input";
 import { errorMessage, unwrap } from "@/lib/api";
 import { countTorrents, type FilterCounts } from "@/lib/filters";
-import { plural } from "@/lib/format";
+import { formatShareLimit, plural } from "@/lib/format";
 import type { TorrentMap } from "@/lib/live/reducer";
 import { categoriesQuery, keys, settingsQuery, tagsQuery, torrentsQuery } from "@/lib/queries";
 import { Page, PageSection } from "../shell/page";
@@ -64,6 +72,14 @@ function makeCategoryColumns(
       sort: (c) => c.savePath,
     },
     {
+      id: "goals",
+      header: "Seeding goals",
+      cell: (c) => {
+        const goals = describeGoals(c);
+        return goals ? goals : <span className="text-muted-foreground">Global</span>;
+      },
+    },
+    {
       id: "count",
       header: "Torrents",
       align: "right",
@@ -96,6 +112,28 @@ function makeCategoryColumns(
       ),
     },
   ];
+}
+
+/** A category's own seeding goals in a few words, or "" when it follows the global ones. */
+export function describeGoals(c: Category): string {
+  const parts: string[] = [];
+  if (c.ratioLimit !== -2) {
+    parts.push(`ratio ${formatShareLimit(c.ratioLimit, "ratio").toLowerCase()}`);
+  }
+  if (c.seedingTimeLimit !== -2) {
+    parts.push(`seeding ${formatShareLimit(c.seedingTimeLimit, "minutes").toLowerCase()}`);
+  }
+  if (c.inactiveSeedingTimeLimit !== -2) {
+    parts.push(`inactive ${formatShareLimit(c.inactiveSeedingTimeLimit, "minutes").toLowerCase()}`);
+  }
+  if (c.seedGoalMode !== "default") {
+    parts.push(optionLabel(seedGoalModes, c.seedGoalMode).toLowerCase());
+  }
+  if (c.seedGoalAction !== "default") {
+    parts.push(optionLabel(seedGoalActions, c.seedGoalAction).toLowerCase());
+  }
+  const text = parts.join(", ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 export function CategoriesPage() {
@@ -218,9 +256,28 @@ export function CategoriesPage() {
   );
 }
 
-function CategoryDialog({ category, onClose }: { category?: Category; onClose: () => void }) {
+type Goals = Pick<
+  Category,
+  "ratioLimit" | "seedingTimeLimit" | "inactiveSeedingTimeLimit" | "seedGoalAction" | "seedGoalMode"
+>;
+
+export function CategoryDialog({
+  category,
+  onClose,
+}: {
+  category?: Category;
+  onClose: () => void;
+}) {
   const [name, setName] = useState(category?.name ?? "");
   const [savePath, setSavePath] = useState(category?.savePath ?? "");
+  const [goals, setGoals] = useState<Goals>({
+    ratioLimit: category?.ratioLimit ?? -2,
+    seedingTimeLimit: category?.seedingTimeLimit ?? -2,
+    inactiveSeedingTimeLimit: category?.inactiveSeedingTimeLimit ?? -2,
+    seedGoalAction: category?.seedGoalAction ?? "default",
+    seedGoalMode: category?.seedGoalMode ?? "default",
+  });
+  const setGoal = <K extends keyof Goals>(k: K, v: Goals[K]) => setGoals((g) => ({ ...g, [k]: v }));
   const { data: settings } = useQuery(settingsQuery);
   const qc = useQueryClient();
   const save = useMutation({
@@ -228,7 +285,7 @@ function CategoryDialog({ category, onClose }: { category?: Category; onClose: (
       unwrap(
         api.PUT("/categories/{name}", {
           params: { path: { name: name.trim() } },
-          body: { savePath: savePath.trim() },
+          body: { savePath: savePath.trim(), ...goals },
         }),
       ),
     onSuccess: (c) => {
@@ -255,7 +312,8 @@ function CategoryDialog({ category, onClose }: { category?: Category; onClose: (
           <DialogHeader>
             <DialogTitle>{category ? "Edit category" : "New category"}</DialogTitle>
             <DialogDescription>
-              Torrents in the category are saved under its path.
+              Torrents in the category are saved under its path, and seed to its goals unless they
+              set their own.
             </DialogDescription>
           </DialogHeader>
           <FieldGroup>
@@ -280,6 +338,53 @@ function CategoryDialog({ category, onClose }: { category?: Category; onClose: (
                 autoFocus={category !== undefined}
               />
               <FieldDescription>Empty uses the default save path.</FieldDescription>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="category-ratio">Ratio goal</FieldLabel>
+              <ShareLimitInput
+                id="category-ratio"
+                kind="ratio"
+                value={goals.ratioLimit}
+                onChange={(v) => setGoal("ratioLimit", v)}
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="category-seed-time">Seeding time goal</FieldLabel>
+              <ShareLimitInput
+                id="category-seed-time"
+                kind="minutes"
+                value={goals.seedingTimeLimit}
+                onChange={(v) => setGoal("seedingTimeLimit", v)}
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="category-inactive">Inactive time goal</FieldLabel>
+              <ShareLimitInput
+                id="category-inactive"
+                kind="minutes"
+                value={goals.inactiveSeedingTimeLimit}
+                onChange={(v) => setGoal("inactiveSeedingTimeLimit", v)}
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="category-goal-mode">Reached when</FieldLabel>
+              <OptionSelect
+                id="category-goal-mode"
+                value={goals.seedGoalMode}
+                options={withDefault(seedGoalModes, "Global setting")}
+                onChange={(v) => setGoal("seedGoalMode", v)}
+                className="max-w-64"
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="category-goal-action">Then</FieldLabel>
+              <OptionSelect
+                id="category-goal-action"
+                value={goals.seedGoalAction}
+                options={withDefault(seedGoalActions, "Global setting")}
+                onChange={(v) => setGoal("seedGoalAction", v)}
+                className="max-w-64"
+              />
             </Field>
           </FieldGroup>
           <DialogFooter>

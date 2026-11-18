@@ -55,11 +55,13 @@ type Settings struct {
 	PEX        bool   `json:"pex" doc:"Exchange peers with other peers."`
 	Encryption string `json:"encryption" enum:"prefer,require,disable" doc:"Peer connection encryption: prefer, require or disable."`
 
-	// Seeding goals. A torrent's own limits override these.
+	// Seeding goals. A torrent's own goals override these, then its
+	// category's.
 	RatioLimit               float64 `json:"ratioLimit" doc:"Stop seeding at this upload ratio, -1 for unlimited."`
 	SeedingTimeLimit         int64   `json:"seedingTimeLimit" doc:"Stop seeding after this many minutes, -1 for unlimited."`
 	InactiveSeedingTimeLimit int64   `json:"inactiveSeedingTimeLimit" doc:"Stop seeding after this many minutes without upload, -1 for unlimited."`
-	SeedGoalAction           string  `json:"seedGoalAction" enum:"stop,remove,removeWithData" doc:"What to do once a torrent reaches a seeding goal."`
+	SeedGoalAction           string  `json:"seedGoalAction" enum:"stop,remove,removeWithData" doc:"What to do once a torrent reaches its seeding goals."`
+	SeedGoalMode             string  `json:"seedGoalMode" enum:"any,all" doc:"Whether a torrent reaches its seeding goals when any one is met, or only when all that are set are."`
 
 	// Queueing
 	QueueingEnabled       bool  `json:"queueingEnabled" doc:"Run only a limited number of torrents at a time; the rest wait in the queue."`
@@ -117,6 +119,7 @@ func Defaults(defaultSavePath string) Settings {
 		SeedingTimeLimit:         -1,
 		InactiveSeedingTimeLimit: -1,
 		SeedGoalAction:           "stop",
+		SeedGoalMode:             "any",
 		MaxActiveDownloads:       3,
 		MaxActiveUploads:         3,
 		MaxActiveTorrents:        5,
@@ -171,6 +174,9 @@ func (s Settings) Validate() error {
 	}
 	if !slices.Contains([]string{"stop", "remove", "removeWithData"}, s.SeedGoalAction) {
 		errs = append(errs, errors.New("seedGoalAction: must be stop, remove or removeWithData"))
+	}
+	if !slices.Contains([]string{"any", "all"}, s.SeedGoalMode) {
+		errs = append(errs, errors.New("seedGoalMode: must be any or all"))
 	}
 	for name, v := range map[string]int{
 		"maxActiveDownloads": s.MaxActiveDownloads, "maxActiveUploads": s.MaxActiveUploads, "maxActiveTorrents": s.MaxActiveTorrents,

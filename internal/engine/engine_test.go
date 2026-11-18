@@ -131,7 +131,7 @@ func TestDownloadStopStartRestartRemove(t *testing.T) {
 	s := newSeeder(t, map[string]int{"a.bin": 300 << 10, "sub/b.bin": 100 << 10})
 	h := newHarness(t)
 
-	if err := h.engine.PutCategory(ctx, Category{Name: "movies"}, true); err != nil {
+	if err := h.engine.PutCategory(ctx, NewCategory("movies"), true); err != nil {
 		t.Fatal(err)
 	}
 	hash, err := h.engine.Add(ctx, AddParams{Metainfo: s.Metainfo, Category: "movies", Tags: []string{"test"}})

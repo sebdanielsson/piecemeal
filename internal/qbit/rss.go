@@ -251,8 +251,21 @@ func (s *Server) rssSetRule(w http.ResponseWriter, r *http.Request) {
 	// rule with every field at its default.
 	var def map[string]json.RawMessage
 	_ = json.Unmarshal([]byte(r.FormValue("ruleDef")), &def)
+	if wantsSuperSeeding(def) {
+		refuseSuperSeeding(w)
+		return
+	}
 	s.rss.SetRule(r.Context(), r.FormValue("ruleName"), decodeRule(def))
 	done(w)
+}
+
+// wantsSuperSeeding reports whether a rule definition's torrents would
+// turn on super seeding at their seeding goals, which piecemeal can't do.
+func wantsSuperSeeding(def map[string]json.RawMessage) bool {
+	var params map[string]json.RawMessage
+	var action string
+	return getJSON(def, "torrentParams", &params) && getJSON(params, "share_limit_action", &action) &&
+		action == superSeeding
 }
 
 func (s *Server) rssRenameRule(w http.ResponseWriter, r *http.Request) {
@@ -349,6 +362,10 @@ func (s *Server) rssImportRules(w http.ResponseWriter, r *http.Request) {
 		raw, _ := json.Marshal(v)
 		var def map[string]json.RawMessage
 		_ = json.Unmarshal(raw, &def)
+		if wantsSuperSeeding(def) {
+			refuseSuperSeeding(w)
+			return
+		}
 		decoded[name] = decodeRule(def)
 	}
 	for name, rule := range decoded {
@@ -483,11 +500,11 @@ func parseLastMatch(s string) (time.Time, bool) {
 
 // Torrent parameters piecemeal applies; the rest are kept for clients.
 var (
-	keptParams     = []string{"download_path", "download_limit", "upload_limit", "share_limit_action", "share_limits_mode", "ssl_certificate", "ssl_private_key", "ssl_dh_params"}
+	keptParams     = []string{"download_path", "download_limit", "upload_limit", "ssl_certificate", "ssl_private_key", "ssl_dh_params"}
 	keptWhenSet    = []string{"stop_condition", "use_auto_tmm", "use_download_path", "add_to_top_of_queue"}
 	keptParamsDefs = map[string]any{
-		"download_path": "", "download_limit": -1, "upload_limit": -1, "share_limit_action": "Default",
-		"share_limits_mode": "Default", "ssl_certificate": "", "ssl_private_key": "", "ssl_dh_params": "",
+		"download_path": "", "download_limit": -1, "upload_limit": -1, "ssl_certificate": "", "ssl_private_key": "",
+		"ssl_dh_params": "",
 	}
 )
 
@@ -532,6 +549,13 @@ func decodeTorrentParams(p map[string]json.RawMessage) rss.AddOptions {
 	if get("inactive_seeding_time_limit", &n) && n == math.Trunc(n) {
 		o.InactiveSeedingTimeLimit = int64(n)
 	}
+	// As in qBittorrent, a name it doesn't know is Default.
+	if get("share_limit_action", &str) {
+		o.SeedGoalAction, _ = parseShareLimitAction(str)
+	}
+	if get("share_limits_mode", &str) {
+		o.SeedGoalMode, _ = parseShareLimitsMode(str)
+	}
 	for _, k := range append(slices.Clone(keptParams), keptWhenSet...) {
 		if raw, ok := p[k]; ok && !bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 			if o.Extra == nil {
@@ -551,6 +575,7 @@ func encodeRule(r rss.Rule) map[string]any {
 		"category": o.Category, "save_path": o.SavePath, "seed_mode": o.SkipChecking, "operating_mode": "AutoManaged",
 		"ratio_limit": o.RatioLimit, "seeding_time_limit": o.SeedingTimeLimit,
 		"inactive_seeding_time_limit": o.InactiveSeedingTimeLimit,
+		"share_limit_action":          shareLimitAction(o.SeedGoalAction), "share_limits_mode": shareLimitsMode(o.SeedGoalMode),
 	}
 	if o.Forced {
 		params["operating_mode"] = "Forced"

@@ -25,7 +25,7 @@ A rule applies to the feeds you pick and decides, for each new article, whether 
 - **Ignore days** skips matches for that many days after the rule's last match, so a release posted in several qualities is taken once.
 - **Priority** orders the rules, lowest number first, as in qBittorrent. The first rule that matches an article takes it.
 
-Each rule says how to add what it takes: a category, tags, a save path, whether to start, the content layout, and seeding limits. The rule editor previews which articles in its feeds it matches now.
+Each rule says how to add what it takes: a category, tags, a save path, whether to start, the content layout, and seeding goals with what happens at them. The rule editor previews which articles in its feeds it matches now.
 
 Only unread articles are downloaded, newest first, and an article is marked read once its torrent is added. Unlike qBittorrent, piecemeal takes new articles even when a feed's `lastBuildDate` didn't change.
 

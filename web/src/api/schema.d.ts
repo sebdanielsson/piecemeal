@@ -886,6 +886,16 @@ export interface components {
       /** Format: double */
       ratioLimit: number;
       savePath?: string;
+      /**
+       * @description What happens when the torrent reaches its seeding goals; absent or default follows the category, then the global setting.
+       * @enum {string}
+       */
+      seedGoalAction?: "default" | "stop" | "remove" | "removeWithData";
+      /**
+       * @description Whether any goal or all of them must be met; absent or default follows the category, then the global setting.
+       * @enum {string}
+       */
+      seedGoalMode?: "default" | "any" | "all";
       /** Format: int64 */
       seedingTimeLimit: number;
       skipChecking?: boolean;
@@ -933,6 +943,16 @@ export interface components {
       /** Format: double */
       ratioLimit?: number;
       savePath?: string;
+      /**
+       * @description What happens when the torrent reaches its seeding goals; default follows the category, then the global setting.
+       * @enum {string}
+       */
+      seedGoalAction?: "default" | "stop" | "remove" | "removeWithData";
+      /**
+       * @description Whether any goal or all of them must be met; default follows the category, then the global setting.
+       * @enum {string}
+       */
+      seedGoalMode?: "default" | "any" | "all";
       /**
        * Format: int64
        * @description Minutes.
@@ -1029,9 +1049,34 @@ export interface components {
       items: components["schemas"]["Category"][] | null;
     };
     Category: {
+      /**
+       * Format: int64
+       * @description Minutes. -2 follows the global setting, -1 is unlimited.
+       */
+      inactiveSeedingTimeLimit: number;
       name: string;
+      /**
+       * Format: double
+       * @description -2 follows the global setting, -1 is unlimited.
+       */
+      ratioLimit: number;
       /** @description Where torrents in this category are saved; empty uses the default save path. */
       savePath: string;
+      /**
+       * @description What happens when a torrent reaches its seeding goals; default follows the global setting.
+       * @enum {string}
+       */
+      seedGoalAction: "default" | "stop" | "remove" | "removeWithData";
+      /**
+       * @description Whether any goal or all of them must be met; default follows the global setting.
+       * @enum {string}
+       */
+      seedGoalMode: "default" | "any" | "all";
+      /**
+       * Format: int64
+       * @description Minutes. -2 follows the global setting, -1 is unlimited.
+       */
+      seedingTimeLimit: number;
     };
     CreateAPIKeyRequest: {
       name: string;
@@ -1250,8 +1295,33 @@ export interface components {
       username: string;
     };
     PutCategoryInputBody: {
+      /**
+       * Format: int64
+       * @description Minutes. -2 follows the global setting, -1 is unlimited.
+       */
+      inactiveSeedingTimeLimit?: number;
+      /**
+       * Format: double
+       * @description -2 follows the global setting, -1 is unlimited.
+       */
+      ratioLimit?: number;
       /** @description Where torrents in this category are saved; empty uses the default save path. */
       savePath: string;
+      /**
+       * @description What happens when a torrent reaches its seeding goals; default follows the global setting.
+       * @enum {string}
+       */
+      seedGoalAction?: "default" | "stop" | "remove" | "removeWithData";
+      /**
+       * @description Whether any goal or all of them must be met; default follows the global setting.
+       * @enum {string}
+       */
+      seedGoalMode?: "default" | "any" | "all";
+      /**
+       * Format: int64
+       * @description Minutes. -2 follows the global setting, -1 is unlimited.
+       */
+      seedingTimeLimit?: number;
     };
     RSSTree: {
       /** @description Without articles. */
@@ -1298,6 +1368,24 @@ export interface components {
       smartFilter: boolean;
       /** @description MustContain and MustNotContain are regular expressions instead of wildcard terms. */
       useRegex: boolean;
+    };
+    SeedGoals: {
+      /** @enum {string} */
+      action: "stop" | "remove" | "removeWithData";
+      /**
+       * Format: int64
+       * @description Minutes.
+       */
+      inactiveSeedingTimeLimit: number;
+      /** @enum {string} */
+      mode: "any" | "all";
+      /** Format: double */
+      ratioLimit: number;
+      /**
+       * Format: int64
+       * @description Minutes.
+       */
+      seedingTimeLimit: number;
     };
     Session: {
       /** Format: date-time */
@@ -1464,10 +1552,15 @@ export interface components {
       /** @description Regular expressions, one per line, that find the episode in a title for the smart episode filter: two groups for season and episode, or one for a date. */
       rssSmartEpisodeFilters: string;
       /**
-       * @description What to do once a torrent reaches a seeding goal.
+       * @description What to do once a torrent reaches its seeding goals.
        * @enum {string}
        */
       seedGoalAction: "stop" | "remove" | "removeWithData";
+      /**
+       * @description Whether a torrent reaches its seeding goals when any one is met, or only when all that are set are.
+       * @enum {string}
+       */
+      seedGoalMode: "any" | "all";
       /**
        * Format: int64
        * @description Stop seeding after this many minutes, -1 for unlimited.
@@ -1597,7 +1690,7 @@ export interface components {
       hash: string;
       /**
        * Format: int64
-       * @description Minutes. -2 follows the global setting, -1 is unlimited.
+       * @description Minutes. -2 follows the category, then the global setting; -1 is unlimited.
        */
       inactiveSeedingTimeLimit: number;
       /**
@@ -1632,12 +1725,24 @@ export interface components {
       ratio: number;
       /**
        * Format: double
-       * @description -2 follows the global setting, -1 is unlimited.
+       * @description -2 follows the category, then the global setting; -1 is unlimited.
        */
       ratioLimit: number;
       /** @description The torrent's top folder, empty when it has none. */
       rootPath: string;
       savePath: string;
+      /**
+       * @description What happens when the torrent reaches its seeding goals; default follows the category, then the global setting.
+       * @enum {string}
+       */
+      seedGoalAction: "default" | "stop" | "remove" | "removeWithData";
+      /**
+       * @description Whether any goal or all of them must be met; default follows the category, then the global setting.
+       * @enum {string}
+       */
+      seedGoalMode: "default" | "any" | "all";
+      /** @description The seeding goals in effect, after following the defaults. */
+      seedGoals: components["schemas"]["SeedGoals"];
       /**
        * Format: int64
        * @description Seconds spent seeding, all time.
@@ -1645,7 +1750,7 @@ export interface components {
       seedingTime: number;
       /**
        * Format: int64
-       * @description Minutes. -2 follows the global setting, -1 is unlimited.
+       * @description Minutes. -2 follows the category, then the global setting; -1 is unlimited.
        */
       seedingTimeLimit: number;
       /**
@@ -1875,20 +1980,30 @@ export interface components {
       forced?: boolean;
       /**
        * Format: int64
-       * @description Minutes. -2 follows the global setting, -1 is unlimited.
+       * @description Minutes. -2 follows the category, then the global setting; -1 is unlimited.
        */
       inactiveSeedingTimeLimit?: number;
       name?: string;
       /**
        * Format: double
-       * @description -2 follows the global setting, -1 is unlimited.
+       * @description -2 follows the category, then the global setting; -1 is unlimited.
        */
       ratioLimit?: number;
       /** @description Moves the data there in the background; the state is moving until it's done. */
       savePath?: string;
       /**
+       * @description What happens when the torrent reaches its seeding goals; default follows the category, then the global setting.
+       * @enum {string}
+       */
+      seedGoalAction?: "default" | "stop" | "remove" | "removeWithData";
+      /**
+       * @description Whether any goal or all of them must be met; default follows the category, then the global setting.
+       * @enum {string}
+       */
+      seedGoalMode?: "default" | "any" | "all";
+      /**
        * Format: int64
-       * @description Minutes. -2 follows the global setting, -1 is unlimited.
+       * @description Minutes. -2 follows the category, then the global setting; -1 is unlimited.
        */
       seedingTimeLimit?: number;
       sequential?: boolean;
@@ -3751,10 +3866,15 @@ export interface operations {
           /** @description Regular expressions, one per line, that find the episode in a title for the smart episode filter: two groups for season and episode, or one for a date. */
           rssSmartEpisodeFilters?: string;
           /**
-           * @description What to do once a torrent reaches a seeding goal.
+           * @description What to do once a torrent reaches its seeding goals.
            * @enum {string}
            */
           seedGoalAction?: "stop" | "remove" | "removeWithData";
+          /**
+           * @description Whether a torrent reaches its seeding goals when any one is met, or only when all that are set are.
+           * @enum {string}
+           */
+          seedGoalMode?: "any" | "all";
           /**
            * Format: int64
            * @description Stop seeding after this many minutes, -1 for unlimited.

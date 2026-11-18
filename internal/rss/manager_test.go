@@ -299,3 +299,24 @@ func TestDroppedArticlesStayDropped(t *testing.T) {
 	e.waitFor("a refetch", func() bool { return e.m.Feeds(false)[0].FetchedAt.After(before) })
 	check("after a restart and a refetch")
 }
+
+// TestRulesFromBeforeShareLimits checks a rule saved by piecemeal 1.0,
+// which kept qBittorrent's share limit action and mode without applying
+// them, gets them as its own options.
+func TestRulesFromBeforeShareLimits(t *testing.T) {
+	e := newEnv(t)
+	def := `{"enabled":true,"priority":0,"useRegex":false,"mustContain":"x","mustNotContain":"","episodeFilter":"",` +
+		`"smartFilter":false,"previouslyMatchedEpisodes":[],"affectedFeeds":[],"ignoreDays":0,"add":{"ratioLimit":-2,` +
+		`"seedingTimeLimit":-2,"inactiveSeedingTimeLimit":-2,"extra":{"share_limit_action":"RemoveWithContent",` +
+		`"share_limits_mode":"MatchAll","download_path":"/x"}}}`
+	if err := e.store.PutRSSRule(e.ctx, store.PutRSSRuleParams{Name: "old", Def: def}); err != nil {
+		t.Fatal(err)
+	}
+	e.cancel()
+	e.start()
+	o := e.m.Rules()["old"].Add
+	if o.SeedGoalAction != engine.ActionRemoveWithData || o.SeedGoalMode != engine.ModeAll ||
+		len(o.Extra) != 1 || string(o.Extra["download_path"]) != `"/x"` {
+		t.Fatalf("upgraded options: %+v", o)
+	}
+}

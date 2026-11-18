@@ -111,7 +111,8 @@ func TestRSSFeeds(t *testing.T) {
 
 	// Rules, the way VueTorrent saves them, with torrentParams and a name.
 	def := `{"name":"Show","enabled":true,"mustContain":"Show 1080p","smartFilter":true,"affectedFeeds":["` + feedURL +
-		`"],"torrentParams":{"category":"rss","tags":["b","a"],"stopped":true,"download_limit":-1}}`
+		`"],"torrentParams":{"category":"rss","tags":["b","a"],"stopped":true,"download_limit":-1,` +
+		`"share_limit_action":"RemoveWithContent","share_limits_mode":"MatchAll"}}`
 	expect(t, "setRule", e.post("rss/setRule", url.Values{"ruleName": {"Show"}, "ruleDef": {def}}), http.StatusOK)
 	var rules map[string]map[string]any
 	rules = nil
@@ -119,9 +120,13 @@ func TestRSSFeeds(t *testing.T) {
 	rule := rules["Show"]
 	params := rule["torrentParams"].(map[string]any)
 	if len(rule) != 16 || rule["addPaused"] != true || rule["assignedCategory"] != "rss" || rule["lastMatch"] != "" ||
-		params["operating_mode"] != "AutoManaged" || fmt.Sprint(params["tags"]) != "[a b]" || params["share_limits_mode"] != "Default" {
+		params["operating_mode"] != "AutoManaged" || fmt.Sprint(params["tags"]) != "[a b]" ||
+		params["share_limit_action"] != "RemoveWithContent" || params["share_limits_mode"] != "MatchAll" {
 		t.Fatalf("rule: %v", rule)
 	}
+	superSeed := `{"torrentParams":{"share_limit_action":"EnableSuperSeeding"}}`
+	expect(t, "setRule with super seeding", e.post("rss/setRule", url.Values{"ruleName": {"Seed"}, "ruleDef": {superSeed}}), http.StatusConflict)
+	expect(t, "import with super seeding", e.importRules([]byte(`{"Seed":`+superSeed+`}`)), http.StatusConflict)
 	var matching map[string][]string
 	e.get("rss/matchingArticles?ruleName=Show").json(t, &matching)
 	if len(matching["Renamed"]) != 2 {
@@ -171,7 +176,8 @@ func TestRSSFeeds(t *testing.T) {
 	for {
 		var list []Torrent
 		e.get("torrents/info").json(t, &list)
-		if len(list) == 1 && list[0].Category == "rss" && list[0].Tags == "a, b" {
+		if len(list) == 1 && list[0].Category == "rss" && list[0].Tags == "a, b" &&
+			list[0].ShareLimitAction == "RemoveWithContent" && list[0].ShareLimitsMode == "MatchAll" {
 			break
 		}
 		if time.Now().After(deadline) {

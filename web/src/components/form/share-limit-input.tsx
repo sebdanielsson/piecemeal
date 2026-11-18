@@ -18,8 +18,9 @@ export function parseShareLimit(text: string, kind: "ratio" | "minutes"): number
 }
 
 /**
- * A seeding goal: a ratio, or a time in minutes. Per torrent, -2 follows
- * the global setting and -1 is unlimited; globally only -1 exists.
+ * A seeding goal: a ratio, or a time in minutes. Per torrent and per
+ * category, -2 follows the next level (labelled inheritLabel) and -1 is
+ * unlimited; globally only -1 exists.
  */
 export function ShareLimitInput({
   id,
@@ -27,6 +28,7 @@ export function ShareLimitInput({
   onChange,
   kind,
   allowGlobal = true,
+  inheritLabel = "Global setting",
   disabled,
 }: {
   id?: string;
@@ -34,6 +36,7 @@ export function ShareLimitInput({
   onChange: (value: number) => void;
   kind: "ratio" | "minutes";
   allowGlobal?: boolean;
+  inheritLabel?: string;
   disabled?: boolean;
 }) {
   const mode: Mode = value === -2 ? "global" : value < 0 ? "unlimited" : "custom";
@@ -48,7 +51,7 @@ export function ShareLimitInput({
     }
   }
   const options = [
-    ...(allowGlobal ? [{ value: "global" as const, label: "Global setting" }] : []),
+    ...(allowGlobal ? [{ value: "global" as const, label: inheritLabel }] : []),
     { value: "unlimited" as const, label: "Unlimited" },
     { value: "custom" as const, label: kind === "ratio" ? "Ratio" : "Minutes" },
   ];
@@ -60,7 +63,7 @@ export function ShareLimitInput({
         value={mode}
         options={options}
         disabled={disabled}
-        className="w-40"
+        className="w-44"
         onChange={(m) => {
           if (m === "global") {
             onChange(-2);

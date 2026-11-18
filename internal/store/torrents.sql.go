@@ -129,7 +129,7 @@ func (q *Queries) ListTorrentTags(ctx context.Context) ([]TorrentTag, error) {
 }
 
 const listTorrents = `-- name: ListTorrents :many
-SELECT info_hash, name, magnet, metainfo, save_path, category, added_at, completed_at, stopped, forced, sequential, first_last_piece, queue_position, uploaded, downloaded, seeding_seconds, active_seconds, last_activity_at, ratio_limit, seeding_time_limit, inactive_seeding_time_limit, file_priorities, error, trackers, web_seeds, file_paths, content_layout, comment FROM torrents ORDER BY added_at, info_hash
+SELECT info_hash, name, magnet, metainfo, save_path, category, added_at, completed_at, stopped, forced, sequential, first_last_piece, queue_position, uploaded, downloaded, seeding_seconds, active_seconds, last_activity_at, ratio_limit, seeding_time_limit, inactive_seeding_time_limit, file_priorities, error, trackers, web_seeds, file_paths, content_layout, comment, seed_goal_action, seed_goal_mode FROM torrents ORDER BY added_at, info_hash
 `
 
 func (q *Queries) ListTorrents(ctx context.Context) ([]Torrent, error) {
@@ -170,6 +170,8 @@ func (q *Queries) ListTorrents(ctx context.Context) ([]Torrent, error) {
 			&i.FilePaths,
 			&i.ContentLayout,
 			&i.Comment,
+			&i.SeedGoalAction,
+			&i.SeedGoalMode,
 		); err != nil {
 			return nil, err
 		}
@@ -203,7 +205,7 @@ INSERT INTO torrents (
     info_hash, name, magnet, metainfo, save_path, category, added_at, completed_at, stopped, forced,
     sequential, first_last_piece, queue_position, uploaded, downloaded, seeding_seconds, active_seconds,
     last_activity_at, ratio_limit, seeding_time_limit, inactive_seeding_time_limit, file_priorities,
-    error, trackers, web_seeds, file_paths, content_layout, comment
+    error, trackers, web_seeds, file_paths, content_layout, comment, seed_goal_action, seed_goal_mode
 ) VALUES (
     ?1, ?2, ?3, ?4, ?5,
     ?6, ?7, ?8, ?9, ?10,
@@ -212,7 +214,7 @@ INSERT INTO torrents (
     ?19, ?20, ?21,
     ?22, ?23,
     ?24, ?25, ?26, ?27,
-    ?28
+    ?28, ?29, ?30
 )
 ON CONFLICT (info_hash) DO UPDATE SET
     name = excluded.name,
@@ -240,7 +242,9 @@ ON CONFLICT (info_hash) DO UPDATE SET
     web_seeds = excluded.web_seeds,
     file_paths = excluded.file_paths,
     comment = excluded.comment,
-    content_layout = excluded.content_layout
+    content_layout = excluded.content_layout,
+    seed_goal_action = excluded.seed_goal_action,
+    seed_goal_mode = excluded.seed_goal_mode
 `
 
 type UpsertTorrentParams struct {
@@ -272,6 +276,8 @@ type UpsertTorrentParams struct {
 	FilePaths                string
 	ContentLayout            string
 	Comment                  sql.NullString
+	SeedGoalAction           string
+	SeedGoalMode             string
 }
 
 func (q *Queries) UpsertTorrent(ctx context.Context, arg UpsertTorrentParams) error {
@@ -304,6 +310,8 @@ func (q *Queries) UpsertTorrent(ctx context.Context, arg UpsertTorrentParams) er
 		arg.FilePaths,
 		arg.ContentLayout,
 		arg.Comment,
+		arg.SeedGoalAction,
+		arg.SeedGoalMode,
 	)
 	return err
 }

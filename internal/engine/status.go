@@ -9,6 +9,8 @@ import (
 
 	"github.com/anacrolix/dht/v2"
 	"github.com/anacrolix/torrent/types"
+
+	"github.com/sebdanielsson/piecemeal/internal/settings"
 )
 
 // State is a torrent's state. Stopped, queued and checking torrents are
@@ -84,10 +86,13 @@ type Torrent struct {
 	Tracker     string   `json:"tracker" doc:"The first tracker's URL."`
 	Error       string   `json:"error,omitempty"`
 
-	RatioLimit               float64 `json:"ratioLimit" doc:"-2 follows the global setting, -1 is unlimited."`
-	SeedingTimeLimit         int64   `json:"seedingTimeLimit" doc:"Minutes. -2 follows the global setting, -1 is unlimited."`
-	InactiveSeedingTimeLimit int64   `json:"inactiveSeedingTimeLimit" doc:"Minutes. -2 follows the global setting, -1 is unlimited."`
-	QueuePosition            int64   `json:"queuePosition"`
+	RatioLimit               float64   `json:"ratioLimit" doc:"-2 follows the category, then the global setting; -1 is unlimited."`
+	SeedingTimeLimit         int64     `json:"seedingTimeLimit" doc:"Minutes. -2 follows the category, then the global setting; -1 is unlimited."`
+	InactiveSeedingTimeLimit int64     `json:"inactiveSeedingTimeLimit" doc:"Minutes. -2 follows the category, then the global setting; -1 is unlimited."`
+	SeedGoalAction           string    `json:"seedGoalAction" enum:"default,stop,remove,removeWithData" doc:"What happens when the torrent reaches its seeding goals; default follows the category, then the global setting."`
+	SeedGoalMode             string    `json:"seedGoalMode" enum:"default,any,all" doc:"Whether any goal or all of them must be met; default follows the category, then the global setting."`
+	SeedGoals                SeedGoals `json:"seedGoals" doc:"The seeding goals in effect, after following the defaults."`
+	QueuePosition            int64     `json:"queuePosition"`
 }
 
 // TransferStatus is the client-wide transfer state.
@@ -149,6 +154,7 @@ type rates struct {
 func (e *Engine) tick(now time.Time) {
 	e.mu.Lock()
 	e.collectCountersLocked()
+	s := e.settings.Get()
 	prev := e.snap.Load()
 	next := &snapshot{byHash: make(map[string]*Torrent, len(e.torrents))}
 	var down, up float64
@@ -159,7 +165,7 @@ func (e *Engine) tick(now time.Time) {
 		if m.rec.Sequential && m.t != nil {
 			e.applyPiecePrioritiesLocked(m)
 		}
-		st := e.statusLocked(m)
+		st := e.statusLocked(m, s)
 		e.dialPendingLocked(m, st, maxConns)
 		next.list = append(next.list, st)
 		next.byHash[st.Hash] = st
@@ -328,7 +334,7 @@ func (m *managed) complete() bool {
 	return true
 }
 
-func (e *Engine) statusLocked(m *managed) *Torrent {
+func (e *Engine) statusLocked(m *managed, s settings.Settings) *Torrent {
 	r := m.rec
 	st := &Torrent{
 		Hash: r.InfoHash, Name: r.Name, HasMetadata: m.info != nil, Downloaded: r.Downloaded,
@@ -339,8 +345,9 @@ func (e *Engine) statusLocked(m *managed) *Torrent {
 		ActiveTime: r.ActiveSeconds, Stopped: r.Stopped, Forced: r.Forced, Sequential: r.Sequential,
 		FirstLast: r.FirstLastPiece, Magnet: r.Magnet, Error: r.Error, RatioLimit: r.RatioLimit,
 		SeedingTimeLimit: r.SeedingTimeLimit, InactiveSeedingTimeLimit: r.InactiveSeedingTimeLimit,
-		QueuePosition: r.QueuePosition,
-		Layout:        cmp.Or(r.ContentLayout, LayoutOriginal),
+		SeedGoalAction: cmp.Or(r.SeedGoalAction, ActionDefault), SeedGoalMode: cmp.Or(r.SeedGoalMode, ModeDefault),
+		SeedGoals: e.seedGoalsLocked(m, s), QueuePosition: r.QueuePosition,
+		Layout: cmp.Or(r.ContentLayout, LayoutOriginal),
 	}
 	if st.Tags == nil {
 		st.Tags = []string{}
@@ -477,8 +484,9 @@ func (e *Engine) refreshLocked(ms ...*managed) {
 		return
 	}
 	fresh := make(map[string]*Torrent, len(ms))
+	s := e.settings.Get()
 	for _, m := range ms {
-		fresh[m.rec.InfoHash] = e.statusLocked(m)
+		fresh[m.rec.InfoHash] = e.statusLocked(m, s)
 	}
 	prev := e.snap.Load()
 	next := &snapshot{byHash: make(map[string]*Torrent, len(prev.byHash)+len(ms)), transfer: prev.transfer}
@@ -531,56 +539,4 @@ func (e *Engine) removeFromSnapshot(hash string) {
 
 func (s *Torrent) equal(o *Torrent) bool {
 	return reflect.DeepEqual(s, o)
-}
-
-// enforceSeedGoals stops or removes complete torrents that reached a seeding
-// goal.
-func (e *Engine) enforceSeedGoals() {
-	s := e.settings.Get()
-	now := time.Now().Unix()
-	var reached []string
-	e.mu.Lock()
-	for _, m := range e.torrents {
-		if m.t == nil || m.info == nil || m.check != checkNone || !m.complete() {
-			continue
-		}
-		ratioLimit := m.rec.RatioLimit
-		if ratioLimit == -2 {
-			ratioLimit = s.RatioLimit
-		}
-		seedLimit := m.rec.SeedingTimeLimit
-		if seedLimit == -2 {
-			seedLimit = s.SeedingTimeLimit
-		}
-		inactiveLimit := m.rec.InactiveSeedingTimeLimit
-		if inactiveLimit == -2 {
-			inactiveLimit = s.InactiveSeedingTimeLimit
-		}
-		_, done := m.wanted()
-		r := ratio(m.rec.Uploaded, m.rec.Downloaded, done)
-		lastActive := max(m.rec.LastActivityAt, m.rec.CompletedAt)
-		switch {
-		case ratioLimit >= 0 && r >= ratioLimit:
-		case seedLimit >= 0 && m.rec.SeedingSeconds >= seedLimit*60:
-		case inactiveLimit >= 0 && lastActive > 0 && now-lastActive >= inactiveLimit*60:
-		default:
-			continue
-		}
-		reached = append(reached, m.rec.InfoHash)
-	}
-	e.mu.Unlock()
-	if len(reached) == 0 {
-		return
-	}
-	ctx := e.ctxOrBackground()
-	var err error
-	switch s.SeedGoalAction {
-	case "remove":
-		err = e.Remove(ctx, false, reached...)
-	case "removeWithData":
-		err = e.Remove(ctx, true, reached...)
-	default:
-		err = e.Stop(ctx, reached...)
-	}
-	e.log.Info("seeding goal reached", "torrents", reached, "action", s.SeedGoalAction, "error", err)
 }

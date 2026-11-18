@@ -217,7 +217,8 @@ func (m *Manager) add(ctx context.Context, torrentURL string, o AddOptions) (str
 	}
 	p := engine.AddParams{
 		Category: o.Category, Tags: o.Tags, SavePath: o.SavePath, Stopped: o.Stopped,
-		ContentLayout: o.ContentLayout, SkipChecking: o.SkipChecking,
+		ContentLayout: o.ContentLayout, SkipChecking: o.SkipChecking, SeedGoalAction: o.SeedGoalAction,
+		SeedGoalMode: o.SeedGoalMode,
 	}
 	if o.RatioLimit != -2 {
 		p.RatioLimit = &o.RatioLimit
@@ -238,7 +239,7 @@ func (m *Manager) add(ctx context.Context, torrentURL string, o AddOptions) (str
 		return "", err
 	}
 	if o.Category != "" {
-		if err := m.d.Engine.PutCategory(ctx, engine.Category{Name: o.Category}, true); err != nil && !errors.Is(err, engine.ErrExists) {
+		if err := m.d.Engine.PutCategory(ctx, engine.NewCategory(o.Category), true); err != nil && !errors.Is(err, engine.ErrExists) {
 			return "", err
 		}
 	}

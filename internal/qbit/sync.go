@@ -343,8 +343,9 @@ func (s *Server) maindata(w http.ResponseWriter, r *http.Request) {
 func categoryObject(c engine.Category) map[string]any {
 	return map[string]any{
 		"name": c.Name, "savePath": c.SavePath, "download_path": nil,
-		"ratio_limit": -2, "seeding_time_limit": -2, "inactive_seeding_time_limit": -2,
-		"share_limit_action": "Default", "share_limits_mode": "Default",
+		"ratio_limit": c.RatioLimit, "seeding_time_limit": c.SeedingTimeLimit,
+		"inactive_seeding_time_limit": c.InactiveSeedingTimeLimit,
+		"share_limit_action":          shareLimitAction(c.SeedGoalAction), "share_limits_mode": shareLimitsMode(c.SeedGoalMode),
 	}
 }
 

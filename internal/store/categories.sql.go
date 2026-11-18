@@ -52,7 +52,7 @@ func (q *Queries) DeleteTag(ctx context.Context, name string) (int64, error) {
 }
 
 const listCategories = `-- name: ListCategories :many
-SELECT name, save_path FROM categories ORDER BY name
+SELECT name, save_path, ratio_limit, seeding_time_limit, inactive_seeding_time_limit, seed_goal_action, seed_goal_mode FROM categories ORDER BY name
 `
 
 func (q *Queries) ListCategories(ctx context.Context) ([]Category, error) {
@@ -64,7 +64,15 @@ func (q *Queries) ListCategories(ctx context.Context) ([]Category, error) {
 	items := []Category{}
 	for rows.Next() {
 		var i Category
-		if err := rows.Scan(&i.Name, &i.SavePath); err != nil {
+		if err := rows.Scan(
+			&i.Name,
+			&i.SavePath,
+			&i.RatioLimit,
+			&i.SeedingTimeLimit,
+			&i.InactiveSeedingTimeLimit,
+			&i.SeedGoalAction,
+			&i.SeedGoalMode,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -106,16 +114,40 @@ func (q *Queries) ListTags(ctx context.Context) ([]string, error) {
 }
 
 const upsertCategory = `-- name: UpsertCategory :exec
-INSERT INTO categories (name, save_path) VALUES (?1, ?2)
-ON CONFLICT (name) DO UPDATE SET save_path = excluded.save_path
+INSERT INTO categories (
+    name, save_path, ratio_limit, seeding_time_limit, inactive_seeding_time_limit, seed_goal_action, seed_goal_mode
+) VALUES (
+    ?1, ?2, ?3, ?4,
+    ?5, ?6, ?7
+)
+ON CONFLICT (name) DO UPDATE SET
+    save_path = excluded.save_path,
+    ratio_limit = excluded.ratio_limit,
+    seeding_time_limit = excluded.seeding_time_limit,
+    inactive_seeding_time_limit = excluded.inactive_seeding_time_limit,
+    seed_goal_action = excluded.seed_goal_action,
+    seed_goal_mode = excluded.seed_goal_mode
 `
 
 type UpsertCategoryParams struct {
-	Name     string
-	SavePath string
+	Name                     string
+	SavePath                 string
+	RatioLimit               float64
+	SeedingTimeLimit         int64
+	InactiveSeedingTimeLimit int64
+	SeedGoalAction           string
+	SeedGoalMode             string
 }
 
 func (q *Queries) UpsertCategory(ctx context.Context, arg UpsertCategoryParams) error {
-	_, err := q.db.ExecContext(ctx, upsertCategory, arg.Name, arg.SavePath)
+	_, err := q.db.ExecContext(ctx, upsertCategory,
+		arg.Name,
+		arg.SavePath,
+		arg.RatioLimit,
+		arg.SeedingTimeLimit,
+		arg.InactiveSeedingTimeLimit,
+		arg.SeedGoalAction,
+		arg.SeedGoalMode,
+	)
 	return err
 }

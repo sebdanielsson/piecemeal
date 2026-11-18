@@ -214,6 +214,7 @@ func (m *Manager) load(ctx context.Context) error {
 			m.d.Log.Warn("skipping an unreadable RSS rule", "rule", r.Name, "error", err)
 			continue
 		}
+		rule.Add.upgrade()
 		m.rules[r.Name] = rule
 	}
 	return nil

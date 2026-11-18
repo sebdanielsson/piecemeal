@@ -18,7 +18,7 @@ The torrent engine is [anacrolix/torrent](https://github.com/anacrolix/torrent),
 - **Web UI.** Filter by state, category, tag and tracker; select and act on many torrents; inspect files, peers, trackers and a live piece map; drag a `.torrent` anywhere to add it. It works on a phone too.
 - **Users and SSO.** A local admin from configuration, plus users from any OpenID Connect provider, with admin and allowed groups. API keys are scoped: full, qBittorrent API only, or read-only.
 - **RSS.** Feeds in folders, and download rules with qBittorrent's matching: wildcards or regular expressions, episode filters and the smart episode filter.
-- **Queueing and seeding goals.** Limit how many torrents download and seed at once, and stop or remove torrents at a ratio, a seeding time or an idle time.
+- **Queueing and seeding goals.** Limit how many torrents download and seed at once, and stop or remove torrents at a ratio, a seeding time or an idle time, or only once every goal is met. Set goals globally, per category or per torrent.
 - **Speed limits and schedule.** Global and alternative limits, with a schedule that switches between them.
 - **VPN-friendly.** Run in a WireGuard container's network namespace and forward the peer port with NAT-PMP; piecemeal follows the port when the VPN changes it.
 - **Safe by default.** Save paths are confined to allowed directories, fetches by URL refuse private addresses, sign-ins are rate limited, and every request from a browser is checked for CSRF. See [Security](reference/security.md).

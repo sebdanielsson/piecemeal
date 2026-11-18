@@ -39,7 +39,9 @@ Without that, grabs fail with "address not allowed" in piecemeal's log, under **
 
 ## Seeding goals
 
-The \*arrs' per-indexer seed ratio and seed time arrive as the torrent's own limits and override the global ones in **Settings**. When a torrent meets its goal, piecemeal stops it, or removes it, as `seedGoalAction` says. With **Remove Completed** on, the \*arr removes torrents itself once they're stopped after seeding.
+The \*arrs' per-indexer seed ratio and seed time arrive as the torrent's own limits and override the goals of its category and the global ones in **Settings**. When a torrent reaches its goals, piecemeal stops it, or removes it, as its category or else `seedGoalAction` says. Leave that at stop for the \*arrs' categories: with **Remove Completed** on, the \*arr removes torrents itself once they're stopped after seeding, and it can't import a download piecemeal has already removed.
+
+By default any one goal ends seeding. With **Reached when** set to every goal, in **Settings** or on the category, a torrent seeds until it has met both the ratio and the seed time it was given.
 
 ## Several instances
 

@@ -271,6 +271,14 @@ func preferencesToSettings(in map[string]any, cur settings.Settings) (map[string
 			bad("max_ratio_act")
 		}
 	}
+	if v, ok := in["share_limits_mode"]; ok {
+		// qBittorrent stores MatchAny for anything but MatchAll, Default
+		// included.
+		out["seedGoalMode"] = "any"
+		if v == "MatchAll" {
+			out["seedGoalMode"] = "all"
+		}
+	}
 
 	// qBittorrent takes any number; piecemeal checks at least one torrent
 	// at a time.
