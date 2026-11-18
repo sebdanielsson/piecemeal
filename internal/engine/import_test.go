@@ -47,7 +47,7 @@ func TestReadTransmission(t *testing.T) {
 	}
 	byHash := importedByHash(t, items)
 	show, single := byHash[showHash], byHash[singleHash]
-	if show.SavePath != "/downloads" || show.Stopped || !slices.Equal(show.Tags, []string{"tv", "hd"}) ||
+	if show.SavePath != "/downloads" || show.Stopped || !slices.Equal(show.Tags, []string{"tv", "hd"}) || show.Category != "tv" ||
 		!slices.Equal(show.Skip, []bool{false, false, true}) || show.Paths[1] != "Show.S01/S01E02.mkv" ||
 		!show.Complete || show.AddedAt.IsZero() || show.RatioLimit != -2 || show.InactiveSeedingTimeLimit != -2 {
 		t.Fatalf("show: %+v", show)
