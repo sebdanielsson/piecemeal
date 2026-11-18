@@ -1,0 +1,5 @@
+# GHSA-9wv6-86v2-598j: @vercel/routing-utils (through Blume's Vercel
+# adapter) still pins path-to-regexp 6.1.0; 6.3.0 is the fixed release of
+# the same major. Drop this once routing-utils updates it.
+overrides:
+  path-to-regexp@6.1.0: 6.3.0
