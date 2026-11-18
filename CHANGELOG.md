@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0](https://github.com/sebdanielsson/piecemeal/compare/v0.4.0...v0.5.0) (2026-11-18)
+
+
+### Features
+
+* RSS feeds and download rules ([#21](https://github.com/sebdanielsson/piecemeal/issues/21)) ([df2301c](https://github.com/sebdanielsson/piecemeal/commit/df2301ccafd589018637a98f0223020b8e3a8522))
+
+
+### Bug Fixes
+
+* **engine:** report a torrent complete only once its pieces are verified ([#20](https://github.com/sebdanielsson/piecemeal/issues/20)) ([6c5b949](https://github.com/sebdanielsson/piecemeal/commit/6c5b9490ea943867bc0d72f9c5f812d28876d192))
+
 ## [0.4.0](https://github.com/sebdanielsson/piecemeal/compare/v0.3.0...v0.4.0) (2026-11-18)
 
 
