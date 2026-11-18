@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dlclark/regexp2"
+	"github.com/dlclark/regexp2/v2"
 )
 
 // regexTimeout bounds one match of a user's regular expression: regexp2
