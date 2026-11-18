@@ -215,7 +215,12 @@
             "type": "boolean"
           },
           "oidc": {
+            "description": "Sign in by sending the browser to /api/piecemeal/v1/auth/oidc/login.",
             "type": "boolean"
+          },
+          "oidcName": {
+            "description": "What to call the OIDC provider on the sign-in button.",
+            "type": "string"
           }
         },
         "required": [

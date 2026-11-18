@@ -31,8 +31,9 @@ type meOutput struct{ Body *auth.Principal }
 
 // AuthConfig tells the sign-in page which methods are available.
 type AuthConfig struct {
-	LocalLogin bool `json:"localLogin"`
-	OIDC       bool `json:"oidc"`
+	LocalLogin bool   `json:"localLogin"`
+	OIDC       bool   `json:"oidc" doc:"Sign in by sending the browser to /api/piecemeal/v1/auth/oidc/login."`
+	OIDCName   string `json:"oidcName,omitempty" doc:"What to call the OIDC provider on the sign-in button."`
 }
 
 type authConfigOutput struct{ Body AuthConfig }
@@ -113,7 +114,11 @@ func (a *API) registerAuth() {
 	const tag = "Auth"
 	huma.Register(a.huma, a.operation(http.MethodGet, "/auth/config", "getAuthConfig", "Get the sign-in methods", tag, accessPublic),
 		func(context.Context, *struct{}) (*authConfigOutput, error) {
-			return &authConfigOutput{Body: AuthConfig{LocalLogin: a.Auth.Config().LocalLogin}}, nil
+			c := AuthConfig{LocalLogin: a.Auth.Config().LocalLogin}
+			if a.OIDC != nil {
+				c.OIDC, c.OIDCName = true, a.OIDC.Config().Name
+			}
+			return &authConfigOutput{Body: c}, nil
 		})
 
 	op := a.operation(http.MethodPost, "/auth/login", "login", "Sign in with a password", tag, accessPublic)

@@ -48,9 +48,29 @@ type Config struct {
 	// "off".
 	Metrics string
 
+	// PublicURL is where people reach piecemeal, such as
+	// https://piecemeal.example.com. OIDC needs it for its callback.
+	PublicURL string
+	OIDC      OIDC
+
 	LogLevel  string
 	LogFormat string
 }
+
+// OIDC is sign-in through an OpenID Connect provider.
+type OIDC struct {
+	Issuer        string
+	ClientID      string
+	ClientSecret  string
+	RedirectURL   string
+	Name          string
+	GroupsClaim   string
+	AllowedGroups []string
+	AdminGroups   []string
+}
+
+// OIDCCallbackPath is the OIDC redirect path, under the public URL.
+const OIDCCallbackPath = "/api/piecemeal/v1/auth/oidc/callback"
 
 // FromEnv reads the configuration from getenv (os.Getenv in production).
 func FromEnv(getenv func(string) string) (Config, error) {
@@ -106,6 +126,28 @@ func FromEnv(getenv func(string) string) (Config, error) {
 		Metrics:              get("METRICS", "auth"),
 		LogLevel:             get("LOG_LEVEL", "info"),
 		LogFormat:            get("LOG_FORMAT", "json"),
+		PublicURL:            strings.TrimRight(get("PUBLIC_URL", ""), "/"),
+		OIDC: OIDC{
+			Issuer:        get("OIDC_ISSUER", ""),
+			ClientID:      get("OIDC_CLIENT_ID", ""),
+			ClientSecret:  get("OIDC_CLIENT_SECRET", ""),
+			RedirectURL:   get("OIDC_REDIRECT_URL", ""),
+			Name:          get("OIDC_NAME", "SSO"),
+			GroupsClaim:   get("OIDC_GROUPS_CLAIM", "groups"),
+			AllowedGroups: list(get("OIDC_ALLOWED_GROUPS", "")),
+			AdminGroups:   list(get("OIDC_ADMIN_GROUPS", "")),
+		},
+	}
+	if c.OIDC.Issuer != "" {
+		if c.OIDC.ClientID == "" {
+			errs = append(errs, errors.New("PIECEMEAL_OIDC_CLIENT_ID: required with PIECEMEAL_OIDC_ISSUER"))
+		}
+		if c.OIDC.RedirectURL == "" {
+			if c.PublicURL == "" {
+				errs = append(errs, errors.New("PIECEMEAL_PUBLIC_URL: required with PIECEMEAL_OIDC_ISSUER, for the callback URL"))
+			}
+			c.OIDC.RedirectURL = c.PublicURL + OIDCCallbackPath
+		}
 	}
 	if gw := get("NATPMP_GATEWAY", ""); gw != "" {
 		c.NATPMPGateway = net.ParseIP(gw)

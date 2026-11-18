@@ -45,7 +45,9 @@ type Deps struct {
 	Logs      *logbuf.Buffer
 	// NATPMP is nil when port forwarding isn't configured.
 	NATPMP *natpmp.Mapper
-	Log    *slog.Logger
+	// OIDC is nil when OIDC sign-in isn't configured.
+	OIDC *auth.OIDC
+	Log  *slog.Logger
 	// System is static information for GET /system.
 	System SystemInfo
 }
@@ -104,6 +106,7 @@ func New(mux *http.ServeMux, d Deps) *API {
 	a.huma.UseMiddleware(a.authMiddleware)
 
 	a.registerAuth()
+	a.registerOIDC(mux)
 	a.registerTorrents()
 	a.registerCategories()
 	a.registerSystem()
