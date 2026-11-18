@@ -5,7 +5,8 @@
     "customManagers:dockerfileVersions"
   ],
   "postUpdateOptions": [
-    "gomodTidy"
+    "gomodTidy",
+    "gomodUpdateImportPaths"
   ],
   "packageRules": [
     {
