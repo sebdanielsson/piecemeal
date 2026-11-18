@@ -151,6 +151,7 @@ func (e *Engine) tick(now time.Time) {
 	prev := e.snap.Load()
 	next := &snapshot{byHash: make(map[string]*Torrent, len(e.torrents))}
 	var down, up float64
+	maxConns := e.settings.Get().MaxConnectionsPerTorrent
 	for _, m := range e.torrents {
 		e.updateRates(m, now)
 		e.updateTimes(m, now)
@@ -158,6 +159,7 @@ func (e *Engine) tick(now time.Time) {
 			e.applyPiecePrioritiesLocked(m)
 		}
 		st := e.statusLocked(m)
+		e.dialPendingLocked(m, st, maxConns)
 		next.list = append(next.list, st)
 		next.byHash[st.Hash] = st
 		down += m.rates.downR
