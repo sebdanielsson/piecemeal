@@ -111,16 +111,22 @@ type Service struct {
 	// verifying bounds concurrent password verifications.
 	verifying chan struct{}
 
-	basicMu     sync.Mutex
-	basicOK     map[[32]byte]time.Time
-	basicSalt   []byte
-	basicFlight singleflight.Group
-	now         func() time.Time
+	// basicHashing bounds concurrent Basic cache-key hashes, 4 MiB each.
+	basicHashing chan struct{}
+	basicMu      sync.Mutex
+	basicOK      map[[32]byte]time.Time
+	basicSalt    []byte
+	basicFlight  singleflight.Group
+	now          func() time.Time
 
 	adminID int64
 
 	touchMu sync.Mutex
 	touched map[string]time.Time
+
+	// proxyWarning is logged once, for X-Forwarded-For from a peer that
+	// isn't a trusted proxy.
+	proxyWarning sync.Once
 }
 
 // Errors.
@@ -130,6 +136,7 @@ var (
 	ErrLockedOut       = errors.New("too many failed sign-ins; try again later")
 	ErrLocalDisabled   = errors.New("password sign-in is turned off")
 	ErrNotFound        = errors.New("not found")
+	ErrKeepUser        = errors.New("the local admin and your own user can't be removed")
 )
 
 // New creates the service and makes sure the local admin user exists.
@@ -143,6 +150,7 @@ func New(ctx context.Context, cfg Config, st *store.Store, log *slog.Logger) (*S
 	if cfg.IdleTTL == 0 {
 		cfg.IdleTTL = 7 * 24 * time.Hour
 	}
+	configuredHash := cfg.AdminPasswordHash
 	if cfg.AdminPasswordHash == "" && cfg.LocalLogin {
 		pw := randomToken(12)
 		h, err := HashPassword(pw)
@@ -166,7 +174,7 @@ func New(ctx context.Context, cfg Config, st *store.Store, log *slog.Logger) (*S
 	}
 	s := &Service{
 		cfg: cfg, store: st, log: log, limiter: newLoginLimiter(5, 15*time.Minute), now: time.Now,
-		verifying: make(chan struct{}, 2), basicOK: map[[32]byte]time.Time{}, basicSalt: []byte(randomToken(16)),
+		verifying: make(chan struct{}, 2), basicHashing: make(chan struct{}, 4), basicOK: map[[32]byte]time.Time{}, basicSalt: []byte(randomToken(16)),
 		touched: map[string]time.Time{},
 	}
 	u, err := st.GetUserByUsername(ctx, cfg.AdminUsername)
@@ -188,7 +196,68 @@ func New(ctx context.Context, cfg Config, st *store.Store, log *slog.Logger) (*S
 		}
 	}
 	s.adminID = u.ID
+	if err := s.revokeOnPasswordChange(ctx, configuredHash); err != nil {
+		return nil, err
+	}
 	return s, nil
+}
+
+// revokeOnPasswordChange signs the local admin out everywhere when the
+// configured password hash differs from the one at the last start, as after
+// rotating it following a suspected compromise.
+func (s *Service) revokeOnPasswordChange(ctx context.Context, hash string) error {
+	if hash == "" {
+		return nil
+	}
+	sum := sha256.Sum256([]byte(hash))
+	fp := hex.EncodeToString(sum[:8])
+	const ns, key = "auth", "adminPasswordFingerprint"
+	rows, err := s.store.ListKV(ctx, ns)
+	if err != nil {
+		return err
+	}
+	old := ""
+	for _, r := range rows {
+		if r.Key == key {
+			old = r.Value
+		}
+	}
+	if old == fp {
+		return nil
+	}
+	if old != "" {
+		if err := s.store.DeleteUserSessions(ctx, s.adminID); err != nil {
+			return err
+		}
+		s.log.Warn("the admin password changed, so the admin's sessions were ended; review the admin's API keys too")
+		s.audit(ctx, "piecemeal", "user.passwordChanged", s.cfg.AdminUsername)
+	}
+	return s.store.PutKV(ctx, store.PutKVParams{Namespace: ns, Key: key, Value: fp})
+}
+
+// DeleteUser removes a user with their sessions and API keys. An SSO user
+// who may still sign in is created again on their next sign-in, without
+// the keys.
+func (s *Service) DeleteUser(ctx context.Context, by *Principal, id int64) error {
+	if id == s.adminID || (by != nil && id == by.UserID) {
+		return ErrKeepUser
+	}
+	u, err := s.store.GetUser(ctx, id)
+	if store.IsNotFound(err) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if _, err := s.store.DeleteUser(ctx, id); err != nil {
+		return err
+	}
+	actor := ""
+	if by != nil {
+		actor = by.Username
+	}
+	s.audit(ctx, actor, "user.delete", u.Username)
+	return nil
 }
 
 // Config returns the service's configuration.
@@ -207,10 +276,20 @@ func (s *Service) Login(ctx context.Context, r *http.Request, username, password
 // them. Successes are remembered for a few minutes, so clients that send
 // Basic on every request don't pay for a password hash each time.
 func (s *Service) Basic(ctx context.Context, r *http.Request, username, password string) (*Principal, error) {
+	now := s.now()
+	// A locked-out address gets nothing, not even the cache-key hash.
+	if s.limiter.locked(s.ClientIP(r), now) {
+		return nil, ErrLockedOut
+	}
 	// The cache key is a cheap argon2id hash with a per-process salt, so the
 	// cache never holds anything a password could be recovered from.
+	select {
+	case s.basicHashing <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 	key := [32]byte(argon2.IDKey([]byte(username+"\x00"+password), s.basicSalt, 1, 4*1024, 1, 32))
-	now := s.now()
+	<-s.basicHashing
 	s.basicMu.Lock()
 	exp, ok := s.basicOK[key]
 	s.basicMu.Unlock()
@@ -593,6 +672,13 @@ func (s *Service) ClientIP(r *http.Request) string {
 		return host
 	}
 	if !s.trusted(addr) {
+		if r.Header.Get("X-Forwarded-For") != "" {
+			s.proxyWarning.Do(func() {
+				s.log.Warn("a request came through a proxy that isn't trusted, so its X-Forwarded-For is ignored and "+
+					"every client behind it shares one address for the sign-in lockout; set PIECEMEAL_TRUSTED_PROXIES",
+					"proxy", addr.Unmap().String())
+			})
+		}
 		return addr.Unmap().String()
 	}
 	// Walk X-Forwarded-For from the right, skipping trusted proxies.
@@ -682,6 +768,19 @@ func newLoginLimiter(maxFails int, window time.Duration) *loginLimiter {
 	return &loginLimiter{max: maxFails, window: window, fails: map[string][]time.Time{}}
 }
 
+// limitKey is the address the limiter counts by: an IPv6 client's /64,
+// since one host usually has the whole /64, or the IPv4 address.
+func limitKey(ip string) string {
+	a, err := netip.ParseAddr(ip)
+	if err != nil || a.Unmap().Is4() {
+		return ip
+	}
+	return netip.PrefixFrom(a, 64).Masked().String()
+}
+
+// maxTracked bounds the addresses the limiter remembers.
+const maxTracked = 100000
+
 func (l *loginLimiter) recent(ip string, now time.Time) []time.Time {
 	f := slices.DeleteFunc(l.fails[ip], func(t time.Time) bool { return now.Sub(t) >= l.window })
 	if len(f) == 0 {
@@ -694,23 +793,40 @@ func (l *loginLimiter) recent(ip string, now time.Time) []time.Time {
 
 // begin records an attempt and reports whether it may go ahead.
 func (l *loginLimiter) begin(ip string, now time.Time) bool {
+	ip = limitKey(ip)
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	f := l.recent(ip, now)
 	if len(f) >= l.max {
 		return false
 	}
-	l.fails[ip] = append(f, now)
-	if len(l.fails) > 100000 {
-		clear(l.fails)
+	if len(f) == 0 && len(l.fails) >= maxTracked {
+		// Too many addresses: drop the expired ones, and if that isn't
+		// enough, refuse new addresses rather than forget the others.
+		for k := range l.fails {
+			l.recent(k, now)
+		}
+		if len(l.fails) >= maxTracked {
+			return false
+		}
 	}
+	l.fails[ip] = append(f, now)
 	return true
+}
+
+// locked reports whether an address is locked out, without counting an
+// attempt.
+func (l *loginLimiter) locked(ip string, now time.Time) bool {
+	ip = limitKey(ip)
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return len(l.recent(ip, now)) >= l.max
 }
 
 func (l *loginLimiter) reset(ip string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	delete(l.fails, ip)
+	delete(l.fails, limitKey(ip))
 }
 
 // usernames maps user IDs to usernames.

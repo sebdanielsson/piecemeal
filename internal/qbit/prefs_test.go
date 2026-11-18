@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"maps"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -311,5 +312,63 @@ func TestNonAdminWrites(t *testing.T) {
 	p := e.preferences()
 	if p["dl_limit"] != 2048.0 || p["dht"] != false || p["banned_IPs"] != "" {
 		t.Fatalf("after a user's writes: dl_limit %v, dht %v, banned %q", p["dl_limit"], p["dht"], p["banned_IPs"])
+	}
+}
+
+// TestAdminEndpointsNeedFullScope checks that keys an admin made for an
+// *arr app or a dashboard can't use admin endpoints, as in the native API.
+func TestAdminEndpointsNeedFullScope(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	_, p, err := e.auth.Login(ctx, httptest.NewRequest(http.MethodPost, "/", nil), "admin", "adminadmin", auth.KindWeb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := map[auth.Scope]string{}
+	for _, scope := range []auth.Scope{auth.ScopeFull, auth.ScopeQBittorrent, auth.ScopeReadOnly} {
+		_, k, err := e.auth.CreateAPIKey(ctx, p, string(scope), scope)
+		if err != nil {
+			t.Fatal(err)
+		}
+		keys[scope] = k
+	}
+	routes := []struct {
+		method, path string
+		form         url.Values
+	}{
+		{http.MethodGet, "app/cookies", nil},
+		{http.MethodPost, "app/setCookies", url.Values{"cookies": {"[]"}}},
+		{http.MethodGet, "log/main", nil},
+		{http.MethodPost, "transfer/banPeers", url.Values{"peers": {"203.0.113.9:1"}}},
+		{http.MethodPost, "rss/addFolder", url.Values{"path": {"F"}}},
+		{http.MethodPost, "rss/setRule", url.Values{"ruleName": {"r"}, "ruleDef": {"{}"}}},
+	}
+	for scope, key := range keys {
+		bearer := []string{"Authorization", "Bearer " + key}
+		for _, rt := range routes {
+			var r response
+			if rt.method == http.MethodGet {
+				r = e.get(rt.path, bearer...)
+			} else {
+				r = e.post(rt.path, rt.form, bearer...)
+			}
+			allowed := r.status != http.StatusForbidden
+			if allowed != (scope == auth.ScopeFull) {
+				t.Errorf("%s key, %s: status %d", scope, rt.path, r.status)
+			}
+		}
+		// setPreferences takes only the speed limits from keys that aren't
+		// full.
+		b, _ := json.Marshal(map[string]any{"dht": true})
+		e.post("app/setPreferences", url.Values{"json": {string(b)}}, bearer...)
+	}
+	e.login()
+	if p := e.preferences(); p["dht"] != true {
+		t.Fatalf("a full key couldn't change DHT: %v", p["dht"])
+	}
+	b, _ := json.Marshal(map[string]any{"dht": false})
+	e.post("app/setPreferences", url.Values{"json": {string(b)}}, "Authorization", "Bearer "+keys[auth.ScopeQBittorrent])
+	if p := e.preferences(); p["dht"] != true {
+		t.Fatal("a qbittorrent key changed DHT")
 	}
 }

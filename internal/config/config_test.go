@@ -84,4 +84,16 @@ func TestOIDC(t *testing.T) {
 	if c.OIDC.RedirectURL != "https://piecemeal.example.com/api/piecemeal/v1/auth/oidc/callback" || len(c.OIDC.AllowedGroups) != 2 {
 		t.Fatalf("oidc: %+v", c.OIDC)
 	}
+	// Letting every account in is a choice to make, not a default.
+	base := map[string]string{
+		"PIECEMEAL_OIDC_ISSUER": "https://id.example.com", "PIECEMEAL_OIDC_CLIENT_ID": "pm",
+		"PIECEMEAL_PUBLIC_URL": "https://piecemeal.example.com",
+	}
+	if _, err := FromEnv(env(base)); err == nil || !strings.Contains(err.Error(), "OIDC_ALLOW_ANY") {
+		t.Fatalf("no allowed groups: %v", err)
+	}
+	base["PIECEMEAL_OIDC_ALLOW_ANY"] = "true"
+	if _, err := FromEnv(env(base)); err != nil {
+		t.Fatal(err)
+	}
 }

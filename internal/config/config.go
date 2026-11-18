@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -55,7 +56,10 @@ type Config struct {
 	// PublicURL is where people reach piecemeal, such as
 	// https://piecemeal.example.com. OIDC needs it for its callback.
 	PublicURL string
-	OIDC      OIDC
+	// AllowedHosts, when set, are the only host names requests may use,
+	// besides loopback and PublicURL's host, against DNS rebinding.
+	AllowedHosts []string
+	OIDC         OIDC
 
 	LogLevel  string
 	LogFormat string
@@ -71,6 +75,9 @@ type OIDC struct {
 	GroupsClaim   string
 	AllowedGroups []string
 	AdminGroups   []string
+	// AllowAny lets every account at the provider sign in when
+	// AllowedGroups is empty. It must be chosen explicitly.
+	AllowAny bool
 }
 
 // OIDCCallbackPath is the OIDC redirect path, under the public URL.
@@ -132,6 +139,7 @@ func FromEnv(getenv func(string) string) (Config, error) {
 		LogLevel:             get("LOG_LEVEL", "info"),
 		LogFormat:            get("LOG_FORMAT", "json"),
 		PublicURL:            strings.TrimRight(get("PUBLIC_URL", ""), "/"),
+		AllowedHosts:         list(get("ALLOWED_HOSTS", "")),
 		OIDC: OIDC{
 			Issuer:        get("OIDC_ISSUER", ""),
 			ClientID:      get("OIDC_CLIENT_ID", ""),
@@ -141,6 +149,7 @@ func FromEnv(getenv func(string) string) (Config, error) {
 			GroupsClaim:   get("OIDC_GROUPS_CLAIM", "groups"),
 			AllowedGroups: list(get("OIDC_ALLOWED_GROUPS", "")),
 			AdminGroups:   list(get("OIDC_ADMIN_GROUPS", "")),
+			AllowAny:      boolean("OIDC_ALLOW_ANY", false),
 		},
 	}
 	if c.OIDC.Issuer != "" {
@@ -153,6 +162,20 @@ func FromEnv(getenv func(string) string) (Config, error) {
 			}
 			c.OIDC.RedirectURL = c.PublicURL + OIDCCallbackPath
 		}
+		// Providers often allow self-registration or social sign-in, and
+		// users may write anywhere under the allowed roots.
+		if len(c.OIDC.AllowedGroups) == 0 && !c.OIDC.AllowAny {
+			errs = append(errs, errors.New("PIECEMEAL_OIDC_ALLOWED_GROUPS: required with PIECEMEAL_OIDC_ISSUER; "+
+				"set PIECEMEAL_OIDC_ALLOW_ANY=true to let every account at the provider sign in"))
+		}
+	}
+	if len(c.AllowedHosts) > 0 && c.PublicURL != "" {
+		if u, err := url.Parse(c.PublicURL); err == nil && u.Hostname() != "" {
+			c.AllowedHosts = append(c.AllowedHosts, u.Hostname())
+		}
+	}
+	for i, h := range c.AllowedHosts {
+		c.AllowedHosts[i] = strings.ToLower(strings.TrimSuffix(h, "."))
 	}
 	if gw := get("NATPMP_GATEWAY", ""); gw != "" {
 		c.NATPMPGateway = net.ParseIP(gw)

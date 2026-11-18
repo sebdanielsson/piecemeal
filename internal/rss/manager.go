@@ -66,6 +66,13 @@ type FeedInfo struct {
 // Name is the last component of the feed's path.
 func (f FeedInfo) Name() string { return lastName(f.Path) }
 
+// Masked hides the query of the feed's URL, where trackers put passkeys,
+// for callers who may not see them.
+func (f FeedInfo) Masked() FeedInfo {
+	f.URL = fetch.RedactString(f.URL)
+	return f
+}
+
 type feed struct {
 	FeedInfo
 	// namedByURL is set for feeds added without a name: the first fetch

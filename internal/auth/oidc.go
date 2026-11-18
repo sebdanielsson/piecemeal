@@ -2,8 +2,13 @@ package auth
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
 	"crypto/subtle"
 	"database/sql"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -51,16 +56,22 @@ type OIDC struct {
 	verifier *oidc.IDTokenVerifier
 	oauth    *oauth2.Config
 
-	flowMu sync.Mutex
-	flows  map[string]oidcFlow // by state
+	// seal encrypts sign-ins in progress into the browser's state cookie,
+	// so they take no memory on the server until they finish.
+	seal cipher.AEAD
 }
 
+// oidcFlow is a sign-in in progress, sealed into the state cookie.
 type oidcFlow struct {
-	nonce    string
-	verifier string
-	next     string
-	expires  time.Time
+	State    string `json:"s"`
+	Nonce    string `json:"n"`
+	Verifier string `json:"v"`
+	Next     string `json:"x"`
+	Expires  int64  `json:"e"`
 }
+
+// flowLifetime is how long a sign-in may take.
+const flowLifetime = 10 * time.Minute
 
 // Errors from the OIDC flow.
 var (
@@ -77,7 +88,46 @@ func NewOIDC(cfg OIDCConfig, svc *Service) *OIDC {
 	if cfg.Name == "" {
 		cfg.Name = "SSO"
 	}
-	return &OIDC{cfg: cfg, svc: svc, flows: map[string]oidcFlow{}}
+	key := make([]byte, 32)
+	_, _ = rand.Read(key)
+	block, _ := aes.NewCipher(key)
+	seal, _ := cipher.NewGCM(block)
+	return &OIDC{cfg: cfg, svc: svc, seal: seal}
+}
+
+func (o *OIDC) sealFlow(f oidcFlow) string {
+	plain, _ := json.Marshal(f)
+	nonce := make([]byte, o.seal.NonceSize())
+	_, _ = rand.Read(nonce)
+	return base64.RawURLEncoding.EncodeToString(o.seal.Seal(nonce, nonce, plain, nil))
+}
+
+func (o *OIDC) openFlow(sealed string) (oidcFlow, bool) {
+	b, err := base64.RawURLEncoding.DecodeString(sealed)
+	if err != nil || len(b) < o.seal.NonceSize() {
+		return oidcFlow{}, false
+	}
+	plain, err := o.seal.Open(nil, b[:o.seal.NonceSize()], b[o.seal.NonceSize():], nil)
+	if err != nil {
+		return oidcFlow{}, false
+	}
+	var f oidcFlow
+	if json.Unmarshal(plain, &f) != nil || time.Now().Unix() > f.Expires {
+		return oidcFlow{}, false
+	}
+	return f, true
+}
+
+// SafeNext keeps a path to return to after signing in only when it stays
+// on this site: it starts with one /, and has no backslash, whitespace or
+// control character, which browsers would drop or reinterpret, turning
+// "/\t/evil.example" into "//evil.example".
+func SafeNext(next string) string {
+	bad := func(r rune) bool { return r <= ' ' || r == 0x7f || r == '\\' }
+	if !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") || strings.ContainsFunc(next, bad) {
+		return "/"
+	}
+	return next
 }
 
 // Config returns the configuration.
@@ -108,33 +158,21 @@ func (o *OIDC) setup(ctx context.Context) (*oauth2.Config, *oidc.IDTokenVerifier
 	return o.oauth, o.verifier, nil
 }
 
-// Begin starts a sign-in and returns the provider URL to redirect to and the
-// state, which the caller keeps in a cookie to bind the flow to the browser.
-// next is where to go afterwards; only same-site paths are kept.
-func (o *OIDC) Begin(ctx context.Context, next string) (redirect, state string, err error) {
+// Begin starts a sign-in and returns the provider URL to redirect to and
+// the sealed flow, which the caller keeps in a cookie: it binds the
+// sign-in to the browser and holds its state, nonce and PKCE verifier, so
+// nothing is kept on the server. next is where to go afterwards; only
+// same-site paths are kept.
+func (o *OIDC) Begin(ctx context.Context, next string) (redirect, sealed string, err error) {
 	oc, _, err := o.setup(ctx)
 	if err != nil {
 		return "", "", err
 	}
-	state, nonce := randomToken(24), randomToken(24)
-	verifier := oauth2.GenerateVerifier()
-	if !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") || strings.Contains(next, `\`) {
-		next = "/"
+	f := oidcFlow{
+		State: randomToken(24), Nonce: randomToken(24), Verifier: oauth2.GenerateVerifier(), Next: SafeNext(next),
+		Expires: time.Now().Add(flowLifetime).Unix(),
 	}
-	now := time.Now()
-	o.flowMu.Lock()
-	for k, f := range o.flows {
-		if now.After(f.expires) {
-			delete(o.flows, k)
-		}
-	}
-	if len(o.flows) > 10000 {
-		o.flowMu.Unlock()
-		return "", "", errors.New("too many sign-ins in progress")
-	}
-	o.flows[state] = oidcFlow{nonce: nonce, verifier: verifier, next: next, expires: now.Add(10 * time.Minute)}
-	o.flowMu.Unlock()
-	return oc.AuthCodeURL(state, oidc.Nonce(nonce), oauth2.S256ChallengeOption(verifier)), state, nil
+	return oc.AuthCodeURL(f.State, oidc.Nonce(f.Nonce), oauth2.S256ChallengeOption(f.Verifier)), o.sealFlow(f), nil
 }
 
 // Identity is what the provider says about who signed in.
@@ -150,21 +188,15 @@ type Identity struct {
 // browser started with, exchanges the code, verifies the ID token and its
 // nonce, and returns the user and where to go next.
 func (o *OIDC) Finish(ctx context.Context, cookieState, state, code string) (store.User, string, error) {
-	if state == "" || subtle.ConstantTimeCompare([]byte(cookieState), []byte(state)) != 1 {
-		return store.User{}, "", ErrOIDCState
-	}
-	o.flowMu.Lock()
-	flow, ok := o.flows[state]
-	delete(o.flows, state)
-	o.flowMu.Unlock()
-	if !ok || time.Now().After(flow.expires) {
+	flow, ok := o.openFlow(cookieState)
+	if !ok || state == "" || subtle.ConstantTimeCompare([]byte(flow.State), []byte(state)) != 1 {
 		return store.User{}, "", ErrOIDCState
 	}
 	oc, verifier, err := o.setup(ctx)
 	if err != nil {
 		return store.User{}, "", err
 	}
-	tok, err := oc.Exchange(ctx, code, oauth2.VerifierOption(flow.verifier))
+	tok, err := oc.Exchange(ctx, code, oauth2.VerifierOption(flow.Verifier))
 	if err != nil {
 		return store.User{}, "", fmt.Errorf("exchanging the code: %w", err)
 	}
@@ -176,7 +208,7 @@ func (o *OIDC) Finish(ctx context.Context, cookieState, state, code string) (sto
 	if err != nil {
 		return store.User{}, "", fmt.Errorf("verifying the ID token: %w", err)
 	}
-	if subtle.ConstantTimeCompare([]byte(idt.Nonce), []byte(flow.nonce)) != 1 {
+	if subtle.ConstantTimeCompare([]byte(idt.Nonce), []byte(flow.Nonce)) != 1 {
 		return store.User{}, "", errors.New("the ID token's nonce doesn't match")
 	}
 	var claims map[string]any
@@ -192,7 +224,7 @@ func (o *OIDC) Finish(ctx context.Context, cookieState, state, code string) (sto
 	if err != nil {
 		return store.User{}, "", err
 	}
-	return u, flow.next, nil
+	return u, flow.Next, nil
 }
 
 func identityFrom(subject string, claims map[string]any, groupsClaim string) Identity {

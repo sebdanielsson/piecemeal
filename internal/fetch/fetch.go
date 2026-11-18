@@ -46,7 +46,9 @@ func New(allowed []netip.Prefix) *Fetcher {
 				return err
 			}
 			if !Allowed(ip, allowed) {
-				return fmt.Errorf("%w: %s", ErrForbidden, ip)
+				// The address isn't named: it would tell users what internal
+				// names resolve to.
+				return ErrForbidden
 			}
 			return nil
 		},
@@ -90,11 +92,57 @@ func Allowed(ip netip.Addr, allowed []netip.Prefix) bool {
 		ip.IsMulticast() || ip.IsUnspecified() || ip.IsInterfaceLocalMulticast() {
 		return false
 	}
-	// Carrier-grade NAT (RFC 6598), where Tailscale addresses live.
-	if netip.MustParsePrefix("100.64.0.0/10").Contains(ip) {
-		return false
+	for _, p := range blockedPrefixes {
+		if p.Contains(ip) {
+			return false
+		}
+	}
+	// A NAT64 gateway or a 6to4 or Teredo relay forwards these to the IPv4
+	// address inside, which may be a private one.
+	if v4, ok := embeddedIPv4(ip); ok {
+		return Allowed(v4, allowed)
 	}
 	return true
+}
+
+var (
+	// Special-purpose ranges (RFC 6890) that hold no public hosts.
+	blockedPrefixes = []netip.Prefix{
+		netip.MustParsePrefix("0.0.0.0/8"),
+		// Carrier-grade NAT (RFC 6598), where Tailscale addresses live.
+		netip.MustParsePrefix("100.64.0.0/10"),
+		netip.MustParsePrefix("192.0.0.0/24"),
+		netip.MustParsePrefix("198.18.0.0/15"),
+		netip.MustParsePrefix("240.0.0.0/4"),
+		// Deprecated site-local.
+		netip.MustParsePrefix("fec0::/10"),
+		// Local-use NAT64 (RFC 8215), which can put the IPv4 address
+		// anywhere in the prefix.
+		netip.MustParsePrefix("64:ff9b:1::/48"),
+	}
+	nat64          = netip.MustParsePrefix("64:ff9b::/96")
+	ipv4Compatible = netip.MustParsePrefix("::/96")
+	sixToFour      = netip.MustParsePrefix("2002::/16")
+	teredo         = netip.MustParsePrefix("2001::/32")
+)
+
+// embeddedIPv4 returns the IPv4 address that traffic to an IPv6 address is
+// forwarded to, for the ranges that embed one.
+func embeddedIPv4(ip netip.Addr) (netip.Addr, bool) {
+	if !ip.Is6() {
+		return netip.Addr{}, false
+	}
+	b := ip.As16()
+	switch {
+	case nat64.Contains(ip), ipv4Compatible.Contains(ip):
+		return netip.AddrFrom4([4]byte(b[12:16])), true
+	case sixToFour.Contains(ip):
+		return netip.AddrFrom4([4]byte(b[2:6])), true
+	case teredo.Contains(ip):
+		// The client's address, inverted.
+		return netip.AddrFrom4([4]byte{^b[12], ^b[13], ^b[14], ^b[15]}), true
+	}
+	return netip.Addr{}, false
 }
 
 // Result is either a magnet URI (when the URL redirects to one) or the
@@ -114,11 +162,11 @@ func (f *Fetcher) Get(ctx context.Context, rawURL string) (Result, error) {
 		return Result{Magnet: rawURL}, nil
 	}
 	if !fetchableURL.MatchString(rawURL) {
-		return Result{}, fmt.Errorf("bad URL %q: only http and https URLs with a host can be fetched", rawURL)
+		return Result{}, fmt.Errorf("bad URL %s: only http and https URLs with a host can be fetched", RedactString(rawURL))
 	}
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		return Result{}, fmt.Errorf("bad URL: %w", err)
+		return Result{}, errors.New("bad URL")
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
@@ -127,6 +175,15 @@ func (f *Fetcher) Get(ctx context.Context, rawURL string) (Result, error) {
 	req.Header.Set("User-Agent", "piecemeal")
 	resp, err := f.client.Do(req)
 	if err != nil {
+		// The dial error names the blocked address the host resolved to.
+		if errors.Is(err, ErrForbidden) {
+			return Result{}, fmt.Errorf("%s: %w", Redact(u), ErrForbidden)
+		}
+		// *url.Error names the URL, query and all.
+		var ue *url.Error
+		if errors.As(err, &ue) {
+			return Result{}, fmt.Errorf("%s: %w", Redact(u), ue.Err)
+		}
 		return Result{}, err
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -135,17 +192,37 @@ func (f *Fetcher) Get(ctx context.Context, rawURL string) (Result, error) {
 		return Result{Magnet: loc}, nil
 	}
 	if resp.StatusCode != http.StatusOK {
-		return Result{}, fmt.Errorf("%s: %s", u.Redacted(), resp.Status)
+		return Result{}, fmt.Errorf("%s: %s", Redact(u), resp.Status)
 	}
 	if resp.ContentLength > f.maxSize {
-		return Result{}, fmt.Errorf("%s: larger than %d bytes", u.Redacted(), f.maxSize)
+		return Result{}, fmt.Errorf("%s: larger than %d bytes", Redact(u), f.maxSize)
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, f.maxSize+1))
 	if err != nil {
 		return Result{}, err
 	}
 	if int64(len(b)) > f.maxSize {
-		return Result{}, fmt.Errorf("%s: larger than %d bytes", u.Redacted(), f.maxSize)
+		return Result{}, fmt.Errorf("%s: larger than %d bytes", Redact(u), f.maxSize)
 	}
 	return Result{Body: b}, nil
+}
+
+// Redact is a URL for messages: scheme, host and path. Credentials such as
+// API keys and passkeys usually sit in the query or the user info.
+func Redact(u *url.URL) string {
+	r := url.URL{Scheme: u.Scheme, Host: u.Host, Path: u.Path}
+	if u.RawQuery != "" {
+		r.RawQuery = "…"
+	}
+	return r.String()
+}
+
+// RedactString is Redact for a URL in text; anything that doesn't parse
+// is replaced whole.
+func RedactString(s string) string {
+	u, err := url.Parse(s)
+	if err != nil || u.Host == "" {
+		return "(a URL)"
+	}
+	return Redact(u)
 }

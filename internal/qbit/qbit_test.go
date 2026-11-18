@@ -383,3 +383,10 @@ func TestStates(t *testing.T) {
 		}
 	}
 }
+
+func TestLoginBodyIsCapped(t *testing.T) {
+	e := newEnv(t)
+	big := url.Values{"username": {"admin"}, "password": {"adminadmin"}, "pad": {strings.Repeat("x", 100<<10)}}
+	expect(t, "large login", e.post("auth/login", big), http.StatusBadRequest)
+	expect(t, "login", e.post("auth/login", url.Values{"username": {"admin"}, "password": {"adminadmin"}}), http.StatusNoContent)
+}

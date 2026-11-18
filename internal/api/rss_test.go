@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/sebdanielsson/piecemeal/internal/auth"
 	"github.com/sebdanielsson/piecemeal/internal/rss"
 )
 
@@ -45,4 +46,38 @@ func TestRSSEndpoints(t *testing.T) {
 	s.do(http.MethodDelete, "/rss/rules/Shows", nil, http.StatusNoContent, nil, csrf...)
 	s.do(http.MethodDelete, "/rss/items?path=TV", nil, http.StatusNoContent, nil, csrf...)
 	s.do(http.MethodDelete, "/rss/items?path=TV", nil, http.StatusNotFound, nil, csrf...)
+}
+
+func TestRSSFeedURLsMaskedForNonAdmins(t *testing.T) {
+	s := newTestServer(t)
+	s.login()
+	const secret = "https://feeds.example/a.xml?passkey=SECRET"
+	var f rss.FeedInfo
+	s.do(http.MethodPost, "/rss/feeds", map[string]any{"url": secret, "path": "A"}, http.StatusCreated, &f, csrf...)
+	rule := rss.NewRule()
+	rule.AffectedFeeds = []string{secret}
+	s.do(http.MethodPut, "/rss/rules/A", rule, http.StatusNoContent, nil, csrf...)
+	var ro CreatedAPIKey
+	s.do(http.MethodPost, "/api-keys", CreateAPIKeyRequest{Name: "grafana", Scope: auth.ScopeReadOnly}, http.StatusCreated, &ro, csrf...)
+	anon := &testServer{Server: s.Server, t: t, client: http.DefaultClient}
+
+	for _, c := range []struct {
+		name   string
+		s      *testServer
+		header []string
+		want   string
+	}{
+		{"admin", s, nil, secret},
+		{"read-only key", anon, []string{"Authorization", "Bearer " + ro.Key}, "https://feeds.example/a.xml?…"},
+	} {
+		var tree RSSTree
+		c.s.do(http.MethodGet, "/rss", nil, http.StatusOK, &tree, c.header...)
+		var one rss.FeedInfo
+		c.s.do(http.MethodGet, "/rss/feeds/"+f.UID, nil, http.StatusOK, &one, c.header...)
+		var rules struct{ Items map[string]rss.Rule }
+		c.s.do(http.MethodGet, "/rss/rules", nil, http.StatusOK, &rules, c.header...)
+		if tree.Feeds[0].URL != c.want || one.URL != c.want || rules.Items["A"].AffectedFeeds[0] != c.want {
+			t.Errorf("%s: %s, %s, %v", c.name, tree.Feeds[0].URL, one.URL, rules.Items["A"].AffectedFeeds)
+		}
+	}
 }

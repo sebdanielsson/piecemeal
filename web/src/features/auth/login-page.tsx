@@ -13,8 +13,13 @@ import { authConfigQuery, keys } from "@/lib/queries";
 import { Logo } from "../shell/logo";
 
 /** Only same-origin paths, so a crafted link can't send people elsewhere. */
+const unsafe = (c: string) => c <= " " || c === "\x7f" || c === "\\";
+
 export function safeRedirect(target: string | undefined): string {
-  if (!target || !target.startsWith("/") || target.startsWith("//") || target.startsWith("/\\")) {
+  // Browsers drop tabs and newlines in URLs, so "/\t/evil.example" would
+  // become "//evil.example": refuse whitespace, control characters and
+  // backslashes anywhere.
+  if (!target || !target.startsWith("/") || target.startsWith("//") || [...target].some(unsafe)) {
     return "/";
   }
   return target.startsWith("/login") ? "/" : target;

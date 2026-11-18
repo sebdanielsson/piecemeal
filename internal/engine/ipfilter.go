@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"cmp"
+	"fmt"
 	"io"
 	"net"
 	"net/netip"
@@ -186,13 +187,21 @@ func (e *Engine) reloadFilter(s settings.Settings) {
 	e.filter.list.Store(iplist.New(mergeRanges(ranges)))
 }
 
+// maxIPFilterSize bounds what is read of a filter file; published lists
+// are a few tens of MiB.
+const maxIPFilterSize = 512 << 20
+
 func readIPFilter(path string) ([]iplist.Range, int, error) {
 	f, err := os.Open(path) //nolint:gosec // the admin's choice of file
 	if err != nil {
 		return nil, 0, err
 	}
 	defer func() { _ = f.Close() }()
-	return ParseIPFilter(f)
+	// A device or a FIFO would never end, or block for good.
+	if st, err := f.Stat(); err != nil || !st.Mode().IsRegular() {
+		return nil, 0, fmt.Errorf("%s is not a regular file", path)
+	}
+	return ParseIPFilter(io.LimitReader(f, maxIPFilterSize))
 }
 
 // dropBlockedPeersLocked closes connections to peers the filter now

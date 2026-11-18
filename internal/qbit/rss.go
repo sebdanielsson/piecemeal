@@ -8,10 +8,13 @@ import (
 	"math"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/microcosm-cc/bluemonday"
 
 	"github.com/sebdanielsson/piecemeal/internal/rss"
 )
@@ -134,7 +137,11 @@ func (s *Server) rssItems(w http.ResponseWriter, r *http.Request) {
 	for _, p := range s.rss.Folders() {
 		folder(p)
 	}
+	admin := isAdmin(principal(r))
 	for _, f := range s.rss.Feeds(withData) {
+		if !admin {
+			f = f.Masked()
+		}
 		obj := map[string]any{"uid": f.UID, "url": f.URL}
 		if f.RefreshInterval > 0 {
 			obj["refreshInterval"] = f.RefreshInterval
@@ -159,11 +166,26 @@ func parentPath(p string) string {
 	return ""
 }
 
+// articleHTML keeps the formatting of article descriptions and drops
+// scripts, event handlers and script URLs: qBittorrent web UIs served on
+// piecemeal's origin may render them as HTML.
+var articleHTML = bluemonday.UGCPolicy()
+
+// webURL reports whether s is a URL a web UI may link to.
+func webURL(s string, schemes ...string) bool {
+	u, err := url.Parse(s)
+	return err == nil && slices.Contains(schemes, strings.ToLower(u.Scheme))
+}
+
 func articleObject(a rss.Article) map[string]any {
 	obj := map[string]any{"id": a.ID, "title": a.Title, "date": a.Date.UTC().Format(rssDate), "torrentURL": nil}
-	if a.TorrentURL != "" {
+	if webURL(a.TorrentURL, "http", "https", "magnet") {
 		obj["torrentURL"] = a.TorrentURL
 	}
+	if !webURL(a.Link, "http", "https") {
+		a.Link = ""
+	}
+	a.Description = articleHTML.Sanitize(a.Description)
 	for k, v := range map[string]string{"link": a.Link, "description": a.Description, "author": a.Author, "category": a.Category} {
 		if v != "" {
 			obj[k] = v
@@ -257,20 +279,23 @@ func (s *Server) rssCloneRule(w http.ResponseWriter, r *http.Request) {
 	done(w)
 }
 
-func (s *Server) rulesObject() map[string]any {
+func (s *Server) rulesObject(admin bool) map[string]any {
 	out := map[string]any{}
 	for name, rule := range s.rss.Rules() {
+		if !admin {
+			rule = rule.Masked()
+		}
 		out[name] = encodeRule(rule)
 	}
 	return out
 }
 
-func (s *Server) rssRules(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, s.rulesObject())
+func (s *Server) rssRules(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, s.rulesObject(isAdmin(principal(r))))
 }
 
-func (s *Server) rssExportRules(w http.ResponseWriter, _ *http.Request) {
-	b, err := json.MarshalIndent(s.rulesObject(), "", "    ")
+func (s *Server) rssExportRules(w http.ResponseWriter, r *http.Request) {
+	b, err := json.MarshalIndent(s.rulesObject(isAdmin(principal(r))), "", "    ")
 	if err != nil {
 		s.engineError(w, err)
 		return

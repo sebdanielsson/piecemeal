@@ -182,7 +182,8 @@ func (s *Server) mappedPreferences() map[string]any {
 		"web_ui_csrf_protection_enabled":         true,
 		"web_ui_clickjacking_protection_enabled": true,
 		"web_ui_secure_cookie_enabled":           s.auth.Config().SecureCookies,
-		"web_ui_host_header_validation_enabled":  false,
+		"web_ui_host_header_validation_enabled":  len(s.allowedHosts) > 0,
+		"web_ui_domain_list":                     domainList(s.allowedHosts),
 		"bypass_local_auth":                      false,
 		"bypass_auth_subnet_whitelist_enabled":   false,
 		"bypass_auth_subnet_whitelist":           "",
@@ -247,4 +248,13 @@ func schedulerDays(days string) int {
 		}
 	}
 	return 0
+}
+
+// domainList is web_ui_domain_list: qBittorrent separates names with
+// semicolons, and "*" accepts any.
+func domainList(hosts []string) string {
+	if len(hosts) == 0 {
+		return "*"
+	}
+	return strings.Join(hosts, ";")
 }

@@ -452,3 +452,33 @@ func TestLostPieceCompletion(t *testing.T) {
 	// No peers this time: completion can only come from the data on disk.
 	h.waitFor(hash, "the data to be checked", func(st Torrent) bool { return st.Complete })
 }
+
+func TestCheckRoots(t *testing.T) {
+	parent := t.TempDir()
+	data := filepath.Join(parent, "data")
+	downloads := filepath.Join(parent, "downloads")
+	link := filepath.Join(t.TempDir(), "srv")
+	for _, d := range []string{data, downloads} {
+		if err := os.Mkdir(d, 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(parent, link); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		name  string
+		roots []string
+		ok    bool
+	}{
+		{"apart", []string{downloads}, true},
+		{"parent", []string{downloads, parent}, false},
+		{"the data dir itself", []string{data}, false},
+		{"inside the data dir", []string{filepath.Join(data, "x")}, false},
+		{"through a symlink", []string{link}, false},
+	} {
+		if err := CheckRoots(c.roots, data, ""); (err == nil) != c.ok {
+			t.Errorf("%s: %v", c.name, err)
+		}
+	}
+}

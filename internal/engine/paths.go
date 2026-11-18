@@ -41,6 +41,32 @@ func (e *Engine) confine(path string) (string, error) {
 	return "", fmt.Errorf("%w: %s", ErrPathForbidden, path)
 }
 
+// CheckRoots refuses allowed roots that overlap a directory piecemeal keeps
+// its own files in, such as the data directory: users and RSS rules could
+// otherwise overwrite those files with a torrent's, or read them with the
+// torrent creator. Empty dirs are ignored.
+func CheckRoots(roots []string, dirs ...string) error {
+	for _, d := range dirs {
+		if d == "" {
+			continue
+		}
+		rd, err := resolveExisting(filepath.Clean(d))
+		if err != nil {
+			return err
+		}
+		for _, root := range roots {
+			rr, err := resolveExisting(filepath.Clean(root))
+			if err != nil {
+				return err
+			}
+			if within(rr, rd) || within(rd, rr) {
+				return fmt.Errorf("the allowed root %s overlaps %s; keep piecemeal's own directories out of the roots", root, d)
+			}
+		}
+	}
+	return nil
+}
+
 // resolveExisting evaluates symlinks in the longest existing prefix of path
 // and appends the rest unchanged.
 func resolveExisting(path string) (string, error) {
