@@ -4,7 +4,7 @@ piecemeal is a self-hosted BitTorrent client: a single Go binary built on [anacr
 
 It grows out of the test daemon in [`sebdanielsson/infra` `docker/transmission-wireguard/anacrolix`](https://github.com/sebdanielsson/infra/tree/main/docker/transmission-wireguard/anacrolix), which proved the library on the target host: NAT-PMP port forwarding through a WireGuard VPN, a responsive API under heavy disk load, and 9.7 MiB/s onto a ZFS RAID-Z1 pool once mmap storage was turned off.
 
-Status: Phase 0 is done (v0.1.0). Phase 1's code shipped in v0.2.0 (engine, store, settings, NAT-PMP, watch folder, metrics, local auth and the native API with its event stream); its deployment to hogsmeade is pending. Phase 2 (qBittorrent API for the *arrs), Phase 3 (web UI and OIDC) and Phase 4 (the full qBittorrent API, with VueTorrent hosted at `/qbittorrent/`) are implemented. Of Phase 5, queueing, the alternative-speed schedule, moving storage, the IP filter, the torrent creator and RSS feeds and rules are done; per-torrent limits and proxy support remain.
+Status: all six phases are done, and 1.0 runs on hogsmeade in place of Transmission. Two items from Phase 5 stay out of 1.0: per-torrent speed limits are stored and reported but not enforced, because anacrolix/torrent only limits rates client-wide, and there is no proxy support. Release history is in the [changelog](../CHANGELOG.md).
 
 ## Goals
 
