@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"slices"
 	"time"
+
+	"github.com/sebdanielsson/piecemeal/internal/fetch"
 )
 
 // Rule decides which articles to download, as qBittorrent's RSS download
@@ -58,6 +60,15 @@ func NewRule() Rule {
 		Enabled: true,
 		Add:     AddOptions{RatioLimit: -2, SeedingTimeLimit: -2, InactiveSeedingTimeLimit: -2},
 	}
+}
+
+// Masked hides the queries of the rule's feed URLs, as FeedInfo.Masked.
+func (r Rule) Masked() Rule {
+	r = r.clone()
+	for i, u := range r.AffectedFeeds {
+		r.AffectedFeeds[i] = fetch.RedactString(u)
+	}
+	return r
 }
 
 func (r Rule) clone() Rule {

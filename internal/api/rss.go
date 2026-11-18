@@ -103,8 +103,13 @@ func rssError(err error) error {
 func (a *API) registerRSS() {
 	const tag = "RSS"
 	huma.Register(a.huma, a.operation(http.MethodGet, "/rss", "getRSS", "List RSS folders and feeds", tag, accessUser),
-		func(context.Context, *struct{}) (*rssTreeOutput, error) {
+		func(ctx context.Context, _ *struct{}) (*rssTreeOutput, error) {
 			out := &rssTreeOutput{Body: RSSTree{Folders: a.RSS.Folders(), Feeds: a.RSS.Feeds(false)}}
+			if !isAdmin(Principal(ctx)) {
+				for i, f := range out.Body.Feeds {
+					out.Body.Feeds[i] = f.Masked()
+				}
+			}
 			if out.Body.Folders == nil {
 				out.Body.Folders = []string{}
 			}
@@ -131,10 +136,13 @@ func (a *API) registerRSS() {
 	})
 
 	huma.Register(a.huma, a.operation(http.MethodGet, "/rss/feeds/{uid}", "getRSSFeed", "Get an RSS feed with its articles", tag, accessUser),
-		func(_ context.Context, in *rssFeedInput) (*rssFeedOutput, error) {
+		func(ctx context.Context, in *rssFeedInput) (*rssFeedOutput, error) {
 			f, ok := a.RSS.Feed(in.UID)
 			if !ok {
 				return nil, huma.Error404NotFound("no such feed")
+			}
+			if !isAdmin(Principal(ctx)) {
+				f = f.Masked()
 			}
 			return &rssFeedOutput{Status: http.StatusOK, Body: f}, nil
 		})
@@ -187,9 +195,14 @@ func (a *API) registerRSS() {
 	})
 
 	huma.Register(a.huma, a.operation(http.MethodGet, "/rss/rules", "listRSSRules", "List RSS download rules", tag, accessUser),
-		func(context.Context, *struct{}) (*rssRulesOutput, error) {
+		func(ctx context.Context, _ *struct{}) (*rssRulesOutput, error) {
 			out := &rssRulesOutput{}
 			out.Body.Items = a.RSS.Rules()
+			if !isAdmin(Principal(ctx)) {
+				for name, r := range out.Body.Items {
+					out.Body.Items[name] = r.Masked()
+				}
+			}
 			return out, nil
 		})
 

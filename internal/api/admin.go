@@ -227,6 +227,14 @@ func (a *API) registerAdmin() {
 			return out, nil
 		})
 
+	op = a.operation(http.MethodDelete, "/users/{id}", "deleteUser", "Remove a user with their sessions and API keys", tag, accessAdmin)
+	op.DefaultStatus = http.StatusNoContent
+	op.Description = "SSO users who are still allowed to sign in are created again on their next sign-in. " +
+		"Remove them from the allowed groups at the provider first. The local admin can't be removed."
+	huma.Register(a.huma, op, func(ctx context.Context, in *idInput) (*struct{}, error) {
+		return nil, apiError(a.Auth.DeleteUser(ctx, Principal(ctx), in.ID))
+	})
+
 	huma.Register(a.huma, a.operation(http.MethodGet, "/audit", "listAudit", "List audit log entries, newest first", tag, accessAdmin),
 		func(ctx context.Context, in *auditInput) (*auditOutput, error) {
 			entries, err := a.Auth.ListAudit(ctx, in.Before, in.Limit)

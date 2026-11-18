@@ -147,6 +147,9 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, logs *logbuf.
 			return err
 		}
 	}
+	if err := engine.CheckRoots(cfg.AllowedRoots, cfg.DataDir, cfg.QBittorrentWebUIDir); err != nil {
+		return err
+	}
 	unlock, err := store.LockDataDir(cfg.DataDir)
 	if err != nil {
 		return err
@@ -260,7 +263,7 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, logs *logbuf.
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           mux,
+		Handler:           hostCheck(cfg.AllowedHosts, mux),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       2 * time.Minute,
 		// No ReadTimeout or WriteTimeout: either would cut the event stream
@@ -342,6 +345,7 @@ func routes(d routeDeps) (*http.ServeMux, *api.API) {
 	q := qbit.New(qbit.Deps{
 		Engine: d.engine, Settings: d.settings, Auth: d.auth, Fetcher: fetcher, Store: d.store, RSS: d.rss, Logs: d.logs,
 		Log: d.log.With("component", "qbit"), HTTPPort: httpPort(d.cfg.Addr), AltWebUI: d.cfg.QBittorrentWebUIDir != "",
+		AllowedHosts: d.cfg.AllowedHosts,
 	})
 	// Method-specific patterns, so they and the web UI's "GET /" don't
 	// conflict; the qBittorrent API answers 405 itself for the wrong one.

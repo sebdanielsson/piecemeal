@@ -23,6 +23,11 @@ func Alternative(dir string) http.Handler {
 		if name == "" {
 			name = "."
 		}
+		// Dotfiles such as .git or .env aren't part of a web UI.
+		if strings.HasPrefix(name, ".") && name != "." || strings.Contains(name, "/.") {
+			http.NotFound(w, r)
+			return
+		}
 		st, err := fs.Stat(root, name)
 		if err != nil {
 			http.NotFound(w, r)
@@ -36,6 +41,9 @@ func Alternative(dir string) http.Handler {
 		}
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+		// The UI shares piecemeal's origin. Without knowing what it loads,
+		// only what no web UI needs is turned off.
+		w.Header().Set("Content-Security-Policy", "object-src 'none'; base-uri 'self'; frame-ancestors 'self'")
 		files.ServeHTTP(w, r)
 	})
 }

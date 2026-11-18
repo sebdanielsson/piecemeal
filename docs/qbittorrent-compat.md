@@ -33,7 +33,7 @@ Status: **yes** is implemented, **partial** works with the differences noted, **
 | `webapiVersion` | yes | `2.16.2` |
 | `buildInfo` | partial | Library versions are empty strings. |
 | `processInfo` | yes | |
-| `preferences` | yes | All 241 keys of qBittorrent 5.3.0 with their types. Keys piecemeal maps come from its settings (download, speed, connection, queueing, seeding goals, IP filter, schedule, Web UI); the rest report qBittorrent's defaults and are fixed. `web_ui_api_key` is the prefix of the caller's key from `rotateAPIKey`, or empty: piecemeal stores only key hashes. |
+| `preferences` | yes | All 241 keys of qBittorrent 5.3.0 with their types. Keys piecemeal maps come from its settings (download, speed, connection, queueing, seeding goals, IP filter, schedule, Web UI); the rest report qBittorrent's defaults and are fixed. `web_ui_api_key` is the prefix of the caller's key from `rotateAPIKey`, or empty: piecemeal stores only key hashes. `web_ui_host_header_validation_enabled` and `web_ui_domain_list` report `PIECEMEAL_ALLOWED_HOSTS`. |
 | `setPreferences` | partial | Applies the keys piecemeal maps and ignores the rest, so writing back the whole object works. Keys pinned by environment variables are ignored. A mapped key with a bad value fails the whole request with 400; a `json` that isn't an object is ignored, as in qBittorrent. Rate limits are rounded down to whole KiB/s, as qBittorrent does. `web_ui_password` is ignored: manage users in piecemeal. |
 | `defaultSavePath` | yes | |
 | `networkInterfaceList`, `networkInterfaceAddressList` | yes | Listed for the settings page; piecemeal binds with `PIECEMEAL_LISTEN_HOST`, so choosing one has no effect. |
@@ -123,7 +123,7 @@ Feeds and download rules work as in qBittorrent 5.3.0: paths join names with `\`
 
 | Endpoint | Status | Notes |
 | --- | --- | --- |
-| `items` | yes | With `withData`, feeds carry `title`, `lastBuildDate`, `isLoading`, `hasError` and their articles, newest first. |
+| `items` | yes | With `withData`, feeds carry `title`, `lastBuildDate`, `isLoading`, `hasError` and their articles, newest first. Article descriptions are sanitized HTML, and `link` and `torrentURL` are left out unless they're http(s) URLs (or magnet links for `torrentURL`). Callers other than admins see feed URLs with the query replaced by `…`, since trackers put passkeys there; `rules` and `exportRules` mask `affectedFeeds` the same way. |
 | `addFolder`, `addFeed`, `removeItem`, `moveItem`, `setFeedURL`, `setFeedRefreshInterval` | yes | A feed added with an empty `path` is named after its title once fetched. Feed URLs are fetched with the same SSRF protection and cookies as torrent URLs. |
 | `markAsRead`, `refreshItem` | yes | |
 | `setRule`, `renameRule`, `removeRule`, `cloneRule`, `rules`, `exportRules`, `importRules` | yes | Rules take `torrentParams` or the legacy `addPaused`, `assignedCategory`, `savePath` and `torrentContentLayout`; a bad definition makes a rule with the defaults, as in qBittorrent. Options piecemeal doesn't use, such as `download_path` and per-torrent limits, are kept and returned. |
@@ -134,6 +134,8 @@ Matching follows qBittorrent: wildcard terms (`*`, `?`, `[…]`) that must all m
 ## VueTorrent and other qBittorrent web UIs
 
 qBittorrent web UIs call the API relative to where they are served, so they need to be served by piecemeal. Set `PIECEMEAL_QBITTORRENT_WEBUI_DIR` to the UI's directory, such as an unpacked [VueTorrent](https://github.com/VueTorrent/VueTorrent) release (the directory or its `public` folder). piecemeal serves it at `/qbittorrent/` and the API under it at `/qbittorrent/api/v2`, and reports `alternative_webui_enabled`. Sign in with a piecemeal user.
+
+The UI runs on piecemeal's origin, with the same rights as piecemeal's own web UI, so only use one you trust. Dotfiles in its directory aren't served.
 
 ## Torrent states
 

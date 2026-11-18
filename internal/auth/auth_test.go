@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -143,7 +144,7 @@ func TestAPIKeys(t *testing.T) {
 }
 
 func TestClientIP(t *testing.T) {
-	s := &Service{cfg: Config{TrustedProxies: []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")}}}
+	s := &Service{cfg: Config{TrustedProxies: []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")}}, log: slog.New(slog.DiscardHandler)}
 	for _, tc := range []struct{ remote, xff, want string }{
 		{"192.0.2.1:1234", "203.0.113.9", "192.0.2.1"},              // untrusted remote: header ignored
 		{"10.0.0.1:1234", "203.0.113.9", "203.0.113.9"},             // trusted proxy
@@ -225,5 +226,118 @@ func TestParallelBasicWithTheRightPasswordDoesntLockOut(t *testing.T) {
 	wg.Wait()
 	if failed != 0 {
 		t.Fatalf("%d of 12 parallel requests with the right password failed", failed)
+	}
+}
+
+func TestLimiterKeys(t *testing.T) {
+	l := newLoginLimiter(2, time.Minute)
+	now := time.Now()
+	// Addresses in one IPv6 /64 share a count; IPv4 addresses don't.
+	if !l.begin("2001:db8::1", now) || !l.begin("2001:db8::2", now) || l.begin("2001:db8::ffff", now) {
+		t.Fatal("a /64 wasn't counted together")
+	}
+	if !l.locked("2001:db8::abcd", now) || l.locked("2001:db8:0:1::1", now) {
+		t.Fatal("locked the wrong /64")
+	}
+	if !l.begin("192.0.2.1", now) || !l.begin("192.0.2.2", now) {
+		t.Fatal("IPv4 addresses were counted together")
+	}
+	// Private IPv6 addresses, as on a LAN or a container network, count
+	// one by one.
+	for range 2 {
+		l.begin("fd00::1", now)
+	}
+	if !l.locked("fd00::1", now) || !l.begin("fd00::2", now) || l.locked("fd00::3", now) {
+		t.Fatal("private IPv6 addresses were counted together")
+	}
+	// A full table keeps the addresses it has and lets new ones through
+	// untracked, instead of locking out everyone.
+	for i := range maxTracked {
+		l.fails[fmt.Sprintf("x%d", i)] = []time.Time{now}
+	}
+	if !l.begin("198.51.100.1", now) || l.locked("198.51.100.1", now) || !l.locked("2001:db8::1", now) {
+		t.Fatal("a full table forgot or refused")
+	}
+	// Once the entries expire they're swept and tracking resumes.
+	later := now.Add(2 * time.Minute)
+	if !l.begin("198.51.100.1", later) || len(l.fails) != 1 {
+		t.Fatalf("expired entries weren't swept: %d left", len(l.fails))
+	}
+}
+
+func TestPasswordChangeEndsAdminSessions(t *testing.T) {
+	s, st := newService(t)
+	ctx := context.Background()
+	token, p, err := s.Login(ctx, httptest.NewRequest(http.MethodPost, "/", nil), "admin", "secret", KindWeb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, key, err := s.CreateAPIKey(ctx, p, "radarr", ScopeQBittorrent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restart := func(hash string) *Service {
+		t.Helper()
+		s, err := New(ctx, Config{AdminUsername: "admin", AdminPasswordHash: hash, LocalLogin: true}, st, slog.New(slog.DiscardHandler))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	// The same hash keeps the session.
+	if _, err := restart(s.cfg.AdminPasswordHash).Session(ctx, token); err != nil {
+		t.Fatalf("same hash: %v", err)
+	}
+	h, err := HashPassword("rotated")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s2 := restart(h)
+	if _, err := s2.Session(ctx, token); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatalf("after rotation: %v", err)
+	}
+	// Keys are left for the admin to review: the *arrs would break.
+	if _, err := s2.Key(ctx, key); err != nil {
+		t.Fatalf("key after rotation: %v", err)
+	}
+}
+
+func TestDeleteUser(t *testing.T) {
+	s, st := newService(t)
+	ctx := context.Background()
+	_, admin, err := s.Login(ctx, httptest.NewRequest(http.MethodPost, "/", nil), "admin", "secret", KindWeb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, err := st.CreateUser(ctx, store.CreateUserParams{Username: "sso", DisplayName: "SSO", CreatedAt: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, _, err := s.OpenSession(ctx, httptest.NewRequest(http.MethodGet, "/", nil), u.ID, KindWeb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	userP, err := s.Session(ctx, token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, key, err := s.CreateAPIKey(ctx, userP, "k", ScopeFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteUser(ctx, admin, admin.UserID); !errors.Is(err, ErrKeepUser) {
+		t.Fatalf("deleting the local admin: %v", err)
+	}
+	if err := s.DeleteUser(ctx, admin, u.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Session(ctx, token); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatalf("session after delete: %v", err)
+	}
+	if _, err := s.Key(ctx, key); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatalf("key after delete: %v", err)
+	}
+	if err := s.DeleteUser(ctx, admin, u.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("deleting again: %v", err)
 	}
 }

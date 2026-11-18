@@ -90,6 +90,12 @@ func Principal(ctx context.Context) *auth.Principal {
 	return p
 }
 
+// isAdmin reports whether p may do what accessAdmin operations do, and see
+// what only admins see.
+func isAdmin(p *auth.Principal) bool {
+	return p != nil && p.IsAdmin && p.Scope == auth.ScopeFull
+}
+
 // New registers the API's routes on mux.
 func New(mux *http.ServeMux, d Deps) *API {
 	cfg := huma.DefaultConfig("piecemeal", d.Version)
@@ -172,7 +178,7 @@ func (a *API) authMiddleware(ctx huma.Context, next func(huma.Context)) {
 	case p.Scope == auth.ScopeReadOnly && !safe:
 		_ = huma.WriteErr(a.huma, ctx, http.StatusForbidden, "this API key is read-only")
 		return
-	case acc == accessAdmin && (!p.IsAdmin || p.Scope != auth.ScopeFull):
+	case acc == accessAdmin && !isAdmin(p):
 		_ = huma.WriteErr(a.huma, ctx, http.StatusForbidden, "admins only, signed in or with a full-scope key")
 		return
 	}
@@ -219,7 +225,7 @@ func apiError(err error) error {
 		return huma.Error401Unauthorized(err.Error())
 	case errors.Is(err, auth.ErrLockedOut):
 		return huma.Error429TooManyRequests(err.Error())
-	case errors.Is(err, auth.ErrLocalDisabled):
+	case errors.Is(err, auth.ErrLocalDisabled), errors.Is(err, auth.ErrKeepUser):
 		return huma.Error403Forbidden(err.Error())
 	default:
 		return err

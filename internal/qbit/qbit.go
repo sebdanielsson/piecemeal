@@ -53,7 +53,9 @@ type Server struct {
 	// altWebUI is set when piecemeal hosts an alternative qBittorrent web
 	// UI such as VueTorrent.
 	altWebUI bool
-	started  time.Time
+	// allowedHosts are the host names piecemeal answers to; empty is any.
+	allowedHosts []string
+	started      time.Time
 
 	mainSync syncStore[mainSnapshot]
 	peerSync syncStore[peerSnapshot]
@@ -73,6 +75,8 @@ type Deps struct {
 	HTTPPort int
 	// AltWebUI is set when an alternative web UI is hosted.
 	AltWebUI bool
+	// AllowedHosts, for the preferences.
+	AllowedHosts []string
 }
 
 type route struct {
@@ -92,7 +96,7 @@ const Prefix = "/api/v2/"
 func New(d Deps) *Server {
 	s := &Server{
 		engine: d.Engine, settings: d.Settings, auth: d.Auth, fetcher: d.Fetcher, store: d.Store, rss: d.RSS, logs: d.Logs, log: d.Log,
-		port: d.HTTPPort, altWebUI: d.AltWebUI, started: time.Now(),
+		port: d.HTTPPort, altWebUI: d.AltWebUI, allowedHosts: d.AllowedHosts, started: time.Now(),
 	}
 	if err := s.loadCookies(context.Background()); err != nil {
 		s.log.Warn("loading the download cookies", "error", err)
@@ -247,7 +251,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if !rt.public {
+	if rt.public {
+		// Sign-in takes a few short fields: don't read a large body from
+		// someone who hasn't signed in.
+		r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+	} else {
 		p, status := s.authenticate(r)
 		if p == nil {
 			http.Error(w, http.StatusText(status), status)

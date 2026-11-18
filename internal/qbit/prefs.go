@@ -63,7 +63,7 @@ func (s *Server) setPreferences(w http.ResponseWriter, r *http.Request) {
 		delete(values, "peerPort")
 	}
 	locked := s.settings.Locked()
-	admin := principal(r).IsAdmin
+	admin := isAdmin(principal(r))
 	for k, v := range values {
 		_, pinned := locked[k]
 		// Users who aren't admins may change the speed limits only, as in
@@ -94,9 +94,17 @@ var userSettings = map[string]bool{
 	"altSpeedEnabled": true,
 }
 
+// isAdmin reports whether the caller may use admin endpoints: an admin
+// signed in, with Basic credentials, or with a full-scope key, as in the
+// native API. A key for an *arr app (qbittorrent scope) or a dashboard
+// (read-only) doesn't count, even an admin's.
+func isAdmin(p *auth.Principal) bool {
+	return p != nil && p.IsAdmin && (p.Method != "apiKey" || p.Scope == auth.ScopeFull)
+}
+
 // requireAdmin answers 403 unless the caller is an admin.
 func requireAdmin(w http.ResponseWriter, r *http.Request) bool {
-	if !principal(r).IsAdmin {
+	if !isAdmin(principal(r)) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return false
 	}

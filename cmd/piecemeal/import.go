@@ -87,6 +87,9 @@ func importTorrents(ctx context.Context, args []string, out io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("configuration: %w", err)
 	}
+	if err := engine.CheckRoots(cfg.AllowedRoots, cfg.DataDir, cfg.QBittorrentWebUIDir); err != nil {
+		return err
+	}
 	unlock, err := store.LockDataDir(cfg.DataDir)
 	if err != nil {
 		return fmt.Errorf("%w; stop piecemeal first", err)

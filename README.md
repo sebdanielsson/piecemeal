@@ -27,7 +27,7 @@ Startup configuration comes from environment variables:
 | `PIECEMEAL_ADDR` | `:8080` | HTTP address for the APIs and web UI. |
 | `PIECEMEAL_DATA_DIR` | `/data` in the image | Database and piece completion state. Keep it on fast storage. |
 | `PIECEMEAL_DOWNLOAD_DIR` | `/downloads` in the image | Default save path. |
-| `PIECEMEAL_ALLOWED_ROOTS` | the download dir | Comma-separated directories every save path must be inside. |
+| `PIECEMEAL_ALLOWED_ROOTS` | the download dir | Comma-separated directories every save path must be inside. They must not overlap the data directory or the qBittorrent web UI directory. |
 | `PIECEMEAL_WATCH_DIR` | off | Directory polled for `.torrent` and `.magnet` files. |
 | `PIECEMEAL_QBITTORRENT_WEBUI_DIR` | off | A qBittorrent web UI such as VueTorrent, served at `/qbittorrent/`. See [qBittorrent compatibility](docs/qbittorrent-compat.md#vuetorrent-and-other-qbittorrent-web-uis). |
 | `PIECEMEAL_NATPMP_GATEWAY` | off | NAT-PMP gateway (such as a VPN's) to forward the peer port through. piecemeal listens on whatever port it gets and follows changes. |
@@ -35,21 +35,25 @@ Startup configuration comes from environment variables:
 | `PIECEMEAL_DISABLE_IPV6` | `false` | No IPv6 peers, for IPv4-only tunnels. |
 | `PIECEMEAL_MMAP` | `false` | Memory-mapped file I/O. Off by default: on ZFS it amplifies writes. |
 | `PIECEMEAL_ADMIN_USERNAME` | `admin` | The local admin. |
-| `PIECEMEAL_ADMIN_PASSWORD_HASH` | none | argon2id hash from `piecemeal hash-password`. |
+| `PIECEMEAL_ADMIN_PASSWORD_HASH` | none | argon2id hash from `piecemeal hash-password`. Changing it ends the admin's sessions at the next start; API keys stay, so review them. |
 | `PIECEMEAL_LOCAL_LOGIN` | `true` | Allow password sign-in. |
 | `PIECEMEAL_SECURE_COOKIES` | `true` | Mark cookies Secure. Turn off only for plain HTTP on a host other than localhost. |
 | `PIECEMEAL_TRUSTED_PROXIES` | none | CIDRs whose `X-Forwarded-For` is trusted for client addresses. |
 | `PIECEMEAL_FETCH_ALLOWED_NETWORKS` | none | Private CIDRs that adding by URL may fetch from. Private, loopback and link-local addresses are refused otherwise. |
 | `PIECEMEAL_METRICS` | `auth` | `/metrics` access: `public`, `auth` (session or API key) or `off`. |
 | `PIECEMEAL_PUBLIC_URL` | none | Where people reach piecemeal, such as `https://piecemeal.example.com`. Needed for OIDC. |
+| `PIECEMEAL_ALLOWED_HOSTS` | any | Comma-separated host names piecemeal answers to, besides `localhost`, loopback addresses and the public URL's host. Other names get 421, which stops DNS rebinding on a LAN. Health checks answer any name. |
 | `PIECEMEAL_OIDC_ISSUER` | off | OpenID Connect issuer URL, such as Pocket ID's. Turns on SSO sign-in. |
 | `PIECEMEAL_OIDC_CLIENT_ID`, `PIECEMEAL_OIDC_CLIENT_SECRET` | none | The client registered at the provider, with the callback `<public URL>/api/piecemeal/v1/auth/oidc/callback`. |
 | `PIECEMEAL_OIDC_NAME` | `SSO` | Name on the sign-in button. |
-| `PIECEMEAL_OIDC_ALLOWED_GROUPS` | anyone | Comma-separated groups allowed to sign in. |
+| `PIECEMEAL_OIDC_ALLOWED_GROUPS` | none | Comma-separated groups allowed to sign in. Required with OIDC, unless `PIECEMEAL_OIDC_ALLOW_ANY` is set. |
+| `PIECEMEAL_OIDC_ALLOW_ANY` | `false` | Let every account at the provider sign in. Users can write anywhere under the allowed roots, so set it only when the provider holds just the people you trust. |
 | `PIECEMEAL_OIDC_ADMIN_GROUPS` | none | Comma-separated groups whose members are admins. |
 | `PIECEMEAL_OIDC_GROUPS_CLAIM` | `groups` | ID token claim holding the groups. |
 | `PIECEMEAL_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. |
 | `PIECEMEAL_LOG_FORMAT` | `json` | `json` or `text`. |
+
+An admin can remove a user under Users, which ends their sessions and revokes their API keys. Remove SSO users from the allowed groups at the provider first, or they come back as new users at their next sign-in.
 
 Runtime settings (speed limits, connections, DHT, encryption, seeding goals and more) are changed through `PATCH /api/piecemeal/v1/settings`. Any of them can be pinned with an environment variable named after it, such as `PIECEMEAL_DOWNLOAD_LIMIT` for `downloadLimit`; pinned settings are read-only in the API.
 

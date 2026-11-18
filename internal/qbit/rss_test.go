@@ -2,6 +2,7 @@ package qbit
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"mime/multipart"
@@ -12,7 +13,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sebdanielsson/piecemeal/internal/auth"
 	"github.com/sebdanielsson/piecemeal/internal/engine/enginetest"
+	"github.com/sebdanielsson/piecemeal/internal/rss"
 )
 
 // feedServer serves an RSS feed whose items link to two torrents.
@@ -193,4 +196,58 @@ func (e *env) importRules(body []byte) response {
 	req, _ := http.NewRequest(http.MethodPost, e.srv.URL+"/api/v2/rss/importRules", &buf)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 	return e.do(req)
+}
+
+func TestRSSFeedURLsMaskedForNonAdmins(t *testing.T) {
+	e := newEnv(t)
+	e.login()
+	_, feedURL := feedServer(t)
+	feedURL += "?passkey=SECRET"
+	expect(t, "addFeed", e.post("rss/addFeed", url.Values{"url": {feedURL}, "path": {"Show"}}), http.StatusOK)
+	rule, _ := json.Marshal(map[string]any{"affectedFeeds": []string{feedURL}})
+	expect(t, "setRule", e.post("rss/setRule", url.Values{"ruleName": {"r"}, "ruleDef": {string(rule)}}), http.StatusOK)
+
+	_, p, err := e.auth.Login(context.Background(), httptest.NewRequest(http.MethodPost, "/", nil), "admin", "adminadmin", auth.KindWeb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, roKey, err := e.auth.CreateAPIKey(context.Background(), p, "grafana", auth.ScopeReadOnly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		name   string
+		header []string
+		want   string
+	}{
+		{"admin", nil, feedURL},
+		{"read-only key", []string{"Authorization", "Bearer " + roKey}, strings.TrimSuffix(feedURL, "passkey=SECRET") + "…"},
+	} {
+		var items map[string]map[string]any
+		e.get("rss/items", c.header...).json(t, &items)
+		var rules map[string]struct {
+			AffectedFeeds []string `json:"affectedFeeds"`
+		}
+		e.get("rss/rules", c.header...).json(t, &rules)
+		if items["Show"]["url"] != c.want || len(rules["r"].AffectedFeeds) != 1 || rules["r"].AffectedFeeds[0] != c.want {
+			t.Errorf("%s: items %v rules %v", c.name, items, rules)
+		}
+	}
+}
+
+func TestArticleObjectIsSafeToRender(t *testing.T) {
+	obj := articleObject(rss.Article{
+		ID: "1", Title: "t", Link: "javascript:alert(1)", TorrentURL: "javascript:alert(2)",
+		Description: `<p onclick="x()">Hi <b>there</b><script>alert(3)</script><img src=x onerror=alert(4)><a href="javascript:alert(5)">a</a></p>`,
+	})
+	d, _ := obj["description"].(string)
+	if _, ok := obj["link"]; ok || obj["torrentURL"] != nil ||
+		strings.Contains(d, "script") || strings.Contains(d, "onerror") || strings.Contains(d, "onclick") || strings.Contains(d, "javascript") ||
+		!strings.Contains(d, "<b>there</b>") {
+		t.Fatalf("article: %v", obj)
+	}
+	obj = articleObject(rss.Article{ID: "2", Link: "https://example.com/a", TorrentURL: "magnet:?xt=urn:btih:abc"})
+	if obj["link"] != "https://example.com/a" || obj["torrentURL"] != "magnet:?xt=urn:btih:abc" {
+		t.Fatalf("article: %v", obj)
+	}
 }

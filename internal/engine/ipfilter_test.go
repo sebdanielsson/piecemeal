@@ -99,3 +99,11 @@ func TestBanDropsPeersWithoutRestart(t *testing.T) {
 		t.Fatalf("connected to a banned peer: %+v", st)
 	}
 }
+
+func TestIPFilterRefusesDevices(t *testing.T) {
+	for _, p := range []string{"/dev/zero", "/dev/urandom", t.TempDir()} {
+		if _, _, err := readIPFilter(p); err == nil {
+			t.Errorf("%s was read as a filter", p)
+		}
+	}
+}
