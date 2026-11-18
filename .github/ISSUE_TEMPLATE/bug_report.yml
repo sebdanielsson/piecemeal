@@ -1,0 +1,46 @@
+name: Bug report
+description: Something doesn't work as it should.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: From `piecemeal version`, or the image tag.
+      placeholder: 1.0.0
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Web UI
+        - Native API
+        - qBittorrent API (Radarr, Sonarr, Prowlarr, VueTorrent)
+        - Downloading or seeding
+        - RSS
+        - Sign-in, SSO or API keys
+        - Install or configuration
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: Configuration
+      description: Your PIECEMEAL_* variables and how piecemeal runs (Docker, Compose, binary). Remove secrets.
+      render: shell
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant log lines, from `docker logs piecemeal` or Log in the web UI. Remove secrets and tracker passkeys.
+      render: text

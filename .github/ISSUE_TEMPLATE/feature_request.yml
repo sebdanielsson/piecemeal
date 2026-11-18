@@ -1,0 +1,20 @@
+name: Feature request
+description: Something piecemeal should do.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you're trying to do
+      description: The problem, not the solution. What are you doing now instead?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How it could work
+  - type: input
+    id: qbittorrent
+    attributes:
+      label: qBittorrent equivalent
+      description: If this is a qBittorrent API endpoint or setting piecemeal lacks, name it.
