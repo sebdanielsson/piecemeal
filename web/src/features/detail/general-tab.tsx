@@ -2,7 +2,6 @@ import { CopyIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import type { Torrent, UpdateTorrentRequest } from "@/api/types";
 import { CategorySelect } from "@/components/form/category-select";
-import { LimitInput } from "@/components/form/limit-input";
 import { ShareLimitInput } from "@/components/form/share-limit-input";
 import { TagPicker } from "@/components/form/tag-picker";
 import { Button } from "@/components/ui/button";
@@ -13,7 +12,6 @@ import {
   formatBytes,
   formatDuration,
   formatEta,
-  formatLimit,
   formatRate,
   formatRatio,
   formatUnixTime,
@@ -46,18 +44,8 @@ export function GeneralTab({ torrent: t }: { torrent: Torrent }) {
         </Item>
         <Item label="Uploaded">{formatBytes(t.uploaded)}</Item>
         <Item label="Ratio">{formatRatio(t.ratio)}</Item>
-        <Item label="Download rate">
-          {formatRate(t.downloadRate)}
-          {t.downloadLimit > 0 && (
-            <span className="text-muted-foreground"> (limit {formatLimit(t.downloadLimit)})</span>
-          )}
-        </Item>
-        <Item label="Upload rate">
-          {formatRate(t.uploadRate)}
-          {t.uploadLimit > 0 && (
-            <span className="text-muted-foreground"> (limit {formatLimit(t.uploadLimit)})</span>
-          )}
-        </Item>
+        <Item label="Download rate">{formatRate(t.downloadRate)}</Item>
+        <Item label="Upload rate">{formatRate(t.uploadRate)}</Item>
         <Item label="ETA">{t.complete ? "Done" : formatEta(t.eta) || "–"}</Item>
         <Item label="Seeds">{t.seeds} connected</Item>
         <Item label="Peers">
@@ -147,7 +135,7 @@ export function GeneralTab({ torrent: t }: { torrent: Torrent }) {
         />
         {/* A different torrent, or a change from elsewhere, starts the form over. */}
         <LimitsForm
-          key={`${t.hash}:${t.downloadLimit}:${t.uploadLimit}:${t.ratioLimit}:${t.seedingTimeLimit}:${t.inactiveSeedingTimeLimit}`}
+          key={`${t.hash}:${t.ratioLimit}:${t.seedingTimeLimit}:${t.inactiveSeedingTimeLimit}`}
           torrent={t}
           onSave={patch}
           saving={update.isPending}
@@ -157,7 +145,7 @@ export function GeneralTab({ torrent: t }: { torrent: Torrent }) {
   );
 }
 
-/** Speed limits and seeding goals, saved together. */
+/** Seeding goals, saved together. */
 function LimitsForm({
   torrent: t,
   onSave,
@@ -168,8 +156,6 @@ function LimitsForm({
   saving: boolean;
 }) {
   const current = {
-    downloadLimit: t.downloadLimit,
-    uploadLimit: t.uploadLimit,
     ratioLimit: t.ratioLimit,
     seedingTimeLimit: t.seedingTimeLimit,
     inactiveSeedingTimeLimit: t.inactiveSeedingTimeLimit,
@@ -188,22 +174,6 @@ function LimitsForm({
         onSave(Object.fromEntries(changed.map((k) => [k, draft[k]])));
       }}
     >
-      <Item label="Download limit" htmlFor="detail-dl">
-        <LimitInput
-          id="detail-dl"
-          value={draft.downloadLimit}
-          onChange={(v) => set("downloadLimit", v)}
-          className="w-56"
-        />
-      </Item>
-      <Item label="Upload limit" htmlFor="detail-ul">
-        <LimitInput
-          id="detail-ul"
-          value={draft.uploadLimit}
-          onChange={(v) => set("uploadLimit", v)}
-          className="w-56"
-        />
-      </Item>
       <Item label="Stop at ratio" htmlFor="detail-ratio">
         <ShareLimitInput
           id="detail-ratio"
@@ -231,7 +201,7 @@ function LimitsForm({
       {changed.length > 0 && (
         <div className="flex gap-2 sm:col-start-2">
           <Button type="submit" size="xs" disabled={saving}>
-            Save limits
+            Save goals
           </Button>
           <Button type="button" size="xs" variant="ghost" onClick={() => setDraft(current)}>
             Reset

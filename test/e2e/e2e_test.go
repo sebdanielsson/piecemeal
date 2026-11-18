@@ -420,7 +420,7 @@ func TestContractQBittorrent(t *testing.T) {
 		{name: "reannounce", method: http.MethodPost, path: "/torrents/reannounce", form: "hashes=5555555555555555555555555555555555555555"},
 		{name: "setShareLimits", method: http.MethodPost, path: "/torrents/setShareLimits", form: "hashes=5555555555555555555555555555555555555555&ratioLimit=-2&seedingTimeLimit=-2&inactiveSeedingTimeLimit=-2&shareLimitAction=Default&shareLimitsMode=Default"},
 		{name: "setShareLimits without 5.x fields", method: http.MethodPost, path: "/torrents/setShareLimits", form: "hashes=5555555555555555555555555555555555555555&ratioLimit=-2&seedingTimeLimit=-2&inactiveSeedingTimeLimit=-2", differs: "accepted, for clients older than qBittorrent 5"},
-		{name: "setDownloadLimit per torrent", method: http.MethodPost, path: "/torrents/setDownloadLimit", form: "hashes=5555555555555555555555555555555555555555&limit=0"},
+		{name: "setDownloadLimit per torrent", method: http.MethodPost, path: "/torrents/setDownloadLimit", form: "hashes=5555555555555555555555555555555555555555&limit=0", differs: "409: piecemeal has no per-torrent speed limits"},
 		{name: "toggleSequentialDownload", method: http.MethodPost, path: "/torrents/toggleSequentialDownload", form: "hashes=5555555555555555555555555555555555555555"},
 		{name: "toggleFirstLastPiecePrio", method: http.MethodPost, path: "/torrents/toggleFirstLastPiecePrio", form: "hashes=5555555555555555555555555555555555555555"},
 		{name: "rename", method: http.MethodPost, path: "/torrents/rename", form: "hash=5555555555555555555555555555555555555555&name=renamed"},

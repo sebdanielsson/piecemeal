@@ -86,8 +86,6 @@ type Torrent struct {
 	RatioLimit               float64 `json:"ratioLimit" doc:"-2 follows the global setting, -1 is unlimited."`
 	SeedingTimeLimit         int64   `json:"seedingTimeLimit" doc:"Minutes. -2 follows the global setting, -1 is unlimited."`
 	InactiveSeedingTimeLimit int64   `json:"inactiveSeedingTimeLimit" doc:"Minutes. -2 follows the global setting, -1 is unlimited."`
-	DownloadLimit            int64   `json:"downloadLimit" doc:"Bytes per second, 0 for unlimited."`
-	UploadLimit              int64   `json:"uploadLimit" doc:"Bytes per second, 0 for unlimited."`
 	QueuePosition            int64   `json:"queuePosition"`
 }
 
@@ -338,8 +336,8 @@ func (e *Engine) statusLocked(m *managed) *Torrent {
 		ActiveTime: r.ActiveSeconds, Stopped: r.Stopped, Forced: r.Forced, Sequential: r.Sequential,
 		FirstLast: r.FirstLastPiece, Magnet: r.Magnet, Error: r.Error, RatioLimit: r.RatioLimit,
 		SeedingTimeLimit: r.SeedingTimeLimit, InactiveSeedingTimeLimit: r.InactiveSeedingTimeLimit,
-		DownloadLimit: r.DownloadLimit, UploadLimit: r.UploadLimit, QueuePosition: r.QueuePosition,
-		Layout: cmp.Or(r.ContentLayout, LayoutOriginal),
+		QueuePosition: r.QueuePosition,
+		Layout:        cmp.Or(r.ContentLayout, LayoutOriginal),
 	}
 	if st.Tags == nil {
 		st.Tags = []string{}

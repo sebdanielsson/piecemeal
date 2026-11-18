@@ -521,21 +521,16 @@ func (s *Server) queue(how string) func(http.ResponseWriter, *http.Request) {
 	}
 }
 
-func (s *Server) torrentLimits(download bool) func(http.ResponseWriter, *http.Request) {
+func (s *Server) torrentLimits() func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := parseForm(w, r); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		// piecemeal has no per-torrent speed limits: none applies.
 		out := map[string]int64{}
 		for _, h := range resolveAll(s, s.known(hashes(r, "hashes"))) {
-			if t, ok := s.engine.Get(h); ok {
-				v := t.UploadLimit
-				if download {
-					v = t.DownloadLimit
-				}
-				out[h] = max(v, 0)
-			}
+			out[h] = 0
 		}
 		writeJSON(w, out)
 	}
