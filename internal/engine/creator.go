@@ -51,7 +51,7 @@ type CreateTask struct {
 type createTask struct {
 	CreateTask
 	done    atomic.Int64 // bytes hashed
-	total   int64
+	total   atomic.Int64
 	torrent []byte
 	cancel  context.CancelFunc
 }
@@ -115,8 +115,8 @@ func (e *Engine) CreateTasks() []CreateTask {
 	out := make([]CreateTask, 0, len(c.tasks))
 	for _, t := range c.tasks {
 		ct := t.CreateTask
-		if t.Status == "running" && t.total > 0 {
-			ct.Progress = float64(t.done.Load()) / float64(t.total)
+		if total := t.total.Load(); t.Status == "running" && total > 0 {
+			ct.Progress = float64(t.done.Load()) / float64(total)
 		}
 		out = append(out, ct)
 	}
@@ -213,7 +213,7 @@ func (e *Engine) runCreator() {
 
 // buildTorrent hashes the files under p.SourcePath into a .torrent file.
 // done counts the bytes hashed so far, out of total.
-func buildTorrent(ctx context.Context, p CreateParams, done *atomic.Int64, total *int64) ([]byte, string, error) {
+func buildTorrent(ctx context.Context, p CreateParams, done, total *atomic.Int64) ([]byte, string, error) {
 	info := metainfo.Info{PieceLength: p.PieceSize, Source: p.Source}
 	if p.Private {
 		private := true
@@ -261,9 +261,9 @@ func buildTorrent(ctx context.Context, p CreateParams, done *atomic.Int64, total
 	} else {
 		info.Length = st.Size()
 	}
-	*total = info.TotalLength()
+	total.Store(info.TotalLength())
 	if info.PieceLength == 0 {
-		info.PieceLength = metainfo.ChoosePieceLength(*total)
+		info.PieceLength = metainfo.ChoosePieceLength(info.TotalLength())
 	}
 	err = info.GeneratePieces(func(fi metainfo.FileInfo) (io.ReadCloser, error) {
 		path := root

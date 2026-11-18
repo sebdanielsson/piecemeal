@@ -68,3 +68,9 @@ func within(root, path string) bool {
 	}
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
 }
+
+// PathAllowed reports whether path is inside an allowed root.
+func (e *Engine) PathAllowed(path string) bool {
+	_, err := e.confine(path)
+	return err == nil
+}

@@ -21,6 +21,7 @@ import (
 	"github.com/sebdanielsson/piecemeal/internal/auth"
 	"github.com/sebdanielsson/piecemeal/internal/engine"
 	"github.com/sebdanielsson/piecemeal/internal/fetch"
+	"github.com/sebdanielsson/piecemeal/internal/logbuf"
 	"github.com/sebdanielsson/piecemeal/internal/settings"
 )
 
@@ -38,6 +39,7 @@ type Server struct {
 	settings *settings.Manager
 	auth     *auth.Service
 	fetcher  *fetch.Fetcher
+	logs     *logbuf.Buffer
 	log      *slog.Logger
 	// port is the HTTP listen port, which qBittorrent puts in its session
 	// cookie's name.
@@ -51,6 +53,7 @@ type Deps struct {
 	Settings *settings.Manager
 	Auth     *auth.Service
 	Fetcher  *fetch.Fetcher
+	Logs     *logbuf.Buffer
 	Log      *slog.Logger
 	// HTTPPort is the port piecemeal serves HTTP on.
 	HTTPPort int
@@ -69,20 +72,41 @@ const Prefix = "/api/v2/"
 // New creates the API.
 func New(d Deps) *Server {
 	s := &Server{
-		engine: d.Engine, settings: d.Settings, auth: d.Auth, fetcher: d.Fetcher, log: d.Log, port: d.HTTPPort,
+		engine: d.Engine, settings: d.Settings, auth: d.Auth, fetcher: d.Fetcher, logs: d.Logs, log: d.Log, port: d.HTTPPort,
 	}
 	get, post := http.MethodGet, http.MethodPost
 	s.routes = map[string]route{
 		"auth/login":  {post, true, s.login},
 		"auth/logout": {post, false, s.logout},
 
-		"app/version":         {get, false, s.text(AppVersion)},
-		"app/webapiVersion":   {get, false, s.text(WebAPIVersion)},
-		"app/buildInfo":       {get, false, s.buildInfo},
-		"app/preferences":     {get, false, s.preferences},
-		"app/defaultSavePath": {get, false, s.defaultSavePath},
+		"app/version":                     {get, false, s.text(AppVersion)},
+		"app/webapiVersion":               {get, false, s.text(WebAPIVersion)},
+		"app/buildInfo":                   {get, false, s.buildInfo},
+		"app/preferences":                 {get, false, s.preferences},
+		"app/defaultSavePath":             {get, false, s.defaultSavePath},
+		"app/shutdown":                    {post, false, s.notSupported},
+		"app/sendTestEmail":               {post, false, s.notSupported},
+		"app/networkInterfaceList":        {get, false, s.networkInterfaceList},
+		"app/networkInterfaceAddressList": {get, false, s.networkInterfaceAddressList},
+		"app/getDirectoryContent":         {post, false, s.getDirectoryContent},
 
-		"transfer/info": {get, false, s.transferInfo},
+		"log/main":  {get, false, s.logMain},
+		"log/peers": {get, false, s.logPeers},
+
+		"transfer/info":                  {get, false, s.transferInfo},
+		"transfer/speedLimitsMode":       {get, false, s.speedLimitsMode},
+		"transfer/toggleSpeedLimitsMode": {post, false, s.toggleSpeedLimitsMode},
+		"transfer/setSpeedLimitsMode":    {post, false, s.setSpeedLimitsMode},
+		"transfer/downloadLimit":         {get, false, s.globalLimit(true)},
+		"transfer/uploadLimit":           {get, false, s.globalLimit(false)},
+		"transfer/setDownloadLimit":      {post, false, s.setGlobalLimit(true)},
+		"transfer/setUploadLimit":        {post, false, s.setGlobalLimit(false)},
+		"transfer/banPeers":              {post, false, s.banPeers},
+
+		"torrentcreator/addTask":     {post, false, s.creatorAddTask},
+		"torrentcreator/status":      {get, false, s.creatorStatus},
+		"torrentcreator/torrentFile": {post, false, s.creatorTorrentFile},
+		"torrentcreator/deleteTask":  {post, false, s.creatorDeleteTask},
 
 		"torrents/info":        {get, false, s.info},
 		"torrents/properties":  {get, false, s.properties},
@@ -108,10 +132,31 @@ func New(d Deps) *Server {
 		"torrents/toggleFirstLastPiecePrio": {post, false, s.toggle(false)},
 		"torrents/filePrio":                 {post, false, s.filePrio},
 		"torrents/rename":                   {post, false, s.rename},
-		"torrents/topPrio":                  {post, false, s.queueing},
-		"torrents/bottomPrio":               {post, false, s.queueing},
-		"torrents/increasePrio":             {post, false, s.queueing},
-		"torrents/decreasePrio":             {post, false, s.queueing},
+		"torrents/topPrio":                  {post, false, s.queue("top")},
+		"torrents/bottomPrio":               {post, false, s.queue("bottom")},
+		"torrents/increasePrio":             {post, false, s.queue("up")},
+		"torrents/decreasePrio":             {post, false, s.queue("down")},
+		"torrents/webseeds":                 {get, false, s.webseeds},
+		"torrents/addWebSeeds":              {post, false, s.editWebSeeds("add")},
+		"torrents/editWebSeed":              {post, false, s.editWebSeeds("edit")},
+		"torrents/removeWebSeeds":           {post, false, s.editWebSeeds("remove")},
+		"torrents/addTrackers":              {post, false, s.addTrackers},
+		"torrents/editTracker":              {post, false, s.editTracker},
+		"torrents/removeTrackers":           {post, false, s.removeTrackers},
+		"torrents/addPeers":                 {post, false, s.addPeers},
+		"torrents/setLocation":              {post, false, s.setLocation("location")},
+		"torrents/setSavePath":              {post, false, s.setLocation("path")},
+		"torrents/renameFile":               {post, false, s.renamePath},
+		"torrents/renameFolder":             {post, false, s.renamePath},
+		"torrents/downloadLimit":            {post, false, s.torrentLimits(true)},
+		"torrents/uploadLimit":              {post, false, s.torrentLimits(false)},
+		"torrents/count":                    {get, false, s.count},
+		"torrents/export":                   {get, false, s.export},
+		"torrents/pieceHashes":              {get, false, s.pieceHashes},
+		"torrents/setTags":                  {post, false, s.setTags},
+		"torrents/setAutoManagement":        {post, false, s.acceptIgnored},
+		"torrents/setDownloadPath":          {post, false, s.acceptIgnored},
+		"torrents/setSuperSeeding":          {post, false, s.notSupported},
 		"torrents/setCategory":              {post, false, s.setCategory},
 		"torrents/createCategory":           {post, false, s.createCategory},
 		"torrents/editCategory":             {post, false, s.editCategory},

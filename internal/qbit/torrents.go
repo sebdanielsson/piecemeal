@@ -172,12 +172,13 @@ func effective[T int64 | float64](own, global T) T {
 	return own
 }
 
-// rootPath is the torrent's top folder, empty for a single file.
-func rootPath(t engine.Torrent) string {
-	if t.MultiFile {
-		return t.ContentPath
+// queuePriority is qBittorrent's priority field: the queue position, or -1
+// with queueing off or for complete torrents.
+func queuePriority(t engine.Torrent, queueing bool) int64 {
+	if !queueing || t.QueuePosition == 0 {
+		return -1
 	}
-	return ""
+	return t.QueuePosition
 }
 
 func (s *Server) torrent(t engine.Torrent) Torrent {
@@ -204,8 +205,8 @@ func (s *Server) torrent(t engine.Torrent) Torrent {
 		MaxRatio:               effective(t.RatioLimit, st.RatioLimit),
 		MaxSeedingTime:         effective(t.SeedingTimeLimit, st.SeedingTimeLimit),
 		Name:                   t.Name, NumComplete: t.Seeds, NumIncomplete: max(t.SwarmPeers-t.Seeds, t.Peers),
-		NumLeechs: t.Peers, NumSeeds: t.Seeds, Priority: -1, Private: t.Private, Progress: t.Progress,
-		Ratio: ratio(t.Ratio), RatioLimit: t.RatioLimit, RootPath: rootPath(t), SavePath: t.SavePath,
+		NumLeechs: t.Peers, NumSeeds: t.Seeds, Priority: queuePriority(t, st.QueueingEnabled), Private: t.Private, Progress: t.Progress,
+		Ratio: ratio(t.Ratio), RatioLimit: t.RatioLimit, RootPath: t.RootPath, SavePath: t.SavePath,
 		SeedingTime: t.SeedingTime, SeedingTimeLimit: t.SeedingTimeLimit, SeenComplete: completedOn,
 		SeqDl: t.Sequential, ShareLimitAction: "Default", ShareLimitsMode: "Default", Size: t.Size,
 		State: State(t), Tags: strings.Join(t.Tags, ", "), TimeActive: t.ActiveTime, TotalSize: t.TotalSize,
@@ -507,9 +508,10 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	base := engine.AddParams{
-		Category: r.FormValue("category"),
-		Tags:     list(r.FormValue("tags")),
-		Name:     strings.TrimSpace(r.FormValue("rename")),
+		Category:      r.FormValue("category"),
+		ContentLayout: r.FormValue("contentLayout"),
+		Tags:          list(r.FormValue("tags")),
+		Name:          strings.TrimSpace(r.FormValue("rename")),
 	}
 	if p := r.FormValue("savepath"); p != "" {
 		base.SavePath = s.absolute(p)
@@ -824,11 +826,4 @@ func (s *Server) rename(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	done(w)
-}
-
-// queueing answers the queue position endpoints. piecemeal has no queue
-// yet, which qBittorrent reports as 409.
-func (s *Server) queueing(w http.ResponseWriter, r *http.Request) {
-	_ = parseForm(w, r)
-	http.Error(w, "Torrent queueing must be enabled", http.StatusConflict)
 }

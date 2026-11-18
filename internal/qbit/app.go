@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"runtime"
 	"strconv"
+	"strings"
 
 	"github.com/sebdanielsson/piecemeal/internal/settings"
 )
@@ -84,7 +85,6 @@ func (s *Server) preferences(w http.ResponseWriter, _ *http.Request) {
 		"up_limit":                limit(st.UploadLimit),
 		"alt_dl_limit":            limit(st.AltDownloadLimit),
 		"alt_up_limit":            limit(st.AltUploadLimit),
-		"scheduler_enabled":       false,
 		"limit_utp_rate":          true,
 		"limit_tcp_overhead":      false,
 		"limit_lan_peers":         true,
@@ -98,16 +98,29 @@ func (s *Server) preferences(w http.ResponseWriter, _ *http.Request) {
 		"max_uploads_per_torrent": -1,
 
 		// BitTorrent
-		"dht":                      st.DHT,
-		"pex":                      st.PEX,
-		"lsd":                      false,
-		"encryption":               encryptionMode(st.Encryption),
-		"anonymous_mode":           false,
-		"queueing_enabled":         false,
-		"max_active_downloads":     -1,
-		"max_active_uploads":       -1,
-		"max_active_torrents":      -1,
-		"dont_count_slow_torrents": false,
+		"dht":                            st.DHT,
+		"pex":                            st.PEX,
+		"lsd":                            false,
+		"encryption":                     encryptionMode(st.Encryption),
+		"anonymous_mode":                 false,
+		"queueing_enabled":               st.QueueingEnabled,
+		"max_active_downloads":           st.MaxActiveDownloads,
+		"max_active_uploads":             st.MaxActiveUploads,
+		"max_active_torrents":            st.MaxActiveTorrents,
+		"dont_count_slow_torrents":       st.DontCountSlowTorrents,
+		"slow_torrent_dl_rate_threshold": st.SlowDownloadRate / 1024,
+		"slow_torrent_ul_rate_threshold": st.SlowUploadRate / 1024,
+		"slow_torrent_inactive_timer":    st.SlowTorrentTime,
+		"ip_filter_enabled":              st.IPFilterEnabled,
+		"ip_filter_path":                 st.IPFilterPath,
+		"ip_filter_trackers":             false,
+		"banned_IPs":                     st.BannedIPs,
+		"scheduler_enabled":              st.AltSpeedSchedule,
+		"schedule_from_hour":             clockPart(st.AltSpeedScheduleFrom, 0),
+		"schedule_from_min":              clockPart(st.AltSpeedScheduleFrom, 1),
+		"schedule_to_hour":               clockPart(st.AltSpeedScheduleTo, 0),
+		"schedule_to_min":                clockPart(st.AltSpeedScheduleTo, 1),
+		"scheduler_days":                 schedulerDays(st.AltSpeedScheduleDays),
 
 		// Seeding goals. piecemeal applies any limit that is reached, like
 		// qBittorrent's default share limits mode.
@@ -162,4 +175,26 @@ func (s *Server) transferInfo(w http.ResponseWriter, _ *http.Request) {
 		"dht_nodes":         t.DHTNodes,
 		"connection_status": status,
 	})
+}
+
+// clockPart is the hour (0) or minute (1) of an HH:MM time.
+func clockPart(hhmm string, part int) int {
+	parts := strings.Split(hhmm, ":")
+	if len(parts) != 2 {
+		return 0
+	}
+	n, _ := strconv.Atoi(parts[part])
+	return n
+}
+
+// schedulerDays maps the schedule's days to qBittorrent's scheduler_days:
+// 0 every day, 1 weekdays, 2 weekends, 3 Monday to 9 Sunday.
+func schedulerDays(days string) int {
+	order := []string{"everyDay", "weekdays", "weekends", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}
+	for i, d := range order {
+		if d == days {
+			return i
+		}
+	}
+	return 0
 }

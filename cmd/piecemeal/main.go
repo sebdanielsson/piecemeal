@@ -298,7 +298,7 @@ func routes(d routeDeps) (*http.ServeMux, *api.API) {
 		},
 	})
 	q := qbit.New(qbit.Deps{
-		Engine: d.engine, Settings: d.settings, Auth: d.auth, Fetcher: fetcher,
+		Engine: d.engine, Settings: d.settings, Auth: d.auth, Fetcher: fetcher, Logs: d.logs,
 		Log: d.log.With("component", "qbit"), HTTPPort: httpPort(d.cfg.Addr),
 	})
 	// Method-specific patterns, so they and the web UI's "GET /" don't
