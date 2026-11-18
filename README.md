@@ -16,6 +16,8 @@ docker run -d --name piecemeal \
 
 Make the password hash with `docker run --rm -i ghcr.io/sebdanielsson/piecemeal hash-password` and type the password. Without a hash, piecemeal logs a temporary admin password at every start.
 
+The [user guide](docs/guide.md) covers Docker Compose, connecting Radarr, Sonarr and Prowlarr, reverse proxies, SSO, VPNs with port forwarding, and troubleshooting.
+
 The native API is at `/api/piecemeal/v1`, with interactive docs at `/api/piecemeal/v1/docs` and the OpenAPI document in [api/openapi.json](api/openapi.json). Sign in with `POST /api/piecemeal/v1/auth/login`, or create an API key (`POST /api/piecemeal/v1/api-keys`) and send it as `Authorization: Bearer pm_...`.
 
 ## Configuration
