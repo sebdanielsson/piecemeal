@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	g "github.com/anacrolix/generics"
@@ -276,8 +277,10 @@ func (e *Engine) onSettingsChanged(old, cur settings.Settings) {
 		cur.Encryption != old.Encryption || cur.MaxHalfOpenConnections != old.MaxHalfOpenConnections ||
 		(!e.cfg.PortForwarded && cur.PeerPort != old.PeerPort)
 	if needsRestart {
+		// Keep the port in use unless the port setting changed, also when
+		// it is 0 (random).
 		port := e.port
-		if !e.cfg.PortForwarded {
+		if !e.cfg.PortForwarded && cur.PeerPort != old.PeerPort {
 			port = cur.PeerPort
 		}
 		if err := e.restartClientLocked(port, cur); err != nil {
@@ -372,6 +375,21 @@ func (e *Engine) startClient(port int, s settings.Settings) error {
 	return nil
 }
 
+// startClientRetrying starts a client on port, waiting for the previous
+// client to let go of it: anacrolix's Client.Close closes its listeners in
+// goroutines (v1.63.0, client.go: go s.Close()), so the port can still be
+// bound for a moment after Close returns.
+func (e *Engine) startClientRetrying(port int, s settings.Settings) error {
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		err := e.startClient(port, s)
+		if err == nil || port == 0 || !errors.Is(err, syscall.EADDRINUSE) || time.Now().After(deadline) {
+			return err
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
 // restartClientLocked replaces the client, for changes anacrolix only reads
 // at startup such as the listen port. Running torrents are re-added; piece
 // completion is persisted, so they don't rehash.
@@ -386,7 +404,7 @@ func (e *Engine) restartClientLocked(port int, s settings.Settings) error {
 	for _, m := range e.torrents {
 		m.t = nil
 	}
-	if err := e.startClient(port, s); err != nil {
+	if err := e.startClientRetrying(port, s); err != nil {
 		// Leave the engine usable: fall back to any free port.
 		e.log.Error("restarting torrent client, falling back to a random port", "error", err)
 		if err2 := e.startClient(0, s); err2 != nil {

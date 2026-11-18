@@ -15,6 +15,8 @@ import (
 
 	"github.com/anacrolix/torrent/types"
 
+	"github.com/anacrolix/torrent"
+
 	"github.com/sebdanielsson/piecemeal/internal/engine/enginetest"
 	"github.com/sebdanielsson/piecemeal/internal/settings"
 	"github.com/sebdanielsson/piecemeal/internal/store"
@@ -392,5 +394,35 @@ func TestDefaultSavePathMustBeAllowed(t *testing.T) {
 	var ve *settings.ValidationError
 	if !errors.As(err, &ve) {
 		t.Fatalf("default save path outside the roots: %v, want a ValidationError", err)
+	}
+}
+
+// TestRestartKeepsPort checks that settings that recreate the client keep
+// the peer port, even right after the old client closed it, and with the
+// port setting at 0 (random).
+func TestRestartKeepsPort(t *testing.T) {
+	h := newHarness(t)
+	_ = h.engine.Close()
+	e, err := New(context.Background(), Config{
+		DataDir: h.dataDir, AllowedRoots: []string{h.saveDir}, TickInterval: 50 * time.Millisecond,
+		// Offline, but listening on the port the engine asks for.
+		ClientConfig: func(tc *torrent.ClientConfig) {
+			port := tc.ListenPort
+			offline(tc)
+			tc.ListenPort = port
+		},
+	}, h.store, h.settings, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = e.Close() })
+	port := e.Port()
+	for i, pex := range []bool{false, true, false} {
+		if _, err := h.settings.Set(context.Background(), map[string]any{"pex": pex}); err != nil {
+			t.Fatal(err)
+		}
+		if got := e.Port(); got != port {
+			t.Fatalf("restart %d: port %d, want %d", i, got, port)
+		}
 	}
 }
