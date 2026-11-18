@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"bytes"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -13,7 +12,7 @@ import (
 // File is one file of a torrent.
 type File struct {
 	Index    int      `json:"index"`
-	Path     string   `json:"path" doc:"Path inside the torrent, with / separators."`
+	Path     string   `json:"path" doc:"Path relative to the save path, with / separators, after the content layout and any renames."`
 	Size     int64    `json:"size"`
 	Progress float64  `json:"progress" doc:"0 to 1. Stopped torrents report 0 for files they haven't finished."`
 	Priority Priority `json:"priority" enum:"0,1,6,7" doc:"0 skip, 1 normal, 6 high, 7 highest."`
@@ -31,6 +30,10 @@ func (e *Engine) Files(hash string) ([]File, error) {
 		return nil, err
 	}
 	info, t, prio, h := m.info, m.t, slices.Clone(m.filePrio), m.hash
+	var rel []string
+	if info != nil {
+		rel = m.pathsOf().relativePaths(info)
+	}
 	e.mu.Unlock()
 	if info == nil {
 		return []File{}, nil
@@ -48,7 +51,7 @@ func (e *Engine) Files(hash string) ([]File, error) {
 				progress = float64(f.BytesCompleted()) / float64(f.Length())
 			}
 			out[i] = File{
-				Index: i, Path: displayPath(info, f.FileInfo()), Size: f.Length(), Progress: progress,
+				Index: i, Path: rel[i], Size: f.Length(), Progress: progress,
 				Priority: p, PieceStart: f.BeginPieceIndex(), PieceEnd: f.EndPieceIndex(),
 			}
 		}
@@ -64,7 +67,7 @@ func (e *Engine) Files(hash string) ([]File, error) {
 			p = prio[i]
 		}
 		start, end := pieceRange(info, offset, fi.Length)
-		f := File{Index: i, Path: displayPath(info, fi), Size: fi.Length, Priority: p, PieceStart: start, PieceEnd: end}
+		f := File{Index: i, Path: rel[i], Size: fi.Length, Priority: p, PieceStart: start, PieceEnd: end}
 		if fi.Length == 0 {
 			f.Progress = 1
 		} else if e.piecesComplete(h, start, end) {
@@ -96,13 +99,6 @@ func pieceRange(info *metainfo.Info, offset, length int64) (start, end int) {
 	}
 	end = int((offset+length-1)/info.PieceLength) + 1
 	return start, end
-}
-
-func displayPath(info *metainfo.Info, fi metainfo.FileInfo) string {
-	if !info.IsDir() {
-		return info.BestName()
-	}
-	return strings.Join(append([]string{info.BestName()}, fi.BestPath()...), "/")
 }
 
 // Peer is a connected peer.
@@ -213,20 +209,7 @@ func (e *Engine) Trackers(hash string) ([]Tracker, error) {
 		e.mu.Unlock()
 		return nil, err
 	}
-	var al [][]string
-	switch {
-	case m.t != nil:
-		mi := m.t.Metainfo()
-		al = mi.UpvertedAnnounceList()
-	case m.rec.Metainfo != nil:
-		if mi, err := metainfo.Load(bytes.NewReader(m.rec.Metainfo)); err == nil {
-			al = mi.UpvertedAnnounceList()
-		}
-	default:
-		if spec, err := torrent.TorrentSpecFromMagnetUri(m.rec.Magnet); err == nil {
-			al = spec.Trackers
-		}
-	}
+	al := m.currentTrackers()
 	e.mu.Unlock()
 	out := []Tracker{}
 	for tier, urls := range al {

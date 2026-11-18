@@ -78,6 +78,10 @@ type Torrent struct {
 	UploadLimit              int64
 	FilePriorities           string
 	Error                    string
+	Trackers                 string
+	WebSeeds                 string
+	FilePaths                string
+	ContentLayout            string
 }
 
 type TorrentTag struct {

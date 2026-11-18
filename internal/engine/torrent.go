@@ -2,6 +2,7 @@ package engine
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,6 +12,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"time"
@@ -40,6 +42,12 @@ type managed struct {
 	completed int64
 	// filePrio holds the per-file priorities, nil for all normal.
 	filePrio []Priority
+	// renames maps original file paths to renamed ones; see torrentPaths.
+	renames map[string]string
+	// trackers and webSeeds replace the torrent file's when set.
+	trackers [][]string
+	webSeeds []string
+	moving   bool
 	// boosted holds the piece priorities applyPiecePrioritiesLocked set.
 	boosted map[int]types.PiecePriority
 	// seqFrom is where the search for the next missing piece starts, for
@@ -93,6 +101,31 @@ func (m *managed) setMetainfo(b []byte) {
 	}
 }
 
+// jsonOrEmpty encodes v, or returns "" for a nil or empty value.
+func jsonOrEmpty[T any](v T) string {
+	rv := reflect.ValueOf(v)
+	if !rv.IsValid() || rv.Len() == 0 {
+		return ""
+	}
+	b, _ := json.Marshal(v)
+	return string(b)
+}
+
+// loadOverrides decodes the record's JSON columns into the managed fields.
+func (m *managed) loadOverrides() error {
+	var errs []error
+	if m.rec.Trackers != "" {
+		errs = append(errs, json.Unmarshal([]byte(m.rec.Trackers), &m.trackers))
+	}
+	if m.rec.WebSeeds != "" {
+		errs = append(errs, json.Unmarshal([]byte(m.rec.WebSeeds), &m.webSeeds))
+	}
+	if m.rec.FilePaths != "" {
+		errs = append(errs, json.Unmarshal([]byte(m.rec.FilePaths), &m.renames))
+	}
+	return errors.Join(errs...)
+}
+
 func (m *managed) addCounters(down, up int64) {
 	if d := down - m.seenDown; d > 0 {
 		m.rec.Downloaded += d
@@ -126,6 +159,8 @@ func (m *managed) params() store.UpsertTorrentParams {
 		RatioLimit: r.RatioLimit, SeedingTimeLimit: r.SeedingTimeLimit,
 		InactiveSeedingTimeLimit: r.InactiveSeedingTimeLimit, DownloadLimit: r.DownloadLimit,
 		UploadLimit: r.UploadLimit, FilePriorities: prio, Error: r.Error,
+		Trackers: jsonOrEmpty(m.trackers), WebSeeds: jsonOrEmpty(m.webSeeds), FilePaths: jsonOrEmpty(m.renames),
+		ContentLayout: cmp.Or(r.ContentLayout, LayoutOriginal),
 	}
 }
 
@@ -177,6 +212,8 @@ type AddParams struct {
 	UploadLimit              int64
 	// SkipChecking trusts existing data instead of hashing it.
 	SkipChecking bool
+	// ContentLayout is Original (the default), Subfolder or NoSubfolder.
+	ContentLayout string
 }
 
 // ParseSource turns the body of an add request, a magnet URI or a .torrent
@@ -265,6 +302,9 @@ func (e *Engine) Add(ctx context.Context, p AddParams) (string, error) {
 	slices.Sort(tags)
 	tags = slices.Compact(tags)
 
+	if !validLayout(p.ContentLayout) {
+		return "", fmt.Errorf("%w: content layout %q", ErrInvalid, p.ContentLayout)
+	}
 	stopped := s.AddStopped
 	if p.Stopped != nil {
 		stopped = *p.Stopped
@@ -279,6 +319,7 @@ func (e *Engine) Add(ctx context.Context, p AddParams) (string, error) {
 			Category: p.Category, AddedAt: now, Stopped: stopped, Sequential: p.Sequential,
 			FirstLastPiece: p.FirstLastPiece, RatioLimit: -2, SeedingTimeLimit: -2,
 			InactiveSeedingTimeLimit: -2, DownloadLimit: p.DownloadLimit, UploadLimit: p.UploadLimit,
+			ContentLayout: cmp.Or(p.ContentLayout, LayoutOriginal),
 		},
 	}
 	if mib != nil {
@@ -343,6 +384,9 @@ type attachOpts struct {
 
 // attachLocked adds a stopped or newly loaded torrent to the client.
 func (e *Engine) attachLocked(m *managed, opts ...attachOpts) error {
+	if m.moving {
+		return fmt.Errorf("%w: the torrent is being moved", ErrInvalid)
+	}
 	var o attachOpts
 	if len(opts) > 0 {
 		o = opts[0]
@@ -367,7 +411,13 @@ func (e *Engine) attachLocked(m *managed, opts ...attachOpts) error {
 	spec.DisplayName = m.rec.Name
 	spec.Storage = e.storage
 	spec.DisableInitialPieceCheck = o.skipChecking
-	e.savePaths.Store(m.hash, m.rec.SavePath)
+	if m.trackers != nil {
+		spec.Trackers = m.trackers
+	}
+	if m.webSeeds != nil {
+		spec.Webseeds = m.webSeeds
+	}
+	e.recordPathsLocked(m)
 
 	t, _, err := e.client.AddTorrentSpec(spec)
 	if err != nil {
@@ -859,12 +909,18 @@ func (e *Engine) Remove(ctx context.Context, deleteData bool, hashes ...string) 
 	}
 	var removals []removal
 	for _, m := range targets {
+		if m.moving {
+			e.mu.Unlock()
+			return fmt.Errorf("%w: %s is being moved", ErrInvalid, m.rec.InfoHash)
+		}
+	}
+	for _, m := range targets {
 		e.detachLocked(m)
 		delete(e.torrents, m.hash)
 		r := removal{hash: m.hash}
 		if deleteData && m.info != nil {
 			r.root = m.rec.SavePath
-			r.paths = contentFiles(m.rec.SavePath, m.info)
+			r.paths = contentFiles(m.rec.SavePath, m.pathsOf().relativePaths(m.info))
 			r.n = m.info.NumPieces()
 		}
 		removals = append(removals, r)
@@ -884,7 +940,7 @@ func (e *Engine) Remove(ctx context.Context, deleteData bool, hashes ...string) 
 		errs = append(errs, fmt.Errorf("delete torrents: %w", err))
 	}
 	for _, r := range removals {
-		e.savePaths.Delete(r.hash)
+		e.paths.Delete(r.hash)
 		if r.root != "" {
 			if err := removeContent(r.root, r.paths); err != nil {
 				errs = append(errs, err)
@@ -901,16 +957,13 @@ func (e *Engine) Remove(ctx context.Context, deleteData bool, hashes ...string) 
 	return errors.Join(errs...)
 }
 
-// contentFiles lists the paths a torrent's files are stored at, including
-// the .part names anacrolix uses for incomplete files.
-func contentFiles(savePath string, info *metainfo.Info) []string {
+// contentFiles lists the absolute paths of a torrent's files, from their
+// paths relative to the save path, including the .part names anacrolix
+// uses for incomplete files when part files are on.
+func contentFiles(savePath string, rel []string) []string {
 	var paths []string
-	for _, f := range info.UpvertedFiles() {
-		parts := []string{savePath}
-		if info.BestName() != metainfo.NoName {
-			parts = append(parts, info.BestName())
-		}
-		p := filepath.Join(append(parts, f.BestPath()...)...)
+	for _, r := range rel {
+		p := filepath.Join(savePath, filepath.FromSlash(r))
 		paths = append(paths, p, p+".part")
 	}
 	return paths
@@ -993,7 +1046,14 @@ func (e *Engine) loadTorrents(ctx context.Context) error {
 		} else if spec, err := torrent.TorrentSpecFromMagnetUri(r.Magnet); err == nil {
 			m.setMagnetTrackers(spec.Trackers)
 		}
-		e.savePaths.Store(ih, r.SavePath)
+		if err := m.loadOverrides(); err != nil {
+			e.log.Warn("ignoring a stored tracker, web seed or file path override", "hash", r.InfoHash, "error", err)
+		}
+		if m.trackers != nil {
+			m.meta.tracker, m.meta.trackers = "", 0
+			m.setMagnetTrackers(m.trackers)
+		}
+		e.recordPathsLocked(m)
 		e.torrents[ih] = m
 		if m.info != nil {
 			m.completed = e.completedFromStore(m)
@@ -1038,4 +1098,13 @@ func (e *Engine) AddPeers(ctx context.Context, addrs []string, hashes ...string)
 		}
 		return nil
 	})
+}
+
+// saveLocked writes a torrent's record now.
+func (e *Engine) saveLocked(m *managed) {
+	if err := e.store.UpsertTorrent(e.ctxOrBackground(), m.params()); err != nil {
+		e.log.Error("saving torrent", "hash", m.rec.InfoHash, "error", err)
+		return
+	}
+	m.dirty = false
 }

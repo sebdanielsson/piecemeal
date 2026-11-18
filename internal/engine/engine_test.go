@@ -91,8 +91,17 @@ func (h *harness) waitFor(hash string, what string, cond func(Torrent) bool) Tor
 
 func (h *harness) checkContent(s *seeder, root string) {
 	h.t.Helper()
+	h.checkContentIn(s, filepath.Join(h.saveDir, root))
+}
+
+// checkContentIn checks the seeder's files are in dir/payload.
+func (h *harness) checkContentIn(s *seeder, dir string) {
+	h.t.Helper()
+	if filepath.Base(dir) != "payload" {
+		dir = filepath.Join(dir, "payload")
+	}
 	for name, want := range s.Content {
-		got, err := os.ReadFile(filepath.Join(h.saveDir, root, name))
+		got, err := os.ReadFile(filepath.Join(dir, name))
 		if err != nil {
 			h.t.Fatal(err)
 		}

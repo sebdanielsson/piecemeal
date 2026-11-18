@@ -72,8 +72,11 @@ type Engine struct {
 
 	pc      storage.PieceCompletion
 	storage storage.ClientImplCloser
-	// Save paths by infohash, read by the storage's TorrentDirMaker.
-	savePaths sync.Map
+	// Where each torrent's files go (infohash to torrentPaths), and which
+	// torrent a *metainfo.Info belongs to: the storage's path makers read
+	// them.
+	paths      sync.Map
+	infoOwners sync.Map
 
 	down, up *rate.Limiter
 
@@ -155,7 +158,7 @@ func New(ctx context.Context, cfg Config, st *store.Store, sm *settings.Manager,
 		down:     rate.NewLimiter(rate.Inf, 1<<20),
 		up:       rate.NewLimiter(rate.Inf, 1<<20),
 	}
-	e.storage = storage.NewFileOpts(storage.NewFileClientOpts{
+	opts := storage.NewFileClientOpts{
 		ClientBaseDir:   cfg.DataDir,
 		PieceCompletion: nopClosePieceCompletion{pc},
 		DisableMmap:     !cfg.Mmap,
@@ -164,16 +167,10 @@ func New(ctx context.Context, cfg Config, st *store.Store, sm *settings.Manager,
 		// writer on promotion while the piece hasher may still be reading
 		// through it (a data race in storage/file-io-classic.go).
 		UsePartFiles: g.Some(false),
-		TorrentDirMaker: func(_ string, _ *metainfo.Info, ih metainfo.Hash) string {
-			if p, ok := e.savePaths.Load(ih); ok {
-				return p.(string)
-			}
-			// Unreachable: a save path is recorded before any torrent is
-			// added. Fail closed into the data dir rather than anywhere else.
-			return filepath.Join(cfg.DataDir, "orphaned", ih.HexString())
-		},
-		Logger: log.With("component", "storage"),
-	})
+		Logger:       log.With("component", "storage"),
+	}
+	e.storagePaths(&opts)
+	e.storage = storage.NewFileOpts(opts)
 	e.applyLimits(sm.Get())
 	e.snap.Store(&snapshot{byHash: map[string]*Torrent{}})
 
