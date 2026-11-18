@@ -390,8 +390,21 @@ func TestPiecePriorities(t *testing.T) {
 	if b := boosted(); len(b) != 0 {
 		t.Fatalf("first/last off: %v", b)
 	}
-	if p := m.t.Piece(0).State().Priority; p != types.PiecePriorityNormal {
-		t.Fatalf("piece 0 priority after turning first/last off: %v, want normal", p)
+	// A piece being checked reports priority none; wait for the initial
+	// check to finish.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		ps := m.t.Piece(0).State()
+		if !ps.Hashing && !ps.QueuedForHash {
+			if ps.Priority != types.PiecePriorityNormal {
+				t.Fatalf("piece 0 priority after turning first/last off: %v, want normal", ps.Priority)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("piece 0 still being checked")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 
 	// Sequential raises the first missing wanted pieces.
