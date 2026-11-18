@@ -61,7 +61,7 @@ docker run -d --name piecemeal \
   ghcr.io/sebdanielsson/piecemeal:latest
 ```
 
-Images are tagged with the full version (`1.2.3`), the minor version (`1.2`) and `latest`. Each image is signed with cosign (keyless, from the release workflow) and carries an SBOM and build provenance:
+Images are tagged with the full version (`1.2.3`), the minor version (`1.2`), the major version (`1`, from 1.0.1) and `latest`. Pin the major version to get fixes and features without breaking changes. Each image is signed with cosign (keyless, from the release workflow) and carries an SBOM and build provenance:
 
 ```sh
 cosign verify ghcr.io/sebdanielsson/piecemeal:latest \
