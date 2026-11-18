@@ -47,6 +47,13 @@ for app in radarr:7878 sonarr:8989 prowlarr:9696; do
 </Config>
 XML
 done
+# VueTorrent, which piecemeal serves at /qbittorrent/.
+# renovate: datasource=github-releases depName=VueTorrent/VueTorrent
+vuetorrent=v2.37.0
+vuetorrent_sha256=5244a29314a4befcc1ffb659e8b8b03f8c1a84b7a3d3f26a651bd6069b57a7ed
+curl -fsSL -o tmp/vuetorrent.zip "https://github.com/VueTorrent/VueTorrent/releases/download/$vuetorrent/vuetorrent.zip"
+echo "$vuetorrent_sha256  tmp/vuetorrent.zip" | shasum -a 256 -c - > /dev/null
+unzip -q tmp/vuetorrent.zip -d tmp
 # piecemeal and the seeder run as uid 65532, the *arrs via PUID.
 chmod -R 0777 tmp
 

@@ -596,3 +596,38 @@ func qbittorrentPassword(t *testing.T) string {
 	})
 	return pw
 }
+
+// TestVueTorrent checks that piecemeal serves VueTorrent at /qbittorrent/
+// and the qBittorrent API under it, which VueTorrent calls relative to its
+// own location.
+func TestVueTorrent(t *testing.T) {
+	piecemeal(t)
+	resp, err := http.Get(piecemealURL + "/qbittorrent/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || !strings.Contains(strings.ToLower(string(body)), "vuetorrent") {
+		t.Fatalf("GET /qbittorrent/: %d %.200q", resp.StatusCode, body)
+	}
+	vt := newClient(t, piecemealURL+"/qbittorrent/api/v2", nil)
+	if s, _, _ := vt.raw(http.MethodPost, "/auth/login", "username=admin&password="+url.QueryEscape(password())); s != http.StatusNoContent {
+		t.Fatalf("login: %d", s)
+	}
+	var version string
+	if s, raw, _ := vt.raw(http.MethodGet, "/app/version", nil); s != http.StatusOK {
+		t.Fatalf("version: %d", s)
+	} else {
+		version = string(raw)
+	}
+	var main map[string]any
+	if s := vt.do(http.MethodGet, "/sync/maindata?rid=0", nil, &main); s != http.StatusOK || main["full_update"] != true {
+		t.Fatalf("maindata: %d %v", s, main)
+	}
+	var prefs map[string]any
+	if s := vt.do(http.MethodGet, "/app/preferences", nil, &prefs); s != http.StatusOK || prefs["alternative_webui_enabled"] != true {
+		t.Fatalf("preferences: %d alternative_webui_enabled=%v", s, prefs["alternative_webui_enabled"])
+	}
+	t.Logf("VueTorrent sees qBittorrent %s", version)
+}
