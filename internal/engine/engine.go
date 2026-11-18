@@ -88,12 +88,15 @@ type Engine struct {
 
 	// mu guards the client, the torrent map and every managed torrent's
 	// fields. Reads served from the snapshot don't take it.
-	mu       sync.Mutex
-	client   *torrent.Client
-	port     int
-	torrents map[metainfo.Hash]*managed
-	cats     map[string]Category
-	tags     map[string]struct{}
+	mu     sync.Mutex
+	client *torrent.Client
+	// metaFetches are magnets whose metadata qBittorrent's fetchMetadata
+	// asked for, without adding them.
+	metaFetches map[metainfo.Hash]*metaFetch
+	port        int
+	torrents    map[metainfo.Hash]*managed
+	cats        map[string]Category
+	tags        map[string]struct{}
 	// checkSeq numbers torrents as they join the check queue.
 	checkSeq uint64
 
@@ -160,18 +163,19 @@ func New(ctx context.Context, cfg Config, st *store.Store, sm *settings.Manager,
 	}
 
 	e := &Engine{
-		cfg:      cfg,
-		log:      log,
-		store:    st,
-		settings: sm,
-		pc:       pc,
-		torrents: map[metainfo.Hash]*managed{},
-		cats:     map[string]Category{},
-		tags:     map[string]struct{}{},
-		bus:      newBus(),
-		creator:  creator{wake: make(chan struct{}, 1)},
-		down:     rate.NewLimiter(rate.Inf, 1<<20),
-		up:       rate.NewLimiter(rate.Inf, 1<<20),
+		cfg:         cfg,
+		log:         log,
+		store:       st,
+		settings:    sm,
+		pc:          pc,
+		torrents:    map[metainfo.Hash]*managed{},
+		metaFetches: map[metainfo.Hash]*metaFetch{},
+		cats:        map[string]Category{},
+		tags:        map[string]struct{}{},
+		bus:         newBus(),
+		creator:     creator{wake: make(chan struct{}, 1)},
+		down:        rate.NewLimiter(rate.Inf, 1<<20),
+		up:          rate.NewLimiter(rate.Inf, 1<<20),
 	}
 	e.filter.log = newPeerLog()
 	opts := storage.NewFileClientOpts{

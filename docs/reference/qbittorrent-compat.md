@@ -114,7 +114,9 @@ Status: **yes** is implemented, **partial** works with the differences noted, **
 | `setSuperSeeding`, `setSSLParameters` | never | anacrolix has no super seeding or SSL torrents ([#46](https://github.com/sebdanielsson/piecemeal/issues/46), [#48](https://github.com/sebdanielsson/piecemeal/issues/48)). |
 | `setComment` | yes | 204. Replaces the comment `info`, `properties` and `sync/maindata` show, kept across restarts; the torrent file and `export` keep the original. |
 | `pieceAvailability` | yes | How many connected peers have each piece; `[]` for complete torrents, ones not running, and magnets without metadata. |
-| `fetchMetadata`, `parseMetadata`, `saveMetadata` | no | |
+| `fetchMetadata` | yes | POST only. A magnet or bare info hash answers 202 with the hash while its metadata comes from peers, a torrent URL 202 with `{}` while it downloads (through the SSRF filter and cookie jar), then 200 with the metadata object; 400 for a source that isn't one. Nothing is added: the magnet joins the client with no storage and transfers disallowed until its metadata arrives. Up to 16 magnets and 64 URLs are fetched at once, each kept for an hour. `add` then uses what was fetched. |
+| `saveMetadata` | yes | The fetched torrent file, by its source or info hash; 404 for an unknown URL, 409 while it isn't fetched. |
+| `parseMetadata` | yes | POST only. Metadata objects for the uploaded torrent files, in field-name order; 415 for a file that isn't a torrent. |
 
 ### Other groups
 

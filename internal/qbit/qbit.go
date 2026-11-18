@@ -58,6 +58,8 @@ type Server struct {
 	started      time.Time
 
 	mainSync syncStore[mainSnapshot]
+	// meta holds torrent files fetchMetadata downloaded from URLs.
+	meta     metaCache
 	peerSync syncStore[peerSnapshot]
 }
 
@@ -216,6 +218,9 @@ func New(d Deps) *Server {
 		"torrents/export":                   {get, false, s.export},
 		"torrents/pieceHashes":              {get, false, s.pieceHashes},
 		"torrents/pieceAvailability":        {get, false, s.pieceAvailability},
+		"torrents/fetchMetadata":            {post, false, s.fetchMetadata},
+		"torrents/saveMetadata":             {get, false, s.saveMetadata},
+		"torrents/parseMetadata":            {post, false, s.parseMetadata},
 		"torrents/downloadFile":             {get, false, s.downloadFile},
 		"torrents/SSLParameters":            {get, false, s.sslParameters},
 		"torrents/setSSLParameters":         {post, false, s.notSupported},

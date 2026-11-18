@@ -652,8 +652,18 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		p := base
-		if strings.HasPrefix(strings.ToLower(u), "magnet:") {
-			p.Magnet = u
+		if magnet, ok := sourceMagnet(u); ok {
+			// A magnet, or a bare info hash as qBittorrent also takes; the
+			// engine uses metadata fetchMetadata already fetched.
+			p.Magnet = magnet
+		} else if e, ok := s.meta.get(u); ok && e.done && e.err == nil {
+			// Downloaded by fetchMetadata: no need to download it again.
+			s.meta.remove(u)
+			if e.magnet != "" {
+				p.Magnet = e.magnet
+			} else {
+				p.Metainfo = e.mi
+			}
 		} else {
 			res, err := s.fetcher.Get(r.Context(), u)
 			if err != nil {
