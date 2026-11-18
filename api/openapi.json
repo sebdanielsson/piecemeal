@@ -51,6 +51,67 @@
         ],
         "type": "object"
       },
+      "AddOptions": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "contentLayout": {
+            "enum": [
+              "Original",
+              "Subfolder",
+              "NoSubfolder"
+            ],
+            "type": "string"
+          },
+          "extra": {
+            "additionalProperties": {},
+            "description": "qBittorrent options piecemeal keeps but doesn't use.",
+            "type": "object"
+          },
+          "forced": {
+            "type": "boolean"
+          },
+          "inactiveSeedingTimeLimit": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "ratioLimit": {
+            "format": "double",
+            "type": "number"
+          },
+          "savePath": {
+            "type": "string"
+          },
+          "seedingTimeLimit": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "skipChecking": {
+            "type": "boolean"
+          },
+          "stopped": {
+            "description": "Add stopped; absent follows the addStopped setting.",
+            "type": "boolean"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "ratioLimit",
+          "seedingTimeLimit",
+          "inactiveSeedingTimeLimit"
+        ],
+        "type": "object"
+      },
       "AddPeersInputBody": {
         "additionalProperties": false,
         "properties": {
@@ -68,6 +129,29 @@
         },
         "required": [
           "addresses"
+        ],
+        "type": "object"
+      },
+      "AddRSSFeedInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "description": "Folder and name. Empty names the feed after its title once fetched.",
+            "type": "string"
+          },
+          "refreshInterval": {
+            "description": "Seconds; 0 follows the rssRefreshInterval setting.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "url": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
         ],
         "type": "object"
       },
@@ -171,6 +255,49 @@
         },
         "required": [
           "items"
+        ],
+        "type": "object"
+      },
+      "Article": {
+        "additionalProperties": false,
+        "properties": {
+          "author": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "date": {
+            "description": "From the feed, or when it was first seen.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "description": {
+            "description": "HTML from the feed; sanitise before showing it.",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "link": {
+            "type": "string"
+          },
+          "read": {
+            "type": "boolean"
+          },
+          "title": {
+            "type": "string"
+          },
+          "torrentURL": {
+            "description": "What a rule adds: an enclosure, a magnet URI, or the link.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "date",
+          "read"
         ],
         "type": "object"
       },
@@ -508,6 +635,69 @@
         },
         "type": "object"
       },
+      "FeedInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "articles": {
+            "items": {
+              "$ref": "#/components/schemas/Article"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "error": {
+            "description": "Why the last fetch failed.",
+            "type": "string"
+          },
+          "fetchedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "lastBuildDate": {
+            "type": "string"
+          },
+          "loading": {
+            "type": "boolean"
+          },
+          "path": {
+            "description": "Folder names and the feed's name, separated by backslashes.",
+            "type": "string"
+          },
+          "refreshInterval": {
+            "description": "Seconds; 0 follows the rssRefreshInterval setting.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "title": {
+            "description": "The feed's own title, once fetched.",
+            "type": "string"
+          },
+          "uid": {
+            "description": "Stable across renames and moves.",
+            "type": "string"
+          },
+          "unread": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "uid",
+          "path",
+          "url",
+          "refreshInterval",
+          "title",
+          "lastBuildDate",
+          "loading",
+          "unread"
+        ],
+        "type": "object"
+      },
       "File": {
         "additionalProperties": false,
         "properties": {
@@ -681,6 +871,49 @@
         ],
         "type": "object"
       },
+      "MarkReadInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "articleId": {
+            "description": "One article; empty marks them all.",
+            "type": "string"
+          },
+          "path": {
+            "description": "A feed, a folder, or empty for every feed.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "Match": {
+        "additionalProperties": false,
+        "properties": {
+          "feedPath": {
+            "type": "string"
+          },
+          "feedUid": {
+            "type": "string"
+          },
+          "titles": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "feedUid",
+          "feedPath",
+          "titles"
+        ],
+        "type": "object"
+      },
       "Peer": {
         "additionalProperties": false,
         "properties": {
@@ -834,6 +1067,36 @@
         ],
         "type": "object"
       },
+      "RSSTree": {
+        "additionalProperties": false,
+        "properties": {
+          "feeds": {
+            "description": "Without articles.",
+            "items": {
+              "$ref": "#/components/schemas/FeedInfo"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "folders": {
+            "description": "Folder paths; names are separated by backslashes.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "folders",
+          "feeds"
+        ],
+        "type": "object"
+      },
       "RenamePathInputBody": {
         "additionalProperties": false,
         "properties": {
@@ -850,6 +1113,140 @@
         "required": [
           "oldPath",
           "newPath"
+        ],
+        "type": "object"
+      },
+      "RenameRSSRuleInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "newName": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "newName"
+        ],
+        "type": "object"
+      },
+      "RssFolderInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "RssMatchesOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Match"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "RssRulesOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Rule"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "Rule": {
+        "additionalProperties": false,
+        "properties": {
+          "add": {
+            "$ref": "#/components/schemas/AddOptions"
+          },
+          "affectedFeeds": {
+            "description": "URLs of the feeds the rule applies to.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "episodeFilter": {
+            "description": "Season and episodes to take, such as 1x2;8-15;20-; (an open range continues into later seasons).",
+            "type": "string"
+          },
+          "ignoreDays": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "lastMatch": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "mustContain": {
+            "type": "string"
+          },
+          "mustNotContain": {
+            "type": "string"
+          },
+          "previouslyMatchedEpisodes": {
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "priority": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "smartFilter": {
+            "description": "Take each episode once, recognised by the smart episode filters setting.",
+            "type": "boolean"
+          },
+          "useRegex": {
+            "description": "MustContain and MustNotContain are regular expressions instead of wildcard terms.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled",
+          "priority",
+          "useRegex",
+          "mustContain",
+          "mustNotContain",
+          "episodeFilter",
+          "smartFilter",
+          "previouslyMatchedEpisodes",
+          "affectedFeeds",
+          "ignoreDays",
+          "add"
         ],
         "type": "object"
       },
@@ -1132,6 +1529,40 @@
             "format": "double",
             "type": "number"
           },
+          "rssAutoDownload": {
+            "description": "Add torrents from new articles that RSS rules match.",
+            "type": "boolean"
+          },
+          "rssDownloadRepacks": {
+            "description": "With the smart episode filter, also take a REPACK or PROPER of an episode already downloaded.",
+            "type": "boolean"
+          },
+          "rssEnabled": {
+            "description": "Fetch RSS feeds on their schedule.",
+            "type": "boolean"
+          },
+          "rssFetchDelay": {
+            "description": "Seconds between requests to the same host.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "rssMaxArticles": {
+            "description": "Articles kept per feed; older ones are dropped.",
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "rssRefreshInterval": {
+            "description": "Minutes between fetches of a feed without its own interval.",
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "rssSmartEpisodeFilters": {
+            "description": "Regular expressions, one per line, that find the episode in a title for the smart episode filter: two groups for season and episode, or one for a date.",
+            "type": "string"
+          },
           "seedGoalAction": {
             "description": "What to do once a torrent reaches a seeding goal.",
             "enum": [
@@ -1208,7 +1639,14 @@
           "altSpeedSchedule",
           "altSpeedScheduleFrom",
           "altSpeedScheduleTo",
-          "altSpeedScheduleDays"
+          "altSpeedScheduleDays",
+          "rssEnabled",
+          "rssRefreshInterval",
+          "rssFetchDelay",
+          "rssMaxArticles",
+          "rssAutoDownload",
+          "rssDownloadRepacks",
+          "rssSmartEpisodeFilters"
         ],
         "type": "object"
       },
@@ -1981,6 +2419,24 @@
           "torrents",
           "connection"
         ],
+        "type": "object"
+      },
+      "UpdateRSSFeedInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "description": "Moves or renames the feed.",
+            "type": "string"
+          },
+          "refreshInterval": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "UpdateTorrentRequest": {
@@ -3243,6 +3699,985 @@
         ]
       }
     },
+    "/rss": {
+      "get": {
+        "operationId": "getRSS",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RSSTree"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "List RSS folders and feeds",
+        "tags": [
+          "RSS"
+        ]
+      }
+    },
+    "/rss/feeds": {
+      "post": {
+        "description": "Admins only.",
+        "operationId": "addRSSFeed",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddRSSFeedInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedInfo"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Add an RSS feed",
+        "tags": [
+          "RSS"
+        ]
+      }
+    },
+    "/rss/feeds/{uid}": {
+      "get": {
+        "operationId": "getRSSFeed",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedInfo"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Get an RSS feed with its articles",
+        "tags": [
+          "RSS"
+        ]
+      },
+      "patch": {
+        "description": "Admins only.",
+        "operationId": "updateRSSFeed",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRSSFeedInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedInfo"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Change an RSS feed",
+        "tags": [
+          "RSS"
+        ]
+      }
+    },
+    "/rss/folders": {
+      "post": {
+        "description": "Admins only.",
+        "operationId": "addRSSFolder",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RssFolderInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Add an RSS folder",
+        "tags": [
+          "RSS"
+        ]
+      }
+    },
+    "/rss/items": {
+      "delete": {
+        "description": "Admins only.",
+        "operationId": "removeRSSItem",
+        "parameters": [
+          {
+            "description": "A feed or folder; empty for every feed.",
+            "explode": false,
+            "in": "query",
+            "name": "path",
+            "schema": {
+              "description": "A feed or folder; empty for every feed.",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Remove an RSS feed, or a folder with everything in it",
+        "tags": [
+          "RSS"
+        ]
+      }
+    },
+    "/rss/read": {
+      "post": {
+        "operationId": "markRSSRead",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkReadInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Mark RSS articles read",
+        "tags": [
+          "RSS"
+        ]
+      }
+    },
+    "/rss/refresh": {
+      "post": {
+        "operationId": "refreshRSS",
+        "parameters": [
+          {
+            "description": "A feed or folder; empty for every feed.",
+            "explode": false,
+            "in": "query",
+            "name": "path",
+            "schema": {
+              "description": "A feed or folder; empty for every feed.",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Fetch RSS feeds now",
+        "tags": [
+          "RSS"
+        ]
+      }
+    },
+    "/rss/rules": {
+      "get": {
+        "operationId": "listRSSRules",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RssRulesOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "List RSS download rules",
+        "tags": [
+          "RSS"
+        ]
+      }
+    },
+    "/rss/rules/{name}": {
+      "delete": {
+        "description": "Admins only.",
+        "operationId": "removeRSSRule",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Remove an RSS download rule",
+        "tags": [
+          "RSS"
+        ]
+      },
+      "put": {
+        "description": "Admins only.",
+        "operationId": "putRSSRule",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Rule"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Create or replace an RSS download rule",
+        "tags": [
+          "RSS"
+        ]
+      }
+    },
+    "/rss/rules/{name}/matches": {
+      "get": {
+        "operationId": "listRSSRuleMatches",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RssMatchesOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "List the articles an RSS rule accepts",
+        "tags": [
+          "RSS"
+        ]
+      }
+    },
+    "/rss/rules/{name}/rename": {
+      "post": {
+        "description": "Admins only.",
+        "operationId": "renameRSSRule",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenameRSSRuleInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Rename an RSS download rule",
+        "tags": [
+          "RSS"
+        ]
+      }
+    },
     "/sessions": {
       "get": {
         "operationId": "listSessions",
@@ -3585,6 +5020,40 @@
                     "description": "Stop seeding at this upload ratio, -1 for unlimited.",
                     "format": "double",
                     "type": "number"
+                  },
+                  "rssAutoDownload": {
+                    "description": "Add torrents from new articles that RSS rules match.",
+                    "type": "boolean"
+                  },
+                  "rssDownloadRepacks": {
+                    "description": "With the smart episode filter, also take a REPACK or PROPER of an episode already downloaded.",
+                    "type": "boolean"
+                  },
+                  "rssEnabled": {
+                    "description": "Fetch RSS feeds on their schedule.",
+                    "type": "boolean"
+                  },
+                  "rssFetchDelay": {
+                    "description": "Seconds between requests to the same host.",
+                    "format": "int64",
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "rssMaxArticles": {
+                    "description": "Articles kept per feed; older ones are dropped.",
+                    "format": "int64",
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "rssRefreshInterval": {
+                    "description": "Minutes between fetches of a feed without its own interval.",
+                    "format": "int64",
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "rssSmartEpisodeFilters": {
+                    "description": "Regular expressions, one per line, that find the episode in a title for the smart episode filter: two groups for season and episode, or one for a date.",
+                    "type": "string"
                   },
                   "seedGoalAction": {
                     "description": "What to do once a torrent reaches a seeding goal.",

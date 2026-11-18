@@ -78,6 +78,12 @@ const categoriesRoute = createRoute({
   ),
 });
 
+const rssRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "rss",
+  component: lazyRouteComponent(() => import("@/features/rss/rss-page"), "RSSPage"),
+});
+
 const transferRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "transfer",
@@ -136,6 +142,7 @@ const routeTree = rootRoute.addChildren([
   appRoute.addChildren([
     listRoute.addChildren([listIndexRoute, detailRoute]),
     categoriesRoute,
+    rssRoute,
     transferRoute,
     settingsRoute,
     apiKeysRoute,

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/netip"
 	"net/url"
 	"strings"
 	"testing"
@@ -21,6 +22,7 @@ import (
 	"github.com/sebdanielsson/piecemeal/internal/engine/enginetest"
 	"github.com/sebdanielsson/piecemeal/internal/fetch"
 	"github.com/sebdanielsson/piecemeal/internal/logbuf"
+	"github.com/sebdanielsson/piecemeal/internal/rss"
 	"github.com/sebdanielsson/piecemeal/internal/settings"
 	"github.com/sebdanielsson/piecemeal/internal/store"
 )
@@ -69,7 +71,17 @@ func newEnv(t *testing.T, environ ...string) *env {
 		t.Fatal(err)
 	}
 	logs := logbuf.New(100)
-	srv := httptest.NewServer(New(Deps{Engine: e, Settings: sm, Auth: a, Fetcher: fetch.New(nil), Store: st, Logs: logs, Log: log, HTTPPort: 8080}))
+	// Loopback is allowed, for the RSS tests' feed server.
+	fetcher := fetch.New([]netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")})
+	feeds, err := rss.New(ctx, rss.Deps{Store: st, Settings: sm, Fetcher: fetcher, Engine: e, Log: log})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runCtx, stop := context.WithCancel(ctx)
+	ran := make(chan struct{})
+	go func() { feeds.Run(runCtx); close(ran) }()
+	t.Cleanup(func() { stop(); <-ran })
+	srv := httptest.NewServer(New(Deps{Engine: e, Settings: sm, Auth: a, Fetcher: fetcher, Store: st, RSS: feeds, Logs: logs, Log: log, HTTPPort: 8080}))
 	t.Cleanup(srv.Close)
 	jar, _ := cookiejar.New(nil)
 	return &env{t: t, srv: srv, engine: e, auth: a, client: &http.Client{Jar: jar}, save: save, store: st}

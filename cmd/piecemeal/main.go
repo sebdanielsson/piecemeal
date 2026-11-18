@@ -42,6 +42,7 @@ import (
 	"github.com/sebdanielsson/piecemeal/internal/metrics"
 	"github.com/sebdanielsson/piecemeal/internal/natpmp"
 	"github.com/sebdanielsson/piecemeal/internal/qbit"
+	"github.com/sebdanielsson/piecemeal/internal/rss"
 	"github.com/sebdanielsson/piecemeal/internal/settings"
 	"github.com/sebdanielsson/piecemeal/internal/store"
 	"github.com/sebdanielsson/piecemeal/internal/watch"
@@ -218,8 +219,18 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, logs *logbuf.
 		log.Info("OIDC sign-in enabled", "issuer", o.Issuer, "redirect", o.RedirectURL)
 	}
 
+	// One fetcher for torrent URLs and feeds, so both send the download
+	// cookies.
+	fetcher := fetch.New(cfg.FetchAllowedNetworks)
+	feeds, err := rss.New(ctx, rss.Deps{Store: st, Settings: sm, Fetcher: fetcher, Engine: e, Log: log.With("component", "rss")})
+	if err != nil {
+		return err
+	}
+	go feeds.Run(ctx)
+
 	mux, nativeAPI := routes(routeDeps{
-		cfg: cfg, engine: e, settings: sm, auth: authSvc, oidc: oidcLogin, store: st, logs: logs, mapper: mapper, log: log,
+		cfg: cfg, engine: e, settings: sm, auth: authSvc, oidc: oidcLogin, store: st, fetcher: fetcher, rss: feeds,
+		logs: logs, mapper: mapper, log: log,
 	})
 
 	srv := &http.Server{
@@ -262,6 +273,8 @@ type routeDeps struct {
 	auth     *auth.Service
 	oidc     *auth.OIDC
 	store    *store.Store
+	fetcher  *fetch.Fetcher
+	rss      *rss.Manager
 	logs     *logbuf.Buffer
 	mapper   *natpmp.Mapper
 	log      *slog.Logger
@@ -290,16 +303,19 @@ func routes(d routeDeps) (*http.ServeMux, *api.API) {
 		}
 		mux.Handle("GET /metrics", h)
 	}
-	fetcher := fetch.New(d.cfg.FetchAllowedNetworks)
+	fetcher := d.fetcher
+	if fetcher == nil {
+		fetcher = fetch.New(d.cfg.FetchAllowedNetworks)
+	}
 	nativeAPI := api.New(mux, api.Deps{
 		Version: version, StartedAt: time.Now(), Engine: d.engine, Settings: d.settings, Auth: d.auth,
-		Fetcher: fetcher, Logs: d.logs, NATPMP: d.mapper, OIDC: d.oidc, Log: d.log.With("component", "api"),
+		Fetcher: fetcher, Logs: d.logs, NATPMP: d.mapper, OIDC: d.oidc, RSS: d.rss, Log: d.log.With("component", "api"),
 		System: api.SystemInfo{
 			DataDir: d.cfg.DataDir, DownloadDir: d.cfg.DownloadDir, WatchDir: d.cfg.WatchDir, AllowedRoots: d.cfg.AllowedRoots,
 		},
 	})
 	q := qbit.New(qbit.Deps{
-		Engine: d.engine, Settings: d.settings, Auth: d.auth, Fetcher: fetcher, Store: d.store, Logs: d.logs,
+		Engine: d.engine, Settings: d.settings, Auth: d.auth, Fetcher: fetcher, Store: d.store, RSS: d.rss, Logs: d.logs,
 		Log: d.log.With("component", "qbit"), HTTPPort: httpPort(d.cfg.Addr), AltWebUI: d.cfg.QBittorrentWebUIDir != "",
 	})
 	// Method-specific patterns, so they and the web UI's "GET /" don't

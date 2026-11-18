@@ -31,6 +31,7 @@ import {
   UserIcon,
   UsersIcon,
   type LucideIcon,
+  RssIcon,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { api } from "@/api/client";
@@ -127,6 +128,7 @@ export function AppSidebar({ onShowShortcuts }: { onShowShortcuts: () => void })
             <NavItem to="/" icon={ListIcon} label="Torrents" active={onList} onClick={close} />
             <NavItem to="/transfer" icon={GaugeIcon} label="Transfer" onClick={close} />
             <NavItem to="/categories" icon={FolderIcon} label="Categories & tags" onClick={close} />
+            <NavItem to="/rss" icon={RssIcon} label="RSS" onClick={close} />
             <NavItem to="/settings" icon={SettingsIcon} label="Settings" onClick={close} />
           </SidebarMenu>
         </SidebarGroup>
@@ -283,6 +285,7 @@ function NavItem({
     | "/"
     | "/transfer"
     | "/categories"
+    | "/rss"
     | "/settings"
     | "/api-keys"
     | "/sessions"
