@@ -37,8 +37,12 @@ func State(t engine.Torrent) string {
 			return "queuedUP"
 		}
 		return "queuedDL"
-	case engine.StateChecking:
-		if t.Complete {
+	case engine.StateChecking, engine.StateQueuedForChecking:
+		// qBittorrent 5.3.0 reports torrents waiting for their check as
+		// checking too, as checkingUP when they had finished downloading:
+		// a recheck of a complete torrent is checkingUP from the start,
+		// though nothing counts as downloaded until it's verified again.
+		if t.Complete || t.CompletedAt > 0 {
 			return "checkingUP"
 		}
 		return "checkingDL"

@@ -21,7 +21,7 @@ Admins see piecemeal's recent log under **Log**, and failed sign-ins and changes
 | "another piecemeal is using the data directory" | Another piecemeal, or a `restore` or `import`, is using it. Stop it first. |
 | SSO sign-in says you're not in an allowed group | The ID token has no matching group. Check the scopes the client asks for, and `PIECEMEAL_OIDC_GROUPS_CLAIM`. |
 | No incoming peers; the status bar says firewalled | The peer port isn't reachable: forward it on your router, or use NAT-PMP through a VPN; see [VPN and port forwarding](../guides/vpn.md). |
-| Torrents stay in "checking" for a long time | piecemeal is verifying data on disk, after an import, a restore or a lost piece completion database. It's limited by the disk; see [Performance](../reference/performance.md). |
+| Torrents stay in "checking" or "queued for checking" for a long time | piecemeal is verifying data on disk, after an import, a restore, a recheck or a lost piece completion database, `maxActiveCheckingTorrents` torrents at a time (one by default) while the rest wait. It's limited by the disk; see [Performance](../reference/performance.md). On SSDs, checking more at once can be faster. |
 | Writes are slow on ZFS | Leave `PIECEMEAL_MMAP` off. Memory-mapped writes land as small page writes in large records and amplify many times over. |
 
 If something else is wrong, [open an issue](https://github.com/sebdanielsson/piecemeal/issues) with the version (`piecemeal version`), what you did, and the log around it.

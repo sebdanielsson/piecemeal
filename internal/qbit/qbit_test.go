@@ -376,6 +376,12 @@ func TestStates(t *testing.T) {
 		{engine.Torrent{State: engine.StateSeeding, Complete: true}, "uploading"},
 		{engine.Torrent{State: engine.StateStalledSeeding, Complete: true}, "stalledUP"},
 		{engine.Torrent{State: engine.StateChecking, Complete: true}, "checkingUP"},
+		{engine.Torrent{State: engine.StateChecking}, "checkingDL"},
+		// Rechecking a complete torrent, which counts as downloaded only
+		// once verified, or waiting for that.
+		{engine.Torrent{State: engine.StateChecking, CompletedAt: 1}, "checkingUP"},
+		{engine.Torrent{State: engine.StateQueuedForChecking, CompletedAt: 1}, "checkingUP"},
+		{engine.Torrent{State: engine.StateQueuedForChecking}, "checkingDL"},
 		{engine.Torrent{State: engine.StateError}, "error"},
 	} {
 		if got := State(tc.t); got != tc.want {

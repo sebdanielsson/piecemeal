@@ -55,7 +55,8 @@ func TestLoadUpdateAndEnvOverrides(t *testing.T) {
 		`{"uploadLimit": 1}`,  // pinned
 		`{"nope": 1}`,         // unknown
 		`{"encryption": "x"}`, // invalid
-		`[1]`,                 // not an object
+		`{"maxActiveCheckingTorrents": 0}`,
+		`[1]`, // not an object
 	} {
 		_, err := m.Update(ctx, json.RawMessage(patch))
 		var ve *ValidationError

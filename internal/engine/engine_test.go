@@ -16,6 +16,7 @@ import (
 	"github.com/anacrolix/torrent/types"
 
 	"github.com/anacrolix/torrent"
+	"github.com/anacrolix/torrent/storage"
 
 	"github.com/sebdanielsson/piecemeal/internal/engine/enginetest"
 	"github.com/sebdanielsson/piecemeal/internal/settings"
@@ -38,9 +39,13 @@ type harness struct {
 	store    *store.Store
 	settings *settings.Manager
 	engine   *Engine
+	// log and wrapStorage, when set, go to the engine's Config.
+	log         *slog.Logger
+	wrapStorage func(storage.ClientImplCloser) storage.ClientImplCloser
 }
 
-func newHarness(t *testing.T) *harness {
+// newHarness starts an engine; opts adjust the harness before it starts.
+func newHarness(t *testing.T, opts ...func(*harness)) *harness {
 	t.Helper()
 	h := &harness{t: t, dataDir: t.TempDir(), saveDir: t.TempDir()}
 	var err error
@@ -56,12 +61,19 @@ func newHarness(t *testing.T) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
+	for _, o := range opts {
+		o(h)
+	}
 	h.start()
 	return h
 }
 
 func (h *harness) start() {
 	h.t.Helper()
+	log := h.log
+	if log == nil {
+		log = slog.New(slog.DiscardHandler)
+	}
 	var err error
 	h.engine, err = New(context.Background(), Config{
 		DataDir:            h.dataDir,
@@ -69,7 +81,8 @@ func (h *harness) start() {
 		TickInterval:       50 * time.Millisecond,
 		CheckpointInterval: time.Second,
 		ClientConfig:       offline,
-	}, h.store, h.settings, slog.New(slog.DiscardHandler))
+		wrapStorage:        h.wrapStorage,
+	}, h.store, h.settings, log)
 	if err != nil {
 		h.t.Fatal(err)
 	}

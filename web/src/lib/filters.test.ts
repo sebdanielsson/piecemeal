@@ -68,6 +68,12 @@ describe("state filters match the server's", () => {
   });
 });
 
+test("checking includes torrents queued for checking, as the server's filter does", () => {
+  const waiting = torrent({ hash: "7".repeat(40), name: "Waiting", state: "queuedForChecking" });
+  expect(matchesState(waiting, "checking")).toBe(true);
+  expect(matchesState(waiting, "stalled")).toBe(false);
+});
+
 describe("filterTorrents", () => {
   test("by category, including none", () => {
     expect(names(filterTorrents(all, { state: "all", category: "music" }))).toEqual(["Music"]);
@@ -125,4 +131,7 @@ test("describeState", () => {
   });
   expect(describeState({ ...downloading, forced: true }).label).toBe("Downloading (forced)");
   expect(describeState(errored).tone).toBe("danger");
+  expect(describeState({ ...checking, state: "queuedForChecking" }).label).toBe(
+    "Queued for checking",
+  );
 });

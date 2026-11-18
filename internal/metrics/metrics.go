@@ -85,7 +85,8 @@ func (c *Collector) Collect(ch chan<- prometheus.Metric) {
 		gauge(descTorrentPeer, float64(t.Peers), append(l, "leech")...)
 	}
 	for _, s := range []engine.State{
-		engine.StateMetadata, engine.StateChecking, engine.StateDownloading, engine.StateStalledDownloading,
+		engine.StateMetadata, engine.StateChecking, engine.StateQueuedForChecking, engine.StateDownloading,
+		engine.StateStalledDownloading,
 		engine.StateSeeding, engine.StateStalledSeeding, engine.StateStopped, engine.StateQueued,
 		engine.StateMoving, engine.StateError,
 	} {

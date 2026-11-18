@@ -54,6 +54,7 @@ func TestSetPreferences(t *testing.T) {
 		"dl_limit": 5000, "alt_up_limit": 1, "queueing_enabled": true, "max_active_downloads": 2,
 		"encryption": 1, "schedule_from_hour": 6, "scheduler_days": 1, "slow_torrent_dl_rate_threshold": 4,
 		"start_paused_enabled": true, "unknown_key": "ignored", "max_seeding_time": 60,
+		"max_active_checking_torrents": 2,
 		// Pinned by the environment, so ignored.
 		"max_ratio": 3,
 	}), http.StatusOK)
@@ -62,11 +63,17 @@ func TestSetPreferences(t *testing.T) {
 		"dl_limit": 4096.0, "alt_up_limit": 1024.0, "queueing_enabled": true, "max_active_downloads": 2.0,
 		"encryption": 1.0, "schedule_from_hour": 6.0, "schedule_from_min": 0.0, "scheduler_days": 1.0,
 		"slow_torrent_dl_rate_threshold": 4.0, "add_stopped_enabled": true, "max_ratio": 2.0,
-		"max_seeding_time_enabled": true, "max_seeding_time": 60.0,
+		"max_seeding_time_enabled": true, "max_seeding_time": 60.0, "max_active_checking_torrents": 2.0,
 	} {
 		if p[k] != want {
 			t.Errorf("%s = %v, want %v", k, p[k], want)
 		}
+	}
+
+	// piecemeal checks at least one torrent at a time.
+	expect(t, "no checking", e.setPreferences(map[string]any{"max_active_checking_torrents": 0}), http.StatusOK)
+	if p := e.preferences(); p["max_active_checking_torrents"] != 1.0 {
+		t.Fatalf("max_active_checking_torrents 0 became %v, want 1", p["max_active_checking_torrents"])
 	}
 
 	// qbit_manage's write: the flags alone.

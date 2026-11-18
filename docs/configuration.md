@@ -93,6 +93,7 @@ Change these in **Settings**, with `PATCH /api/piecemeal/v1/settings`, or throug
 | `dontCountSlowTorrents` | `false` | Slow torrents don't count toward the limits. |
 | `slowDownloadRate`, `slowUploadRate` | `2048` | Below these rates a torrent is slow. |
 | `slowTorrentTime` | `60` | Seconds a torrent must stay below them to count as slow. |
+| `maxActiveCheckingTorrents` | `1` | Torrents whose data is checked at once, at least 1. The others wait, queued for checking, and neither download nor seed until their data is checked. On hard drives, checking one at a time keeps the disks from seeking between torrents. |
 | `ipFilterEnabled` | `false` | Refuse peers in the IP filter's ranges. |
 | `ipFilterPath` | none | An eMule `.dat`, PeerGuardian `.p2p`, or a file of IP addresses and CIDR ranges, one per line. At most 512 MiB. |
 | `bannedIPs` | none | Peers to refuse, one IP address or CIDR range per line. |

@@ -104,6 +104,14 @@ export const settingsGroups: FieldGroupDef[] = [
         description: "New torrents wait until you start them.",
         kind: "bool",
       },
+      {
+        key: "maxActiveCheckingTorrents",
+        label: "Torrents checked at once",
+        description:
+          "Checking data reads all of it. Others wait, queued for checking; on hard drives, one at a time keeps the disks from seeking between torrents.",
+        kind: "int",
+        min: 1,
+      },
     ],
   },
   speedGroup,

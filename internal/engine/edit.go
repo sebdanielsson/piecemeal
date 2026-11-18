@@ -249,6 +249,8 @@ func (e *Engine) Move(ctx context.Context, hash, savePath string) error {
 				m.setError(err)
 			}
 		}
+		// A check the move interrupted carries on, or the next one starts.
+		e.scheduleChecksLocked()
 		e.saveLocked(m)
 		e.refreshLocked(m)
 	})

@@ -62,6 +62,10 @@ type Config struct {
 	// ClientConfig, when set, adjusts the anacrolix configuration before the
 	// client is created. Tests use it to stay off the network.
 	ClientConfig func(*torrent.ClientConfig)
+
+	// wrapStorage, when set, wraps the torrent storage; tests slow down
+	// hashing with it.
+	wrapStorage func(storage.ClientImplCloser) storage.ClientImplCloser
 }
 
 // Engine is the torrent engine.
@@ -90,6 +94,8 @@ type Engine struct {
 	torrents map[metainfo.Hash]*managed
 	cats     map[string]Category
 	tags     map[string]struct{}
+	// checkSeq numbers torrents as they join the check queue.
+	checkSeq uint64
 
 	snap atomic.Pointer[snapshot]
 	bus  *Bus
@@ -181,6 +187,9 @@ func New(ctx context.Context, cfg Config, st *store.Store, sm *settings.Manager,
 	}
 	e.storagePaths(&opts)
 	e.storage = storage.NewFileOpts(opts)
+	if cfg.wrapStorage != nil {
+		e.storage = cfg.wrapStorage(e.storage)
+	}
 	e.applyLimits(sm.Get())
 	e.snap.Store(&snapshot{byHash: map[string]*Torrent{}})
 
@@ -283,6 +292,9 @@ func (e *Engine) onSettingsChanged(old, cur settings.Settings) {
 	}
 	if filterChanged {
 		e.dropBlockedPeersLocked()
+	}
+	if cur.MaxActiveCheckingTorrents != old.MaxActiveCheckingTorrents {
+		e.scheduleChecksLocked()
 	}
 	needsRestart := cur.DHT != old.DHT || cur.PEX != old.PEX || cur.UTP != old.UTP ||
 		cur.Encryption != old.Encryption || cur.MaxHalfOpenConnections != old.MaxHalfOpenConnections ||
@@ -410,6 +422,9 @@ func (e *Engine) restartClientLocked(port int, s settings.Settings) error {
 	}
 	for _, m := range e.torrents {
 		m.t = nil
+		if m.check == checkActive {
+			m.check = checkPending // starts over below, first in line
+		}
 		e.forgetInfo(m.hash)
 	}
 	if err := e.startClientRetrying(port, s); err != nil {
@@ -426,6 +441,7 @@ func (e *Engine) restartClientLocked(port int, s settings.Settings) error {
 			}
 		}
 	}
+	e.scheduleChecksLocked()
 	return nil
 }
 

@@ -54,7 +54,7 @@ export function matchesState(t: Torrent, filter: StateFilter): boolean {
     case "stalled":
       return t.state === "stalledDownloading" || t.state === "stalledSeeding";
     case "checking":
-      return t.state === "checking";
+      return t.state === "checking" || t.state === "queuedForChecking";
     case "errored":
       return t.state === "error";
     default:
@@ -189,6 +189,7 @@ export function describeState(t: Pick<Torrent, "state" | "complete" | "forced">)
   const map: Record<TorrentState, StateInfo> = {
     metadata: { label: "Metadata", tone: "info" },
     checking: { label: "Checking", tone: "info" },
+    queuedForChecking: { label: "Queued for checking", tone: "muted" },
     downloading: { label: `Downloading${forced}`, tone: "progress" },
     stalledDownloading: { label: "Stalled", tone: "warning" },
     seeding: { label: `Seeding${forced}`, tone: "success" },

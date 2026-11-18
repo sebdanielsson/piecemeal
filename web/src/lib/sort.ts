@@ -27,12 +27,13 @@ const stateOrder: Record<Torrent["state"], number> = {
   stalledDownloading: 1,
   metadata: 2,
   checking: 3,
-  moving: 4,
-  queued: 5,
-  seeding: 6,
-  stalledSeeding: 7,
-  stopped: 8,
-  error: 9,
+  queuedForChecking: 4,
+  moving: 5,
+  queued: 6,
+  seeding: 7,
+  stalledSeeding: 8,
+  stopped: 9,
+  error: 10,
 };
 
 export const torrentComparators = {

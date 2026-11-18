@@ -25,6 +25,7 @@ const (
 	StateStalledSeeding     State = "stalledSeeding"
 	StateStopped            State = "stopped"
 	StateQueued             State = "queued"
+	StateQueuedForChecking  State = "queuedForChecking"
 	StateMoving             State = "moving"
 	StateError              State = "error"
 )
@@ -37,7 +38,7 @@ const stallGrace = 30 * time.Second
 type Torrent struct {
 	Hash        string   `json:"hash" doc:"SHA-1 infohash, hex."`
 	Name        string   `json:"name"`
-	State       State    `json:"state" enum:"metadata,checking,downloading,stalledDownloading,seeding,stalledSeeding,stopped,queued,moving,error"`
+	State       State    `json:"state" enum:"metadata,checking,queuedForChecking,downloading,stalledDownloading,seeding,stalledSeeding,stopped,queued,moving,error"`
 	Complete    bool     `json:"complete" doc:"Every wanted file is downloaded."`
 	HasMetadata bool     `json:"hasMetadata"`
 	Progress    float64  `json:"progress" doc:"Fraction of the wanted bytes downloaded, 0 to 1."`
@@ -238,7 +239,7 @@ func (e *Engine) updateRates(m *managed, now time.Time) {
 func (e *Engine) updateTimes(m *managed, now time.Time) {
 	last := m.timesAt
 	m.timesAt = now
-	if m.t == nil || m.info == nil {
+	if m.t == nil || m.info == nil || m.check != checkNone {
 		m.timeAcc = 0
 		return
 	}
@@ -394,12 +395,14 @@ func (e *Engine) statusLocked(m *managed) *Torrent {
 		st.State = StateMoving
 	case r.Error != "":
 		st.State = StateError
+	case m.check == checkActive:
+		st.State = StateChecking
+	case m.waitingForCheck():
+		st.State = StateQueuedForChecking
 	case m.queued:
 		st.State = StateQueued
 	case m.t == nil:
 		st.State = StateStopped
-	case m.checking:
-		st.State = StateChecking
 	case m.info == nil:
 		st.State = StateMetadata
 	// A torrent counts as transferring for a while after the last payload,
@@ -538,7 +541,7 @@ func (e *Engine) enforceSeedGoals() {
 	var reached []string
 	e.mu.Lock()
 	for _, m := range e.torrents {
-		if m.t == nil || m.info == nil || !m.complete() {
+		if m.t == nil || m.info == nil || m.check != checkNone || !m.complete() {
 			continue
 		}
 		ratioLimit := m.rec.RatioLimit
