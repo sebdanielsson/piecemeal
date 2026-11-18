@@ -5,6 +5,19 @@ import { OptionSelect } from "./option-select";
 type Mode = "global" | "unlimited" | "custom";
 
 /**
+ * Reads a typed seeding goal: a ratio, which may use a decimal comma, or
+ * whole minutes. Returns null for anything that isn't a goal yet.
+ */
+export function parseShareLimit(text: string, kind: "ratio" | "minutes"): number | null {
+  const trimmed = text.trim();
+  const n = Number(trimmed.replace(",", "."));
+  if (trimmed === "" || !Number.isFinite(n) || n < 0) {
+    return null;
+  }
+  return kind === "minutes" ? Math.round(n) : n;
+}
+
+/**
  * A seeding goal: a ratio, or a time in minutes. Per torrent, -2 follows
  * the global setting and -1 is unlimited; globally only -1 exists.
  */
@@ -28,7 +41,9 @@ export function ShareLimitInput({
   const [seen, setSeen] = useState(value);
   if (value !== seen) {
     setSeen(value);
-    if (value >= 0 && Number(draft) !== value) {
+    // Only replace what's typed when it means something else, so "1,5"
+    // isn't rewritten to "1.5" while typing.
+    if (value >= 0 && parseShareLimit(draft, kind) !== value) {
       setDraft(String(value));
     }
   }
@@ -52,8 +67,7 @@ export function ShareLimitInput({
           } else if (m === "unlimited") {
             onChange(-1);
           } else {
-            const n = Number(draft);
-            onChange(Number.isFinite(n) && n >= 0 && draft !== "" ? n : fallback);
+            onChange(parseShareLimit(draft, kind) ?? fallback);
           }
         }}
       />
@@ -66,9 +80,9 @@ export function ShareLimitInput({
           className="w-28 tabular"
           onChange={(e) => {
             setDraft(e.target.value);
-            const n = Number(e.target.value.replace(",", "."));
-            if (e.target.value !== "" && Number.isFinite(n) && n >= 0) {
-              onChange(kind === "minutes" ? Math.round(n) : n);
+            const n = parseShareLimit(e.target.value, kind);
+            if (n !== null) {
+              onChange(n);
             }
           }}
         />

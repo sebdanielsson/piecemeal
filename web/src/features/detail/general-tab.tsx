@@ -123,7 +123,12 @@ export function GeneralTab({ torrent: t }: { torrent: Torrent }) {
           />
         </Item>
         <Item label="Tags" htmlFor="detail-tags">
-          <TagPicker id="detail-tags" value={t.tags ?? []} onChange={(tags) => patch({ tags })} />
+          <TagPicker
+            id="detail-tags"
+            label="Tags"
+            value={t.tags ?? []}
+            onChange={(tags) => patch({ tags })}
+          />
         </Item>
         <SwitchItem
           label="Download in order"

@@ -40,9 +40,9 @@ describe("applyTorrentsEvent", () => {
     expect(next.get(a.hash)).toBe(a);
   });
 
-  test("a torrent removed and re-added in one event is kept", () => {
-    // The server drops a hash from "removed" when it reappears in "updated",
-    // but the client shouldn't care about the order either way.
+  test("an update to one torrent and the removal of another apply together", () => {
+    // The server never lists one hash in both: a later change replaces an
+    // earlier one within the same coalesced event.
     const next = applyTorrentsEvent(torrentMapFrom([a]), { updated: [b], removed: [a.hash] });
     expect(next.has(a.hash)).toBe(false);
     expect(next.has(b.hash)).toBe(true);

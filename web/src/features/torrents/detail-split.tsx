@@ -46,12 +46,15 @@ export function DetailSplit({
     return () => ro.disconnect();
   }, []);
   // The list keeps at least 120px.
-  const clamp = (h: number) => Math.round(Math.max(minHeight, Math.min(containerHeight - 120, h)));
+  const maxHeight = Math.max(minHeight, Math.round(containerHeight - 120));
+  const clamp = (h: number) => Math.round(Math.max(minHeight, Math.min(maxHeight, h)));
+  // The stored height can be more than fits now, such as after resizing the window.
+  const shown = clamp(height);
 
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
     const startY = e.clientY;
-    const startH = height;
+    const startH = shown;
     const target = e.currentTarget;
     target.setPointerCapture(e.pointerId);
     const onMove = (ev: globalThis.PointerEvent) => setHeight(clamp(startH + startY - ev.clientY));
@@ -69,10 +72,10 @@ export function DetailSplit({
     const step = e.shiftKey ? 80 : 24;
     if (e.key === "ArrowUp") {
       e.preventDefault();
-      setHeight(clamp(height + step));
+      setHeight(clamp(shown + step));
     } else if (e.key === "ArrowDown") {
       e.preventDefault();
-      setHeight(clamp(height - step));
+      setHeight(clamp(shown - step));
     }
   };
 
@@ -88,8 +91,9 @@ export function DetailSplit({
               role="separator"
               aria-orientation="horizontal"
               aria-label="Resize details"
-              aria-valuenow={height}
+              aria-valuenow={shown}
               aria-valuemin={minHeight}
+              aria-valuemax={maxHeight}
               tabIndex={0}
               onPointerDown={onPointerDown}
               onKeyDown={onKeyDown}
@@ -100,7 +104,7 @@ export function DetailSplit({
             <section
               aria-label="Torrent details"
               className="flex shrink-0 flex-col overflow-hidden bg-background"
-              style={{ height: clamp(height) }}
+              style={{ height: shown }}
             >
               {detail}
             </section>

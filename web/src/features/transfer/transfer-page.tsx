@@ -20,7 +20,7 @@ export function TransferPage() {
   return (
     <Page
       title="Transfer"
-      description="Live rates since this page was opened, and the global speed limits."
+      description="Live rates over the last 15 minutes, recorded while the web UI is connected, and the global speed limits."
     >
       <PageSection
         title="Speed"

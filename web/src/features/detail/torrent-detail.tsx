@@ -62,7 +62,9 @@ export function TorrentDetail() {
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="flex items-start gap-2 border-b px-3 pt-2 pb-2 sm:px-4">
         <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-          <TorrentName hash={torrent.hash} name={torrent.name} />
+          {/* The router keeps this component when only the hash changes; the
+              key starts the name over, so a rename can't land on another torrent. */}
+          <TorrentName key={torrent.hash} hash={torrent.hash} name={torrent.name} />
           <div className="flex items-center gap-3 text-xs">
             <StateBadge torrent={torrent} className="shrink-0" />
             <ProgressBar torrent={torrent} showLabel={false} className="max-w-48" />
@@ -156,10 +158,10 @@ export function TorrentDetail() {
               <GeneralTab torrent={torrent} />
             </TabsContent>
             <TabsContent value="files" className="h-full">
-              <FilesTab torrent={torrent} />
+              <FilesTab key={torrent.hash} torrent={torrent} />
             </TabsContent>
             <TabsContent value="peers">
-              <PeersTab torrent={torrent} />
+              <PeersTab key={torrent.hash} torrent={torrent} />
             </TabsContent>
             <TabsContent value="trackers">
               <TrackersTab torrent={torrent} />

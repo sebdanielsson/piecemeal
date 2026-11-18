@@ -314,10 +314,8 @@ export function AddTorrentDialog({
               </Field>
             </div>
             <Field>
-              <FieldLabel id="add-tags-label" htmlFor="add-tags">
-                Tags
-              </FieldLabel>
-              <TagPicker id="add-tags" value={tags} onChange={setTags} />
+              <FieldLabel htmlFor="add-tags">Tags</FieldLabel>
+              <TagPicker id="add-tags" label="Tags" value={tags} onChange={setTags} />
             </Field>
             <div className="grid gap-3 sm:grid-cols-2">
               <CheckOption checked={startStopped} onChange={setStopped} label="Add stopped" />

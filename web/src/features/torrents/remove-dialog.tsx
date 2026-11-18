@@ -28,6 +28,15 @@ export function RemoveDialog({
   onRemoved?: () => void;
 }) {
   const [deleteData, setDeleteData] = useState(false);
+  // Deleting files is never carried over: every opening starts unticked,
+  // however the dialog was closed last time.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      setDeleteData(false);
+    }
+  }
   const action = useTorrentAction();
   const shown = torrents.slice(0, 5);
   const remove = () => {
@@ -35,6 +44,7 @@ export function RemoveDialog({
       { action: "remove", hashes: torrents.map((t) => t.hash), deleteData },
       {
         onSuccess: () => {
+          setDeleteData(false);
           onOpenChange(false);
           onRemoved?.();
         },
@@ -42,15 +52,7 @@ export function RemoveDialog({
     );
   };
   return (
-    <AlertDialog
-      open={open}
-      onOpenChange={(next) => {
-        onOpenChange(next);
-        if (!next) {
-          setDeleteData(false);
-        }
-      }}
-    >
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>

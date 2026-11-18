@@ -3,9 +3,9 @@
 
 const units = ["B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB"] as const;
 
-/** Formats a byte count with binary units and about three significant digits. */
 const fractionDigits = (v: number) => (v < 10 ? 2 : v < 100 ? 1 : 0);
 
+/** Formats a byte count with binary units and about three significant digits. */
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) {
     return "–";

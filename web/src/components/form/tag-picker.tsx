@@ -10,11 +10,15 @@ import { tagsQuery } from "@/lib/queries";
  */
 export function TagPicker({
   id,
+  label,
   value,
   onChange,
   disabled,
 }: {
+  /** The id of the new-tag field, for a label to point at. */
   id?: string;
+  /** Names the group of tag toggles for assistive technology. */
+  label: string;
   value: readonly string[];
   onChange: (tags: string[]) => void;
   disabled?: boolean;
@@ -38,11 +42,7 @@ export function TagPicker({
     }
   };
   return (
-    <div
-      className="flex flex-wrap items-center gap-1.5"
-      role="group"
-      aria-labelledby={id ? `${id}-label` : undefined}
-    >
+    <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label={label}>
       {all.map((tag) => {
         const on = value.includes(tag);
         return (

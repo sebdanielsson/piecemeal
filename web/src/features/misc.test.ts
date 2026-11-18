@@ -1,10 +1,11 @@
 import { expect, test } from "vitest";
 import type { LogEntry, Settings } from "@/api/types";
+import { parseShareLimit } from "@/components/form/share-limit-input";
 import { appendLog } from "./admin/log-page";
 import { describeUserAgent } from "./admin/sessions-page";
 import { cellSize, countPieces } from "./detail/pieces-tab";
 import { settingsDiff, splitSettingsPatch } from "./settings/settings-form";
-import { niceCeiling } from "./transfer/speed-chart";
+import { formatAgo, niceCeiling, timeTicks } from "./transfer/speed-chart";
 import { shouldStart } from "./torrents/torrent-actions";
 
 test("countPieces reads the API's piece string", () => {
@@ -77,4 +78,20 @@ test("speed limits go to PATCH /transfer, everything else to PATCH /settings", (
     settings: { utp: false, ratioLimit: 2 },
   });
   expect(splitSettingsPatch({})).toEqual({ transfer: {}, settings: {} });
+});
+
+test("the speed graph's time axis uses round steps and readable labels", () => {
+  expect(timeTicks(60_000).map(formatAgo)).toEqual(["now", "−15s", "−30s", "−45s", "−1m"]);
+  expect(timeTicks(300_000).map(formatAgo)).toEqual(["now", "−1m", "−2m", "−3m", "−4m", "−5m"]);
+  expect(timeTicks(900_000).map(formatAgo)).toEqual(["now", "−5m", "−10m", "−15m"]);
+  expect(formatAgo(90_000)).toBe("−1m 30s");
+});
+
+test("seeding goals accept a decimal comma and whole minutes", () => {
+  expect(parseShareLimit("1,5", "ratio")).toBe(1.5);
+  expect(parseShareLimit(" 2 ", "ratio")).toBe(2);
+  expect(parseShareLimit("90.4", "minutes")).toBe(90);
+  expect(parseShareLimit("", "ratio")).toBeNull();
+  expect(parseShareLimit("-1", "ratio")).toBeNull();
+  expect(parseShareLimit("abc", "minutes")).toBeNull();
 });

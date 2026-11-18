@@ -46,6 +46,14 @@ export function settingsDiff(base: Settings, draft: Settings): Partial<Settings>
   return out;
 }
 
+function withoutKeys<T extends object>(obj: T, keys: string[]): T {
+  const out = { ...obj } as Record<string, unknown>;
+  for (const k of keys) {
+    delete out[k];
+  }
+  return out as T;
+}
+
 /**
  * Splits changed settings into the speed limits, which PATCH /transfer takes
  * from any signed-in user, and the rest, which only admins may change.
@@ -74,16 +82,12 @@ export function SettingsForm({ groups, footer }: { groups: FieldGroupDef[]; foot
   const updateTransfer = useUpdateTransfer();
   const saving = updateSettings.isPending || updateTransfer.isPending;
   const base = data?.settings;
-  const [draft, setDraft] = useState<Settings | undefined>(base);
-  // New settings from the server (loaded, saved, or changed elsewhere) reset
-  // the form, unless it has unsaved edits.
-  const [seenBase, setSeenBase] = useState(base);
-  if (base !== seenBase) {
-    setSeenBase(base);
-    if (!draft || !seenBase || Object.keys(settingsDiff(seenBase, draft)).length === 0) {
-      setDraft(base);
-    }
-  }
+  // Only the user's own edits are kept, on top of the current settings, so
+  // changes made elsewhere (the transfer bar, another browser) show up and
+  // aren't reverted by saving. An edit back to the current value no longer
+  // counts as a change.
+  const [edits, setEdits] = useState<Partial<Settings>>({});
+  const draft = useMemo(() => base && { ...base, ...edits }, [base, edits]);
 
   const keysHere = useMemo(
     () => new Set(groups.flatMap((g) => g.fields.map((f) => f.key))),
@@ -120,13 +124,14 @@ export function SettingsForm({ groups, footer }: { groups: FieldGroupDef[]; foot
     e.preventDefault();
     const patch = splitSettingsPatch(changes);
     try {
-      // The saved values come back through the settings cache, which the
-      // draft then matches.
+      // The saved values come back through the settings cache.
       if (Object.keys(patch.settings).length > 0) {
         await updateSettings.mutateAsync(patch.settings);
+        setEdits((prev) => withoutKeys(prev, Object.keys(patch.settings)));
       }
       if (Object.keys(patch.transfer).length > 0) {
         await updateTransfer.mutateAsync(patch.transfer);
+        setEdits((prev) => withoutKeys(prev, Object.keys(patch.transfer)));
       }
       toast.success("Settings saved");
     } catch {
@@ -152,7 +157,7 @@ export function SettingsForm({ groups, footer }: { groups: FieldGroupDef[]; foot
                 value={draft[f.key]}
                 lockedBy={data.locked[f.key]}
                 disabled={!editable(f.key)}
-                onChange={(v) => setDraft((d) => d && { ...d, [f.key]: v })}
+                onChange={(v) => setEdits((e) => ({ ...e, [f.key]: v }))}
               />
             ))}
           </div>
@@ -171,7 +176,7 @@ export function SettingsForm({ groups, footer }: { groups: FieldGroupDef[]; foot
             size="sm"
             variant="outline"
             disabled={!dirty}
-            onClick={() => setDraft(base)}
+            onClick={() => setEdits({})}
           >
             Reset
           </Button>

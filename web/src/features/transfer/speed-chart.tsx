@@ -16,6 +16,30 @@ export function niceCeiling(max: number): number {
   return 1024 * base;
 }
 
+const tickSteps = [10_000, 15_000, 30_000, 60_000, 120_000, 300_000, 600_000];
+
+/** Offsets in milliseconds before now for the x axis: round steps, at most six ticks. */
+export function timeTicks(windowMs: number): number[] {
+  const step = tickSteps.find((s) => windowMs / s <= 5) ?? windowMs / 5;
+  const out: number[] = [];
+  for (let ago = 0; ago <= windowMs + 1; ago += step) {
+    out.push(ago);
+  }
+  return out;
+}
+
+/** An x axis label: "now", "−30s", "−5m" or "−1m 30s". */
+export function formatAgo(ms: number): string {
+  const s = Math.round(ms / 1000);
+  if (s === 0) {
+    return "now";
+  }
+  if (s < 60) {
+    return `−${s}s`;
+  }
+  return s % 60 === 0 ? `−${s / 60}m` : `−${Math.floor(s / 60)}m ${s % 60}s`;
+}
+
 const height = 220;
 const pad = { top: 12, right: 12, bottom: 22, left: 76 };
 
@@ -60,9 +84,10 @@ export function SpeedChart({ samples, windowMs }: { samples: TransferSample[]; w
 
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * max);
   const minutes = windowMs / 60_000;
-  const xTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => ({
-    f,
-    label: f === 1 ? "now" : `−${Math.round((1 - f) * minutes)}m`,
+  const windowText = minutes === 1 ? "minute" : `${minutes} minutes`;
+  const xTicks = timeTicks(windowMs).map((ago) => ({
+    f: 1 - ago / windowMs,
+    label: formatAgo(ago),
   }));
 
   const onMove = (e: PointerEvent<SVGSVGElement>) => {
@@ -90,7 +115,7 @@ export function SpeedChart({ samples, windowMs }: { samples: TransferSample[]; w
         role="img"
         aria-label={
           last
-            ? `Transfer rates over the last ${minutes} minutes. Now: download ${formatRate(last.down)}, upload ${formatRate(last.up)}.`
+            ? `Transfer rates over the last ${windowText}. Now: download ${formatRate(last.down)}, upload ${formatRate(last.up)}.`
             : "Transfer rates: no data yet."
         }
         onPointerMove={onMove}
