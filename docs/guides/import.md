@@ -19,7 +19,7 @@ docker run --rm -v piecemeal-data:/data -v /path/to/downloads:/downloads \
 
 Check the list it prints, then run it again without `--dry-run`, and start piecemeal.
 
-- **Transmission**: give its configuration directory, the one with `torrents/` and `resume/`. Its labels become tags.
+- **Transmission**: give its configuration directory, the one with `torrents/` and `resume/`. Its labels become tags, and the first one also the category: Radarr and Sonarr label their downloads in Transmission with what is their category in qBittorrent, so they keep track of them.
 - **qBittorrent**: give its `BT_backup` directory, or the data directory that holds it. Its category and tags carry over.
 - **`--map FROM=TO`** rewrites save paths when the other client saw the downloads under another path, such as `--map /data/torrents=/downloads`. Repeat it for several paths. Save paths must end up inside `PIECEMEAL_ALLOWED_ROOTS`.
 - **Checking.** piecemeal checks each torrent's data when it next starts, and stopped ones when they start. `--trust-data` marks complete torrents as verified instead, which is much faster on large libraries but trusts the files on disk.

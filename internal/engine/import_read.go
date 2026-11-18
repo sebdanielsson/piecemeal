@@ -77,7 +77,10 @@ func unixTime(n int64) time.Time {
 }
 
 // ReadTransmission reads the torrents of a Transmission configuration
-// directory: torrents/*.torrent with their resume/*.resume.
+// directory: torrents/*.torrent with their resume/*.resume. Labels become
+// tags, and the first label also the category: Radarr and Sonarr label
+// their downloads in Transmission with what is their category in
+// qBittorrent.
 func ReadTransmission(dir string) ([]Imported, []error) {
 	resumes, err := filepath.Glob(filepath.Join(dir, "resume", "*.resume"))
 	if err != nil {
@@ -101,14 +104,18 @@ func ReadTransmission(dir string) ([]Imported, []error) {
 			errs = append(errs, err)
 			continue
 		}
+		labels := r.strings("labels")
 		it := Imported{
-			Source: rp, Metainfo: mi, SavePath: r.str("destination"), Tags: r.strings("labels"),
+			Source: rp, Metainfo: mi, SavePath: r.str("destination"), Tags: labels,
 			Stopped: r.int("paused") != 0, AddedAt: unixTime(r.int("added-date")), CompletedAt: unixTime(r.int("done-date")),
 			Uploaded: r.int("uploaded"), Downloaded: r.int("downloaded"), SeedingSeconds: r.int("seeding-time-seconds"),
 			ActiveSeconds: r.int("seeding-time-seconds") + r.int("downloading-time-seconds"),
 			Sequential:    r.int("sequential_download") != 0, Paths: r.strings("files"),
 			RatioLimit: -2, SeedingTimeLimit: -2, InactiveSeedingTimeLimit: -2,
 			Complete: r.dict("progress").str("blocks") == "all",
+		}
+		if len(labels) > 0 {
+			it.Category = labels[0]
 		}
 		for _, v := range r.list("dnd") {
 			n, _ := v.(int64)
