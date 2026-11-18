@@ -4,6 +4,26 @@
  */
 
 export interface paths {
+  "/admin/backup": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Download a backup of the database
+     * @description Admins only. A consistent copy of piecemeal's database: settings, users, API keys, torrents, categories, tags and RSS. Restore it with `piecemeal restore FILE` while piecemeal is stopped. Downloaded data isn't included; piece completion is rebuilt by checking the data.
+     */
+    get: operations["getBackup"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api-keys": {
     parameters: {
       query?: never;
@@ -1878,6 +1898,55 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  getBackup: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description The SQLite database. */
+      200: {
+        headers: {
+          "Content-Disposition"?: string;
+          "Content-Type"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/vnd.sqlite3": string;
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/problem+json": components["schemas"]["ErrorModel"];
+        };
+      };
+    };
+  };
   listAPIKeys: {
     parameters: {
       query?: never;

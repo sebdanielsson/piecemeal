@@ -80,7 +80,7 @@ func newTestServer(t *testing.T) *testServer {
 	mux := http.NewServeMux()
 	New(mux, Deps{
 		Version: "test", StartedAt: time.Now(), Engine: e, Settings: sm, Auth: a, Fetcher: fetcher,
-		Logs: logbuf.New(10), RSS: feeds, Log: log,
+		Logs: logbuf.New(10), RSS: feeds, Store: st, Log: log,
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -357,4 +357,21 @@ func TestNonAdminCanChangeLimitsButNotSettings(t *testing.T) {
 	anon.do(http.MethodPatch, "/transfer", TransferLimits{DownloadLimit: &limit}, http.StatusOK, nil, cookie...)
 	anon.do(http.MethodPatch, "/settings", map[string]any{"downloadLimit": 5}, http.StatusForbidden, nil, cookie...)
 	anon.do(http.MethodGet, "/audit", nil, http.StatusForbidden, nil, cookie...)
+	anon.do(http.MethodGet, "/admin/backup", nil, http.StatusForbidden, nil, cookie...)
+}
+
+func TestBackupDownload(t *testing.T) {
+	s := newTestServer(t)
+	s.login()
+	req, _ := http.NewRequest(http.MethodGet, s.URL+Prefix+"/admin/backup", nil)
+	resp, err := s.client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || !bytes.HasPrefix(b, []byte("SQLite format 3\x00")) ||
+		!strings.HasPrefix(resp.Header.Get("Content-Disposition"), `attachment; filename="piecemeal-`) {
+		t.Fatalf("backup: %d %q %.20q", resp.StatusCode, resp.Header.Get("Content-Disposition"), b)
+	}
 }

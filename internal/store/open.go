@@ -30,7 +30,7 @@ type Store struct {
 // Open opens or creates the database in dir and migrates it to the latest
 // schema.
 func Open(ctx context.Context, dir string) (*Store, error) {
-	return open(ctx, filepath.Join(dir, "piecemeal.db"))
+	return open(ctx, filepath.Join(dir, FileName))
 }
 
 // OpenMemory opens a private in-memory database, for tests.

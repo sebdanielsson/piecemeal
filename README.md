@@ -2,7 +2,7 @@
 
 A self-hosted BitTorrent client: one Go binary built on [anacrolix/torrent](https://github.com/anacrolix/torrent), with its own REST API, a qBittorrent-compatible WebAPI for Radarr, Sonarr, Prowlarr and other qBittorrent tools, and an embedded web UI.
 
-**Status:** early. The engine, the native API and its auth work; the qBittorrent API and the web UI are next. See [docs/plan.md](docs/plan.md) for the design and roadmap.
+**Status:** before 1.0. The engine, the native API, the web UI, OIDC sign-in, the qBittorrent WebAPI (Radarr, Sonarr, Prowlarr and VueTorrent work against it) and RSS are done; hardening for 1.0 is under way. See [docs/plan.md](docs/plan.md) for the design and roadmap, and [docs/qbittorrent-compat.md](docs/qbittorrent-compat.md) for the qBittorrent API.
 
 ## Running
 
@@ -52,6 +52,24 @@ Startup configuration comes from environment variables:
 | `PIECEMEAL_LOG_FORMAT` | `json` | `json` or `text`. |
 
 Runtime settings (speed limits, connections, DHT, encryption, seeding goals and more) are changed through `PATCH /api/piecemeal/v1/settings`. Any of them can be pinned with an environment variable named after it, such as `PIECEMEAL_DOWNLOAD_LIMIT` for `downloadLimit`; pinned settings are read-only in the API.
+
+## Backup and restore
+
+The database in `PIECEMEAL_DATA_DIR` holds settings, users, API keys, torrents, categories, tags and RSS. Back it up while piecemeal runs, either from Settings > Backup in the web UI (admins) or from the command line:
+
+```sh
+docker exec piecemeal piecemeal backup /data/piecemeal-backup.db
+```
+
+To restore, stop piecemeal and run `piecemeal restore FILE` with the same data directory; the database it replaces is kept next to it with a `.replaced-` suffix. Downloaded data isn't part of the backup: it stays where it is, and piece completion is rebuilt by checking it, for running torrents at the next start and for stopped ones when they start.
+
+```sh
+docker stop piecemeal
+docker run --rm -v piecemeal-data:/data -v "$PWD":/backup ghcr.io/sebdanielsson/piecemeal restore /backup/piecemeal-backup.db
+docker start piecemeal
+```
+
+Only one piecemeal can use a data directory at a time.
 
 ## Development
 

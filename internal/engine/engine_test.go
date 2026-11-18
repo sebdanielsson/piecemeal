@@ -426,3 +426,29 @@ func TestRestartKeepsPort(t *testing.T) {
 		}
 	}
 }
+
+// TestLostPieceCompletion checks that torrents whose piece completion
+// database is gone, as after restoring a backup on a new machine, are
+// checked against their data instead of downloaded again.
+func TestLostPieceCompletion(t *testing.T) {
+	ctx := context.Background()
+	s := newSeeder(t, map[string]int{"a.bin": 200 << 10})
+	h := newHarness(t)
+	hash, err := h.engine.Add(ctx, AddParams{Metainfo: s.Metainfo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.engine.AddPeers(ctx, []string{s.Addr}, hash); err != nil {
+		t.Fatal(err)
+	}
+	h.waitFor(hash, "download", func(st Torrent) bool { return st.Complete })
+	if err := h.engine.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(h.dataDir, ".torrent.bolt.db")); err != nil {
+		t.Fatal(err)
+	}
+	h.start()
+	// No peers this time: completion can only come from the data on disk.
+	h.waitFor(hash, "the data to be checked", func(st Torrent) bool { return st.Complete })
+}

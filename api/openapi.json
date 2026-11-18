@@ -2605,6 +2605,80 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/admin/backup": {
+      "get": {
+        "description": "Admins only. A consistent copy of piecemeal's database: settings, users, API keys, torrents, categories, tags and RSS. Restore it with `piecemeal restore FILE` while piecemeal is stopped. Downloaded data isn't included; piece completion is rebuilt by checking the data.",
+        "operationId": "getBackup",
+        "responses": {
+          "200": {
+            "content": {
+              "application/vnd.sqlite3": {
+                "schema": {
+                  "contentMediaType": "application/octet-stream",
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The SQLite database.",
+            "headers": {
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Type": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "session": []
+          }
+        ],
+        "summary": "Download a backup of the database",
+        "tags": [
+          "Admin"
+        ]
+      }
+    },
     "/api-keys": {
       "get": {
         "operationId": "listAPIKeys",
