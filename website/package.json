@@ -1,0 +1,12 @@
+{
+  "name": "piecemeal-website",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "blume dev",
+    "build": "blume build"
+  },
+  "devDependencies": {
+    "blume": "2.2.7"
+  }
+}

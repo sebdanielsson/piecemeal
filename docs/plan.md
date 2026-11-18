@@ -115,7 +115,7 @@ Resources under `/api/piecemeal/v1`: `torrents` (with `files`, `peers`, `tracker
 
 ## qBittorrent compatibility
 
-Target: qBittorrent 5.3.0's WebAPI 2.16.2. piecemeal reports exactly that from Phase 2 and follows 5.3.0's behaviour on every endpoint it implements. Clients choose code paths by version, and the *arrs behave the same for any WebAPI from 2.11.2 up: they gate categories, paths, share limits and `stopped` on the version, but not API keys or tags. Reporting 5.3.0 early means tools such as VueTorrent may call Phase 4 endpoints before they exist; building 5.0 behaviour first would mean changing it again later. The pre-2.11 names (`pause`, `resume`, `paused`) are accepted as aliases. [docs/qbittorrent-compat.md](qbittorrent-compat.md) tracks every endpoint.
+Target: qBittorrent 5.3.0's WebAPI 2.16.2. piecemeal reports exactly that from Phase 2 and follows 5.3.0's behaviour on every endpoint it implements. Clients choose code paths by version, and the *arrs behave the same for any WebAPI from 2.11.2 up: they gate categories, paths, share limits and `stopped` on the version, but not API keys or tags. Reporting 5.3.0 early means tools such as VueTorrent may call Phase 4 endpoints before they exist; building 5.0 behaviour first would mean changing it again later. The pre-2.11 names (`pause`, `resume`, `paused`) are accepted as aliases. [docs/reference/qbittorrent-compat.md](reference/qbittorrent-compat.md) tracks every endpoint.
 
 | Group | Endpoints | Phase | Notes |
 | --- | --- | --- | --- |

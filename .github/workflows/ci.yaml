@@ -54,6 +54,27 @@ jobs:
       - name: Build
         run: pnpm -C web build
 
+  # The website (website/), built with Blume from docs/ and api/openapi.json.
+  # Vercel deploys it; building it here catches broken pages and links first.
+  website:
+    name: Website
+    runs-on: ubuntu-26.04-arm
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup tools
+        uses: jdx/mise-action@v5
+        with:
+          install_args: node npm:pnpm
+
+      - name: Install dependencies
+        run: pnpm -C website install --frozen-lockfile
+
+      - name: Build
+        run: pnpm -C website build
+
   go:
     name: Go
     runs-on: ubuntu-26.04-arm
@@ -151,6 +172,7 @@ jobs:
     if: always()
     needs:
       - web
+      - website
       - go
       - docker
       - e2e

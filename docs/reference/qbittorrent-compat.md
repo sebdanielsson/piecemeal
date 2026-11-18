@@ -1,15 +1,19 @@
+---
+description: Every qBittorrent WebAPI v2 endpoint and how piecemeal implements it, for the *arrs, VueTorrent and other qBittorrent tools.
+---
+
 # qBittorrent WebAPI compatibility
 
 piecemeal serves the qBittorrent WebAPI v2 at `/api/v2`. It reports qBittorrent `v5.3.0` and WebAPI `2.16.2`, and follows qBittorrent 5.3.0's behaviour on the endpoints below. It is written from qBittorrent's API documentation and observed behaviour, not from qBittorrent's source.
 
-CI checks it two ways (see [`test/e2e`](../test/e2e)): Radarr, Sonarr and Prowlarr containers run their download client test against piecemeal and Radarr grabs a release through it, and the same calls go to a real qBittorrent 5.3.0 and piecemeal and their status codes and response shapes are compared.
+CI checks it two ways (see [`test/e2e`](https://github.com/sebdanielsson/piecemeal/tree/main/test/e2e)): Radarr, Sonarr and Prowlarr containers run their download client test against piecemeal and Radarr grabs a release through it, and the same calls go to a real qBittorrent 5.3.0 and piecemeal and their status codes and response shapes are compared.
 
 ## Authentication
 
 - `auth/login` answers 204 and sets the session cookie twice: as `QBT_SID_<port>` (qBittorrent 5.2 and later) and as `SID` (older clients). Wrong credentials get 401; too many failures get 403 for 15 minutes.
 - Every other endpoint accepts the session cookie, piecemeal's own web session, an API key as `Authorization: Bearer pm_...`, or HTTP Basic credentials when there is no session. Basic credentials are the qBittorrent 5.2 behaviour that current Radarr, Sonarr and Prowlarr rely on.
 - API keys with the `qbittorrent` or `full` scope work; `read-only` keys can only call endpoints that read. `app/rotateAPIKey` creates a `qbittorrent`-scoped key for the signed-in user (see below); keys can also be created in piecemeal.
-- Anything unauthenticated, including an unknown key, gets 403, which the *arrs read as "log in again".
+- Anything unauthenticated, including an unknown key, gets 403, which the \*arrs read as "log in again".
 - When a request has an `Origin` or `Referer` header, it must name the host the request went to (CSRF protection).
 
 ## Requests
@@ -133,9 +137,7 @@ Matching follows qBittorrent: wildcard terms (`*`, `?`, `[…]`) that must all m
 
 ## VueTorrent and other qBittorrent web UIs
 
-qBittorrent web UIs call the API relative to where they are served, so they need to be served by piecemeal. Set `PIECEMEAL_QBITTORRENT_WEBUI_DIR` to the UI's directory, such as an unpacked [VueTorrent](https://github.com/VueTorrent/VueTorrent) release (the directory or its `public` folder). piecemeal serves it at `/qbittorrent/` and the API under it at `/qbittorrent/api/v2`, and reports `alternative_webui_enabled`. Sign in with a piecemeal user.
-
-The UI runs on piecemeal's origin, with the same rights as piecemeal's own web UI, so only use one you trust. Dotfiles in its directory aren't served.
+piecemeal can serve a qBittorrent web UI such as VueTorrent at `/qbittorrent/`, with the API under it at `/qbittorrent/api/v2`, and then reports `alternative_webui_enabled`. See [Web UIs](../features/web-ui.md#vuetorrent-and-other-qbittorrent-web-uis).
 
 ## Torrent states
 
@@ -152,4 +154,4 @@ The UI runs on piecemeal's origin, with the same rights as piecemeal's own web U
 | Moving data | `moving` |
 | Error | `error` |
 
-Seed goals stop the torrent by default (`max_ratio_act` 0), which is what Radarr and Sonarr wait for before removing a finished download. Setting piecemeal's `seedGoalAction` to `remove` or `removeWithData` reports 1 or 3, and the *arrs then warn that the client removes completed downloads.
+Seed goals stop the torrent by default (`max_ratio_act` 0), which is what Radarr and Sonarr wait for before removing a finished download. Setting piecemeal's `seedGoalAction` to `remove` or `removeWithData` reports 1 or 3, and the \*arrs then warn that the client removes completed downloads.

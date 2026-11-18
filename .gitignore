@@ -12,3 +12,7 @@ node_modules/
 
 # End-to-end test state
 /test/e2e/tmp/
+
+# Website build output (Blume)
+/website/.blume/
+/website/dist/

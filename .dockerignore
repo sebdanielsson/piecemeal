@@ -5,3 +5,4 @@ internal/webui/dist
 **/node_modules
 docs
 *.md
+website
