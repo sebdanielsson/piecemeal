@@ -252,9 +252,9 @@ func (e *Engine) Add(ctx context.Context, p AddParams) (string, error) {
 	switch {
 	case p.Magnet != "" && p.Metainfo == nil:
 		var err error
-		spec, err = torrent.TorrentSpecFromMagnetUri(p.Magnet)
+		spec, err = magnetSpec(p.Magnet)
 		if err != nil {
-			return "", fmt.Errorf("%w: magnet URI: %w", ErrInvalid, err)
+			return "", err
 		}
 		ih, name, magnet = spec.InfoHash, spec.DisplayName, p.Magnet
 	case p.Metainfo != nil && p.Magnet == "":
@@ -415,7 +415,7 @@ func (e *Engine) attachLocked(m *managed, opts ...attachOpts) error {
 		}
 	} else if spec == nil {
 		var err error
-		spec, err = torrent.TorrentSpecFromMagnetUri(m.rec.Magnet)
+		spec, err = magnetSpec(m.rec.Magnet)
 		if err != nil {
 			return fmt.Errorf("stored magnet URI: %w", err)
 		}
@@ -496,7 +496,7 @@ func (e *Engine) onInfoLocked(m *managed) {
 	// parameter or hash. Then the real name takes over, unless it was
 	// renamed.
 	placeholder := m.rec.Name == "" || m.rec.Name == m.rec.InfoHash
-	if spec, err := torrent.TorrentSpecFromMagnetUri(m.rec.Magnet); err == nil && m.rec.Name == spec.DisplayName {
+	if spec, err := magnetSpec(m.rec.Magnet); err == nil && m.rec.Name == spec.DisplayName {
 		placeholder = true
 	}
 	if placeholder && m.rec.Name != info.BestName() {
@@ -1066,7 +1066,7 @@ func (e *Engine) loadTorrents(ctx context.Context) error {
 		}
 		if r.Metainfo != nil {
 			m.setMetainfo(r.Metainfo)
-		} else if spec, err := torrent.TorrentSpecFromMagnetUri(r.Magnet); err == nil {
+		} else if spec, err := magnetSpec(r.Magnet); err == nil {
 			m.setMagnetTrackers(spec.Trackers)
 		}
 		if err := m.loadOverrides(); err != nil {
@@ -1168,4 +1168,21 @@ func (e *Engine) markCompleteLocked(m *managed) {
 			return
 		}
 	}
+}
+
+// magnetSpec parses a magnet URI, which must name an info hash: anacrolix
+// parses one without and then panics adding it. A v2-only magnet is keyed
+// by its truncated v2 hash, as anacrolix keys it.
+func magnetSpec(uri string) (*torrent.TorrentSpec, error) {
+	spec, err := torrent.TorrentSpecFromMagnetUri(uri)
+	if err != nil {
+		return nil, fmt.Errorf("%w: magnet URI: %w", ErrInvalid, err)
+	}
+	if spec.InfoHash.IsZero() {
+		if !spec.InfoHashV2.Ok {
+			return nil, fmt.Errorf("%w: the magnet URI has no info hash", ErrInvalid)
+		}
+		spec.InfoHash = *spec.InfoHashV2.Value.ToShort()
+	}
+	return spec, nil
 }
