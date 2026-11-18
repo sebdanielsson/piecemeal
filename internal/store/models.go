@@ -38,6 +38,40 @@ type Kv struct {
 	Value     string
 }
 
+type RssArticle struct {
+	FeedUid     string
+	ID          string
+	Seq         int64
+	Title       string
+	Date        int64
+	TorrentUrl  string
+	Link        string
+	Description string
+	Author      string
+	Category    string
+	IsRead      bool
+}
+
+type RssFeed struct {
+	Uid             string
+	Path            string
+	Url             string
+	RefreshInterval int64
+	Title           string
+	LastBuildDate   string
+	LastError       string
+	FetchedAt       int64
+}
+
+type RssFolder struct {
+	Path string
+}
+
+type RssRule struct {
+	Name string
+	Def  string
+}
+
 type Session struct {
 	TokenHash  []byte
 	UserID     int64
