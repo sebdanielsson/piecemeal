@@ -76,7 +76,7 @@ If something here is wrong or out of date, [open an issue](https://github.com/se
 | | piecemeal | qBittorrent | Transmission | Deluge |
 | --- | --- | --- | --- | --- |
 | Encryption, uTP, DHT, peer exchange | Yes | Yes | Yes | Yes; uTP can't be turned off |
-| Local service discovery | No | Yes | Yes | Yes |
+| Local service discovery | No ([#57](https://github.com/sebdanielsson/piecemeal/issues/57)) | Yes | Yes | Yes |
 | UPnP and NAT-PMP | UPnP; NAT-PMP to a gateway you set | Yes | Yes | Yes |
 | Port forwarding through a VPN's NAT-PMP gateway, such as ProtonVPN's | Built in; follows the port when it changes | With an external script or tool | With an external script or tool | With an external script or tool |
 | Peer proxy | No ([#45](https://github.com/sebdanielsson/piecemeal/issues/45)) | HTTP, SOCKS4, SOCKS5 | No; an HTTP proxy for trackers and web seeds only | HTTP, SOCKS4, SOCKS5, I2P |
