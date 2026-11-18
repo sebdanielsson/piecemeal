@@ -1,6 +1,7 @@
 package qbit
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -110,11 +111,66 @@ func toFields(v any) fields {
 	return f
 }
 
+// structFieldNames caches, per struct type, each exported field's JSON
+// name.
+var structFieldNames sync.Map // reflect.Type → []string
+
+// structFields is toFields for a flat struct of scalars, such as Torrent,
+// without encoding it: maindata snapshots every torrent on each poll.
+// Values keep their Go types, which encode the same.
+func structFields(v any) fields {
+	rv := reflect.ValueOf(v)
+	names, ok := structFieldNames.Load(rv.Type())
+	if !ok {
+		t := rv.Type()
+		n := make([]string, t.NumField())
+		for i := range n {
+			f := t.Field(i)
+			name, _, _ := strings.Cut(f.Tag.Get("json"), ",")
+			if !f.IsExported() || name == "-" {
+				continue
+			}
+			n[i] = cmp.Or(name, f.Name)
+		}
+		names, _ = structFieldNames.LoadOrStore(t, n)
+	}
+	out := make(fields, rv.NumField())
+	for i, name := range names.([]string) {
+		if name != "" {
+			out[name] = rv.Field(i).Interface()
+		}
+	}
+	return out
+}
+
+// equalValue is reflect.DeepEqual with a fast path for the scalars that
+// make up most fields.
+func equalValue(a, b any) bool {
+	switch av := a.(type) {
+	case string:
+		bv, ok := b.(string)
+		return ok && av == bv
+	case int64:
+		bv, ok := b.(int64)
+		return ok && av == bv
+	case int:
+		bv, ok := b.(int)
+		return ok && av == bv
+	case float64:
+		bv, ok := b.(float64)
+		return ok && av == bv
+	case bool:
+		bv, ok := b.(bool)
+		return ok && av == bv
+	}
+	return reflect.DeepEqual(a, b)
+}
+
 // diffFields returns the fields of next that differ from prev.
 func diffFields(prev, next fields) fields {
 	out := fields{}
 	for k, v := range next {
-		if pv, ok := prev[k]; !ok || !reflect.DeepEqual(pv, v) {
+		if pv, ok := prev[k]; !ok || !equalValue(pv, v) {
 			out[k] = v
 		}
 	}
@@ -164,7 +220,7 @@ func (s *Server) mainSnapshot() mainSnapshot {
 		tags: s.engine.Tags(),
 	}
 	for _, t := range s.engine.List() {
-		f := toFields(s.torrent(t))
+		f := structFields(s.torrent(t))
 		delete(f, "hash")
 		// Tracker status flags; piecemeal doesn't know announce results.
 		f["has_tracker_warning"], f["has_tracker_error"], f["has_other_announce_error"] = false, false, false
