@@ -72,7 +72,7 @@ flowchart LR
   engine --- natpmp
 ```
 
-- **engine** owns the anacrolix client and everything torrent-shaped: adding and removing, start and stop, queueing (max active downloads and uploads, and torrents checked at once), global, alternative and per-torrent speed limits, seed goals (ratio, seeding time, inactive time), categories to save paths, file priorities, sequential download, first-and-last piece priority, recheck, and moving storage. It publishes state changes on an internal event bus.
+- **engine** owns the anacrolix client and everything torrent-shaped: adding and removing, start and stop, queueing (max active downloads and uploads, and torrents checked at once), global, alternative and per-torrent speed limits, seed goals (ratio, seeding time, inactive time), categories to save paths, the incomplete folder, automatic torrent management, file priorities, sequential download, first-and-last piece priority, recheck, and moving storage. It publishes state changes on an internal event bus.
 - **natpmp** keeps TCP and UDP mappings on a configured gateway and hands the forwarded port to the engine. A changed port rebinds the listener without restarting the process, which the test daemon could not do.
 - **store** keeps users, sessions, API keys, categories, tags, per-torrent settings and statistics that anacrolix does not persist, such as upload totals, added time, completion time and the stopped state.
 - **auth** is shared middleware: a session cookie for the UI, `SID` for qBittorrent clients, Bearer API keys for both APIs, and OIDC sign-in.

@@ -348,6 +348,12 @@ func TestContractQBittorrent(t *testing.T) {
 		fields []string
 	}
 	const magnet = "magnet:?xt=urn:btih:5555555555555555555555555555555555555555&dn=contract"
+	// Torrents for the download path and automatic management cases.
+	const (
+		autoHash   = "7777777777777777777777777777777777777777"
+		namedHash  = "8888888888888888888888888888888888888888"
+		manualHash = "9999999999999999999999999999999999999999"
+	)
 	calls := []call{
 		{name: "probe without auth", method: http.MethodGet, path: "/app/webapiVersion"},
 		{name: "wrong password", method: http.MethodPost, path: "/auth/login", form: "username=admin&password=wrong"},
@@ -472,10 +478,60 @@ func TestContractQBittorrent(t *testing.T) {
 		{name: "addPeers invalid", method: http.MethodPost, path: "/torrents/addPeers", form: "hashes=5555555555555555555555555555555555555555&peers=nope"},
 		{name: "filePrio without metadata", method: http.MethodPost, path: "/torrents/filePrio", form: "hash=5555555555555555555555555555555555555555&id=0&priority=1"},
 		{name: "renameFile without metadata", method: http.MethodPost, path: "/torrents/renameFile", form: "hash=5555555555555555555555555555555555555555&oldPath=a&newPath=b"},
-		{name: "setLocation", method: http.MethodPost, path: "/torrents/setLocation", form: "hashes=5555555555555555555555555555555555555555&location=/downloads/moved", differs: "qBittorrent's container can't write /downloads"},
+		{name: "setLocation", method: http.MethodPost, path: "/torrents/setLocation", form: "hashes=5555555555555555555555555555555555555555&location=/downloads/moved"},
 		{name: "setLocation empty", method: http.MethodPost, path: "/torrents/setLocation", form: "hashes=5555555555555555555555555555555555555555&location="},
 		{name: "rotateAPIKey", method: http.MethodPost, path: "/app/rotateAPIKey", shape: true},
 		{name: "deleteAPIKey", method: http.MethodPost, path: "/app/deleteAPIKey"},
+		// Download paths and automatic torrent management. qBittorrent's
+		// image turns its temp path on; both get the same settings first.
+		{name: "setPreferences temp path", method: http.MethodPost, path: "/app/setPreferences", form: `json={"temp_path_enabled":true,"temp_path":"/downloads/temp","auto_tmm_enabled":false}`},
+		{name: "preferences paths", method: http.MethodGet, path: "/app/preferences", fields: preferencePathFields},
+		{name: "setPreferences relative temp_path", method: http.MethodPost, path: "/app/setPreferences", form: `json={"temp_path":"rel"}`},
+		{name: "preferences relative temp_path", method: http.MethodGet, path: "/app/preferences", fields: []string{"temp_path"}},
+		{name: "setPreferences temp path again", method: http.MethodPost, path: "/app/setPreferences", form: `json={"temp_path":"/downloads/temp"}`},
+		{name: "createCategory download path", method: http.MethodPost, path: "/torrents/createCategory", form: "category=dlpath&savePath=/downloads/dlsave&downloadPathEnabled=true&downloadPath=/downloads/dlinc"},
+		{name: "createCategory download path off", method: http.MethodPost, path: "/torrents/createCategory", form: "category=dloff&downloadPathEnabled=false"},
+		{name: "createCategory download path named", method: http.MethodPost, path: "/torrents/createCategory", form: "category=dlnamed&downloadPathEnabled=true"},
+		{name: "createCategory download path alone", method: http.MethodPost, path: "/torrents/createCategory", form: "category=dlalone&downloadPath=/downloads/ignored"},
+		{name: "createCategory relative paths", method: http.MethodPost, path: "/torrents/createCategory", form: "category=dlrel&savePath=rel/save&downloadPathEnabled=true&downloadPath=rel/inc"},
+		{name: "categories download path", method: http.MethodGet, path: "/torrents/categories", sub: "dlpath", fields: categoryPathFields},
+		{name: "categories download path off", method: http.MethodGet, path: "/torrents/categories", sub: "dloff", fields: categoryPathFields},
+		{name: "categories download path named", method: http.MethodGet, path: "/torrents/categories", sub: "dlnamed", fields: categoryPathFields},
+		{name: "categories download path alone", method: http.MethodGet, path: "/torrents/categories", sub: "dlalone", fields: categoryPathFields},
+		{name: "categories relative paths", method: http.MethodGet, path: "/torrents/categories", sub: "dlrel", fields: categoryPathFields},
+		{name: "editCategory downloadPath alone", method: http.MethodPost, path: "/torrents/editCategory", form: "category=dlpath&downloadPath=/downloads/other"},
+		{name: "categories after downloadPath alone", method: http.MethodGet, path: "/torrents/categories", sub: "dlpath", fields: categoryPathFields},
+		{name: "editCategory downloadPathEnabled empty", method: http.MethodPost, path: "/torrents/editCategory", form: "category=dlpath&downloadPathEnabled="},
+		{name: "categories after downloadPathEnabled empty", method: http.MethodGet, path: "/torrents/categories", sub: "dlpath", fields: categoryPathFields},
+		{name: "editCategory download path again", method: http.MethodPost, path: "/torrents/editCategory", form: "category=dlpath&downloadPathEnabled=true&downloadPath=/downloads/dlinc"},
+		{name: "add magnet auto", method: http.MethodPost, path: "/torrents/add", form: "urls=magnet:?xt=urn:btih:" + autoHash + "&category=dlpath&autoTMM=true&stopped=true"},
+		{name: "add magnet auto named", method: http.MethodPost, path: "/torrents/add", form: "urls=magnet:?xt=urn:btih:" + namedHash + "&category=dlnamed&autoTMM=true&stopped=true"},
+		{name: "add magnet download path", method: http.MethodPost, path: "/torrents/add", form: "urls=magnet:?xt=urn:btih:" + manualHash + "&useDownloadPath=true&downloadPath=rel&stopped=true"},
+		{name: "info auto", method: http.MethodGet, path: "/torrents/info?hashes=" + autoHash, fields: torrentPathFields},
+		{name: "info auto named", method: http.MethodGet, path: "/torrents/info?hashes=" + namedHash, fields: torrentPathFields},
+		{name: "info download path", method: http.MethodGet, path: "/torrents/info?hashes=" + manualHash, fields: torrentPathFields},
+		{name: "properties auto", method: http.MethodGet, path: "/torrents/properties?hash=" + autoHash, fields: []string{"save_path", "download_path"}},
+		{name: "setSavePath auto", method: http.MethodPost, path: "/torrents/setSavePath", form: "id=" + autoHash + "&path=/downloads/elsewhere"},
+		{name: "setDownloadPath auto", method: http.MethodPost, path: "/torrents/setDownloadPath", form: "id=" + autoHash + "&path=/downloads/elsewhere"},
+		{name: "info after setSavePath auto", method: http.MethodGet, path: "/torrents/info?hashes=" + autoHash, fields: torrentPathFields},
+		{name: "setSavePath empty", method: http.MethodPost, path: "/torrents/setSavePath", form: "id=" + manualHash + "&path=", same: true},
+		{name: "setSavePath relative", method: http.MethodPost, path: "/torrents/setSavePath", form: "id=" + manualHash + "&path=rel", same: true},
+		{name: "setDownloadPath without path", method: http.MethodPost, path: "/torrents/setDownloadPath", form: "id=" + manualHash, same: true},
+		{name: "setDownloadPath empty", method: http.MethodPost, path: "/torrents/setDownloadPath", form: "id=" + manualHash + "&path="},
+		{name: "info after setDownloadPath empty", method: http.MethodGet, path: "/torrents/info?hashes=" + manualHash, fields: torrentPathFields},
+		{name: "setDownloadPath", method: http.MethodPost, path: "/torrents/setDownloadPath", form: "id=" + manualHash + "&path=/downloads/dl9"},
+		{name: "info after setDownloadPath", method: http.MethodGet, path: "/torrents/info?hashes=" + manualHash, fields: torrentPathFields},
+		{name: "setAutoManagement without enable", method: http.MethodPost, path: "/torrents/setAutoManagement", form: "hashes=" + manualHash, same: true},
+		{name: "setAutoManagement on", method: http.MethodPost, path: "/torrents/setAutoManagement", form: "hashes=" + manualHash + "&enable=true"},
+		{name: "info after setAutoManagement", method: http.MethodGet, path: "/torrents/info?hashes=" + manualHash, fields: torrentPathFields},
+		{name: "setCategory auto", method: http.MethodPost, path: "/torrents/setCategory", form: "hashes=" + autoHash + "&category=dlnamed"},
+		{name: "info after setCategory auto", method: http.MethodGet, path: "/torrents/info?hashes=" + autoHash, fields: torrentPathFields},
+		{name: "setLocation auto", method: http.MethodPost, path: "/torrents/setLocation", form: "hashes=" + autoHash + "&location=/downloads/loc"},
+		{name: "info after setLocation auto", method: http.MethodGet, path: "/torrents/info?hashes=" + autoHash, fields: torrentPathFields},
+		{name: "removeCategories auto", method: http.MethodPost, path: "/torrents/removeCategories", form: "categories=dlnamed"},
+		{name: "info after removeCategories", method: http.MethodGet, path: "/torrents/info?hashes=" + namedHash, fields: torrentPathFields},
+		{name: "delete path torrents", method: http.MethodPost, path: "/torrents/delete", form: "hashes=" + autoHash + "|" + namedHash + "|" + manualHash + "&deleteFiles=false"},
+		{name: "setPreferences temp path off", method: http.MethodPost, path: "/app/setPreferences", form: `json={"temp_path_enabled":false}`},
 		{name: "delete", method: http.MethodPost, path: "/torrents/delete", form: "hashes=5555555555555555555555555555555555555555&deleteFiles=false"},
 		{name: "unknown endpoint", method: http.MethodGet, path: "/app/nope"},
 	}
@@ -496,7 +552,7 @@ func TestContractQBittorrent(t *testing.T) {
 		if qbStatus != pmStatus {
 			failures = append(failures, fmt.Sprintf("%s: status qBittorrent %d, piecemeal %d", c.name, qbStatus, pmStatus))
 		}
-		if c.name == "add magnet stopped" {
+		if strings.HasPrefix(c.name, "add magnet") {
 			// qBittorrent adds magnets in the background; give it a moment.
 			time.Sleep(2 * time.Second)
 		}
@@ -585,6 +641,12 @@ var (
 	categoryFields = []string{
 		"name", "ratio_limit", "seeding_time_limit", "inactive_seeding_time_limit", "share_limit_action",
 		"share_limits_mode",
+	}
+	categoryPathFields   = []string{"savePath", "download_path"}
+	torrentPathFields    = []string{"save_path", "download_path", "auto_tmm", "category"}
+	preferencePathFields = []string{
+		"temp_path_enabled", "temp_path", "auto_tmm_enabled", "torrent_changed_tmm_enabled", "save_path_changed_tmm_enabled",
+		"category_changed_tmm_enabled",
 	}
 	torrentShareFields = []string{
 		"ratio_limit", "seeding_time_limit", "inactive_seeding_time_limit", "share_limit_action", "share_limits_mode",

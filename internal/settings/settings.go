@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strconv"
@@ -36,6 +37,16 @@ type Settings struct {
 	// Downloads
 	DefaultSavePath string `json:"defaultSavePath" doc:"Where torrents are saved when neither the request nor its category names a path."`
 	AddStopped      bool   `json:"addStopped" doc:"Add new torrents stopped."`
+
+	// Incomplete folder
+	IncompletePathEnabled bool   `json:"incompletePathEnabled" doc:"Keep incomplete torrents in incompletePath; each moves to its save path once complete. A category or a torrent can choose otherwise."`
+	IncompletePath        string `json:"incompletePath" doc:"Where incomplete torrents are kept while incompletePathEnabled is on."`
+
+	// Automatic torrent management
+	AutoManagement               bool `json:"autoManagement" doc:"New torrents use automatic management, unless the request says otherwise: their save path and incomplete folder follow their category."`
+	RelocateOnCategoryChange     bool `json:"relocateOnCategoryChange" doc:"When an automatically managed torrent's category changes, move its data to the new category's paths. Off switches the torrent to manual management instead."`
+	RelocateOnDefaultPathChange  bool `json:"relocateOnDefaultPathChange" doc:"When the default save path or the incomplete folder changes, move the data of automatically managed torrents that use it. Off switches them to manual management instead."`
+	RelocateOnCategoryPathChange bool `json:"relocateOnCategoryPathChange" doc:"When a category's save path or incomplete folder changes, move the data of its automatically managed torrents. Off switches them to manual management instead."`
 
 	// Speed
 	DownloadLimit    int64 `json:"downloadLimit" minimum:"0" doc:"Global download limit in bytes per second, 0 for unlimited."`
@@ -108,6 +119,8 @@ const DefaultSmartEpisodeFilters = `s(\d+)e(\d+)
 func Defaults(defaultSavePath string) Settings {
 	return Settings{
 		DefaultSavePath:          defaultSavePath,
+		IncompletePath:           filepath.Join(defaultSavePath, "temp"),
+		RelocateOnCategoryChange: true,
 		PeerPort:                 6881,
 		MaxConnectionsPerTorrent: 50,
 		MaxHalfOpenConnections:   100,
@@ -145,6 +158,9 @@ func (s Settings) Validate() error {
 	var errs []error
 	if s.DefaultSavePath == "" {
 		errs = append(errs, errors.New("defaultSavePath: must not be empty"))
+	}
+	if s.IncompletePathEnabled && s.IncompletePath == "" {
+		errs = append(errs, errors.New("incompletePath: must not be empty while incompletePathEnabled is on"))
 	}
 	for name, v := range map[string]int64{
 		"downloadLimit": s.DownloadLimit, "uploadLimit": s.UploadLimit,

@@ -24,6 +24,10 @@ sql:
             go_type: bool
           - column: torrents.first_last_piece
             go_type: bool
+          - column: torrents.in_incomplete_path
+            go_type: bool
+          - column: torrents.auto_managed
+            go_type: bool
           - column: rss_articles.is_read
             go_type: bool
           - column: rss_articles.hidden

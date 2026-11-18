@@ -202,8 +202,8 @@ func New(ctx context.Context, cfg Config, st *store.Store, sm *settings.Manager,
 	}
 
 	s := sm.Get()
-	if _, err := e.confine(s.DefaultSavePath); err != nil {
-		return nil, errors.Join(fmt.Errorf("defaultSavePath: %w", err), e.closeStorage())
+	if err := e.validatePaths(s); err != nil {
+		return nil, errors.Join(err, e.closeStorage())
 	}
 	port := s.PeerPort
 	if cfg.PortForwarded {
@@ -223,16 +223,24 @@ func New(ctx context.Context, cfg Config, st *store.Store, sm *settings.Manager,
 	e.scheduleLocked(time.Now())
 	e.mu.Unlock()
 	sm.Subscribe(e.onSettingsChanged)
-	sm.AddValidator(func(s settings.Settings) error {
-		if _, err := e.confine(s.DefaultSavePath); err != nil {
-			return fmt.Errorf("defaultSavePath: %w", err)
-		}
-		return nil
-	})
+	sm.AddValidator(e.validatePaths)
 	e.tick(time.Now())
 	e.wg.Go(e.loop)
 	e.wg.Go(e.runCreator)
 	return e, nil
+}
+
+// validatePaths checks the path settings are inside the allowed roots.
+func (e *Engine) validatePaths(s settings.Settings) error {
+	if _, err := e.confine(s.DefaultSavePath); err != nil {
+		return fmt.Errorf("defaultSavePath: %w", err)
+	}
+	if s.IncompletePathEnabled {
+		if _, err := e.confine(s.IncompletePath); err != nil {
+			return fmt.Errorf("incompletePath: %w", err)
+		}
+	}
+	return nil
 }
 
 // Close stops the client after writing every torrent's counters.
@@ -300,6 +308,7 @@ func (e *Engine) onSettingsChanged(old, cur settings.Settings) {
 	if cur.MaxActiveCheckingTorrents != old.MaxActiveCheckingTorrents {
 		e.scheduleChecksLocked()
 	}
+	e.onPathSettingsChangedLocked(old, cur)
 	needsRestart := cur.DHT != old.DHT || cur.PEX != old.PEX || cur.UTP != old.UTP ||
 		cur.Encryption != old.Encryption || cur.MaxHalfOpenConnections != old.MaxHalfOpenConnections ||
 		(!e.cfg.PortForwarded && cur.PeerPort != old.PeerPort)

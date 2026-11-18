@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -413,4 +414,73 @@ func TestCheckingFilterIncludesQueued(t *testing.T) {
 			t.Errorf("checking filter on %s: %v, want %v", state, got, want)
 		}
 	}
+}
+
+// TestPaths covers the incomplete folder and automatic management through
+// the native API: categories, adding, changing a torrent and bulk actions.
+func TestPaths(t *testing.T) {
+	s := newTestServer(t)
+	s.login()
+	var cat engine.Category
+	s.do(http.MethodPut, "/categories/tv", map[string]any{"savePath": "shows", "incompletePathMode": "on", "incompletePath": "tv"},
+		http.StatusOK, &cat, csrf...)
+	if cat.SavePath != "shows" || cat.IncompletePathMode != engine.IncompleteOn || cat.IncompletePath != "tv" {
+		t.Fatalf("category: %+v", cat)
+	}
+	// Left out, the incomplete folder stays; off drops its path.
+	s.do(http.MethodPut, "/categories/tv", map[string]any{"savePath": "shows"}, http.StatusOK, &cat, csrf...)
+	if cat.IncompletePathMode != engine.IncompleteOn || cat.IncompletePath != "tv" {
+		t.Fatalf("category after an edit without it: %+v", cat)
+	}
+	s.do(http.MethodPut, "/categories/tv", map[string]any{"savePath": "", "incompletePathMode": "bad"}, http.StatusUnprocessableEntity, nil, csrf...)
+	s.do(http.MethodPut, "/categories/tv", map[string]any{"savePath": "", "incompletePathMode": "on", "incompletePath": "/etc"},
+		http.StatusUnprocessableEntity, nil, csrf...)
+
+	auto, stopped := true, true
+	var added engine.Torrent
+	s.do(http.MethodPost, "/torrents", AddTorrentRequest{
+		Magnet: "magnet:?xt=urn:btih:" + testHash, Category: "tv", AutoManaged: &auto, Stopped: &stopped,
+	}, http.StatusCreated, &added, csrf...)
+	temp := filepath.Join(s.save, "temp")
+	if !added.AutoManaged || added.SavePath != filepath.Join(s.save, "shows") || added.IncompletePath != filepath.Join(temp, "tv") {
+		t.Fatalf("added: %+v", added)
+	}
+	none := ""
+	other := strings.Repeat("1", 40)
+	s.do(http.MethodPost, "/torrents", AddTorrentRequest{
+		Magnet: "magnet:?xt=urn:btih:" + other, Category: "tv", IncompletePath: &none, Stopped: &stopped,
+	}, http.StatusCreated, &added, csrf...)
+	if added.AutoManaged || added.SavePath != filepath.Join(s.save, "shows") || added.IncompletePath != "" {
+		t.Fatalf("added manually managed: %+v", added)
+	}
+
+	// A new incomplete folder, then a save path: automatic management off.
+	var updated engine.Torrent
+	inc := filepath.Join(s.save, "inc")
+	s.do(http.MethodPatch, "/torrents/"+testHash, UpdateTorrentRequest{IncompletePath: &inc}, http.StatusOK, &updated, csrf...)
+	if updated.AutoManaged || updated.IncompletePath != inc {
+		t.Fatalf("after a new incomplete folder: %+v", updated)
+	}
+	s.do(http.MethodPatch, "/torrents/"+testHash, UpdateTorrentRequest{AutoManaged: &auto}, http.StatusOK, &updated, csrf...)
+	if !updated.AutoManaged || updated.IncompletePath != filepath.Join(temp, "tv") {
+		t.Fatalf("automatically managed again: %+v", updated)
+	}
+	s.do(http.MethodPost, "/torrents/actions", BulkAction{Hashes: []string{testHash, other}, Action: "setIncompletePath", IncompletePath: inc},
+		http.StatusNoContent, nil, csrf...)
+	s.do(http.MethodPost, "/torrents/actions", BulkAction{Hashes: []string{"all"}, Action: "setAutoManaged", AutoManaged: true},
+		http.StatusNoContent, nil, csrf...)
+	for _, h := range []string{testHash, other} {
+		s.do(http.MethodGet, "/torrents/"+h, nil, http.StatusOK, &updated)
+		if !updated.AutoManaged || updated.IncompletePath != filepath.Join(temp, "tv") {
+			t.Fatalf("%s after the bulk actions: %+v", h, updated)
+		}
+	}
+
+	// The settings.
+	var res SettingsResponse
+	s.do(http.MethodPatch, "/settings", map[string]any{"incompletePathEnabled": true, "autoManagement": true}, http.StatusOK, &res, csrf...)
+	if !res.Settings.IncompletePathEnabled || res.Settings.IncompletePath != temp || !res.Settings.AutoManagement {
+		t.Fatalf("settings: %+v", res.Settings)
+	}
+	s.do(http.MethodPatch, "/settings", map[string]any{"incompletePath": "/etc"}, http.StatusUnprocessableEntity, nil, csrf...)
 }

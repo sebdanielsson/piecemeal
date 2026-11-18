@@ -26,6 +26,8 @@ export function torrent(overrides: Partial<Torrent> = {}): Torrent {
     peers: 0,
     swarmPeers: 0,
     savePath: "/downloads",
+    incompletePath: "",
+    autoManaged: false,
     contentPath: "/downloads/Example",
     contentLayout: "Original",
     rootPath: "/downloads/Example",

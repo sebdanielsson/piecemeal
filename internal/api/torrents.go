@@ -65,7 +65,9 @@ type AddTorrentRequest struct {
 	Magnet                   string   `json:"magnet,omitempty" doc:"A magnet URI."`
 	URL                      string   `json:"url,omitempty" doc:"An http(s) URL of a .torrent file, or one that redirects to a magnet URI."`
 	TorrentFile              []byte   `json:"torrentFile,omitempty" doc:"The .torrent file, base64."`
-	SavePath                 string   `json:"savePath,omitempty"`
+	SavePath                 string   `json:"savePath,omitempty" doc:"Where the data goes; absent uses the category's save path, then the default. Ignored when automatically managed."`
+	IncompletePath           *string  `json:"incompletePath,omitempty" doc:"Where the data stays until the torrent completes; empty for none. Absent follows the category, then the global setting. Ignored when automatically managed."`
+	AutoManaged              *bool    `json:"autoManaged,omitempty" doc:"Automatic management: the save path and incomplete folder follow the category. Absent follows the autoManagement setting."`
 	Category                 string   `json:"category,omitempty"`
 	Tags                     []string `json:"tags,omitempty"`
 	Stopped                  *bool    `json:"stopped,omitempty" doc:"Add without starting; defaults to the addStopped setting."`
@@ -95,7 +97,9 @@ type addTorrentOutput struct {
 type UpdateTorrentRequest struct {
 	Name                     *string   `json:"name,omitempty"`
 	Comment                  *string   `json:"comment,omitempty" doc:"Replaces the comment shown for the torrent; the torrent file is unchanged."`
-	SavePath                 *string   `json:"savePath,omitempty" doc:"Moves the data there in the background; the state is moving until it's done."`
+	SavePath                 *string   `json:"savePath,omitempty" doc:"Moves the data there in the background; the state is moving until it's done. A torrent still in its incomplete folder moves there once complete. Turns automatic management off."`
+	IncompletePath           *string   `json:"incompletePath,omitempty" doc:"Where the data stays until the torrent completes; empty for none. Data still in the old folder moves. Turns automatic management off."`
+	AutoManaged              *bool     `json:"autoManaged,omitempty" doc:"On moves the torrent to its category's paths; off keeps it where it is."`
 	Category                 *string   `json:"category,omitempty" doc:"Empty removes the category."`
 	Tags                     *[]string `json:"tags,omitempty" doc:"Replaces the torrent's tags."`
 	Stopped                  *bool     `json:"stopped,omitempty"`
@@ -124,11 +128,14 @@ type deleteTorrentInput struct {
 // BulkAction applies an action to several torrents.
 type BulkAction struct {
 	Hashes     []string `json:"hashes" minItems:"1" doc:"Infohashes, or [\"all\"]."`
-	Action     string   `json:"action" enum:"start,stop,forceStart,recheck,reannounce,remove,setCategory,addTags,removeTags,move,queueTop,queueBottom,queueUp,queueDown"`
+	Action     string   `json:"action" enum:"start,stop,forceStart,recheck,reannounce,remove,setCategory,addTags,removeTags,move,setIncompletePath,setAutoManaged,queueTop,queueBottom,queueUp,queueDown"`
 	DeleteData bool     `json:"deleteData,omitempty" doc:"With remove: also delete the files."`
 	SavePath   string   `json:"savePath,omitempty" doc:"With move: where to move the data."`
 	Category   string   `json:"category,omitempty" doc:"With setCategory; empty removes the category."`
 	Tags       []string `json:"tags,omitempty" doc:"With addTags and removeTags; removeTags without tags removes all."`
+
+	IncompletePath string `json:"incompletePath,omitempty" doc:"With setIncompletePath: the incomplete folder, empty for none."`
+	AutoManaged    bool   `json:"autoManaged,omitempty" doc:"With setAutoManaged: on or off."`
 }
 
 type bulkInput struct{ Body BulkAction }
@@ -424,6 +431,7 @@ func (a *API) addTorrent(ctx context.Context, req AddTorrentRequest) (*addTorren
 		Name: req.Name, RatioLimit: req.RatioLimit, SeedingTimeLimit: req.SeedingTimeLimit,
 		InactiveSeedingTimeLimit: req.InactiveSeedingTimeLimit, SkipChecking: req.SkipChecking,
 		ContentLayout: req.ContentLayout, SeedGoalAction: req.SeedGoalAction, SeedGoalMode: req.SeedGoalMode,
+		IncompletePath: req.IncompletePath, AutoManaged: req.AutoManaged,
 	}
 	if req.URL != "" {
 		res, err := a.Fetcher.Get(ctx, req.URL)
@@ -512,10 +520,21 @@ func (a *API) updateTorrent(ctx context.Context, hash string, u UpdateTorrentReq
 	if u.Forced != nil {
 		errs = append(errs, e.SetForced(ctx, *u.Forced, hash))
 	}
+	if u.AutoManaged != nil && !*u.AutoManaged {
+		errs = append(errs, e.SetAutoManaged(ctx, false, hash))
+	}
 	if u.SavePath != nil {
 		if st, _ := e.Get(hash); st.SavePath != *u.SavePath {
 			errs = append(errs, e.Move(ctx, hash, *u.SavePath))
 		}
+	}
+	if u.IncompletePath != nil {
+		if st, _ := e.Get(hash); st.IncompletePath != *u.IncompletePath {
+			errs = append(errs, e.SetIncompletePath(ctx, *u.IncompletePath, hash))
+		}
+	}
+	if u.AutoManaged != nil && *u.AutoManaged {
+		errs = append(errs, e.SetAutoManaged(ctx, true, hash))
 	}
 	if u.Stopped != nil {
 		if *u.Stopped {
@@ -561,6 +580,10 @@ func (a *API) bulk(ctx context.Context, b BulkAction) error {
 			errs = append(errs, e.Move(ctx, hash, b.SavePath))
 		}
 		return errors.Join(errs...)
+	case "setIncompletePath":
+		return e.SetIncompletePath(ctx, b.IncompletePath, h...)
+	case "setAutoManaged":
+		return e.SetAutoManaged(ctx, b.AutoManaged, h...)
 	case "queueTop", "queueBottom", "queueUp", "queueDown":
 		if !a.Settings.Get().QueueingEnabled {
 			return fmt.Errorf("%w: queueing is off", engine.ErrInvalid)

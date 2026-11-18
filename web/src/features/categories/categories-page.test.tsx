@@ -13,6 +13,8 @@ afterEach(() => {
 const tv: Category = {
   name: "tv",
   savePath: "/media/tv",
+  incompletePathMode: "default",
+  incompletePath: "",
   ratioLimit: 1.5,
   seedingTimeLimit: -2,
   inactiveSeedingTimeLimit: -1,
@@ -34,7 +36,7 @@ test("describeGoals lists what the category sets", () => {
   );
 });
 
-test("the category editor saves the seeding goals with the save path", async () => {
+test("the category editor saves the seeding goals with the paths", async () => {
   const requests: { method: string; path: string; body: unknown }[] = [];
   vi.stubGlobal(
     "fetch",
@@ -59,6 +61,11 @@ test("the category editor saves the seeding goals with the save path", async () 
   expect(screen.getByLabelText("Reached when").textContent).toContain("Every goal set is met");
   await user.click(screen.getByLabelText("Then"));
   await user.click(await screen.findByRole("option", { name: "Remove the torrent" }));
+  // The incomplete folder's path shows only for a folder of its own.
+  expect(screen.queryByLabelText("Incomplete folder path")).toBeNull();
+  await user.click(screen.getByLabelText("Incomplete folder"));
+  await user.click(await screen.findByRole("option", { name: "This folder" }));
+  await user.type(screen.getByLabelText("Incomplete folder path"), "/incomplete/tv");
   await user.click(screen.getByRole("button", { name: "Save" }));
 
   await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
@@ -68,6 +75,8 @@ test("the category editor saves the seeding goals with the save path", async () 
       path: "/api/piecemeal/v1/categories/tv",
       body: {
         savePath: "/media/tv",
+        incompletePathMode: "on",
+        incompletePath: "/incomplete/tv",
         ratioLimit: 1.5,
         seedingTimeLimit: -2,
         inactiveSeedingTimeLimit: -1,

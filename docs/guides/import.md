@@ -21,7 +21,8 @@ Check the list it prints, then run it again without `--dry-run`, and start piece
 
 - **Transmission**: give its configuration directory, the one with `torrents/` and `resume/`. Its labels become tags, and the first one also the category: Radarr and Sonarr label their downloads in Transmission with what is their category in qBittorrent, so they keep track of them.
 - **qBittorrent**: give its `BT_backup` directory, or the data directory that holds it. Its category and tags carry over.
-- **`--map FROM=TO`** rewrites save paths when the other client saw the downloads under another path, such as `--map /data/torrents=/downloads`. Repeat it for several paths. Save paths must end up inside `PIECEMEAL_ALLOWED_ROOTS`.
+- **`--map FROM=TO`** rewrites save paths and incomplete folders when the other client saw the downloads under another path, such as `--map /data/torrents=/downloads`. Repeat it for several paths. They must end up inside `PIECEMEAL_ALLOWED_ROOTS`.
+- **Incomplete folders.** Unfinished torrents whose data is in Transmission's incomplete directory, or in qBittorrent's download path, keep it there and move to their save path once complete. qBittorrent's download paths carry over, and so does automatic torrent management. qBittorrent doesn't record the paths of automatically managed torrents, only where their data is, so they are imported there; give their categories their save paths in piecemeal.
 - **Checking.** piecemeal checks each torrent's data when it next starts, and stopped ones when they start, one torrent at a time by default (`maxActiveCheckingTorrents`); the rest show as queued for checking and don't seed until their data is checked. `--trust-data` marks complete torrents as verified instead, which is much faster on large libraries but trusts the files on disk.
 - **`--dry-run`** lists what would be imported and writes nothing.
 - **Running it twice is safe**: torrents already in piecemeal are skipped.

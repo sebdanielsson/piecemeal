@@ -3,6 +3,7 @@ package rss
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -229,6 +230,7 @@ func (m *Manager) add(ctx context.Context, torrentURL string, o AddOptions) (str
 	if o.InactiveSeedingTimeLimit != -2 {
 		p.InactiveSeedingTimeLimit = &o.InactiveSeedingTimeLimit
 	}
+	o.applyPaths(&p, m.d.Settings.Get().IncompletePath)
 	res, err := m.d.Fetcher.Get(ctx, torrentURL)
 	if err != nil {
 		return "", err
@@ -248,4 +250,22 @@ func (m *Manager) add(ctx context.Context, torrentURL string, o AddOptions) (str
 		err = m.d.Engine.SetForced(ctx, true, hash)
 	}
 	return hash, err
+}
+
+// applyPaths applies the qBittorrent options in Extra that decide paths:
+// use_auto_tmm, and use_download_path with download_path, as
+// qBittorrent's torrents/add takes them.
+func (o AddOptions) applyPaths(p *engine.AddParams, globalIncomplete string) {
+	var auto bool
+	if json.Unmarshal(o.Extra["use_auto_tmm"], &auto) == nil {
+		p.AutoManaged = &auto
+	}
+	var use *bool
+	var on bool
+	if json.Unmarshal(o.Extra["use_download_path"], &on) == nil {
+		use = &on
+	}
+	var path string
+	_ = json.Unmarshal(o.Extra["download_path"], &path)
+	p.IncompletePath = engine.IncompleteFromQBittorrent(use, strings.TrimSpace(path), globalIncomplete)
 }

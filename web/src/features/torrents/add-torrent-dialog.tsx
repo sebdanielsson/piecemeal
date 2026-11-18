@@ -3,7 +3,7 @@ import { FileIcon, LinkIcon, MagnetIcon, UploadIcon, XIcon } from "lucide-react"
 import { useMemo, useRef, useState, type DragEvent, type FormEvent } from "react";
 import { toast } from "sonner";
 import { api } from "@/api/client";
-import type { AddTorrentRequest } from "@/api/types";
+import type { AddTorrentRequest, Category, Settings } from "@/api/types";
 import { OptionSelect, type Option } from "@/components/form/option-select";
 import { CategorySelect } from "@/components/form/category-select";
 import { TagPicker } from "@/components/form/tag-picker";
@@ -54,6 +54,49 @@ export function fileToBase64(file: Blob): Promise<string> {
   });
 }
 
+/** Joins a path that may be relative onto a base, as the server resolves it. */
+export function joinPath(base: string, path: string): string {
+  if (path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path)) {
+    return path;
+  }
+  return `${base.replace(/[\\/]+$/, "")}/${path}`;
+}
+
+/**
+ * The paths a torrent gets by default, as the server decides them: the
+ * category's, then the global ones. An automatically managed torrent in a
+ * category without a save path goes to a folder named after it, and so
+ * does its incomplete folder in the global one.
+ */
+export function defaultPaths(
+  settings: Settings | undefined,
+  category: Category | undefined,
+  auto: boolean,
+): { savePath: string; incompletePath: string } {
+  const base = settings?.defaultSavePath ?? "";
+  let savePath = base;
+  if (category?.savePath) {
+    savePath = joinPath(base, category.savePath);
+  } else if (category && auto) {
+    savePath = joinPath(base, category.name);
+  }
+  const globalIncomplete = settings?.incompletePath ?? "";
+  let incompletePath = "";
+  switch (category?.incompletePathMode ?? "default") {
+    case "on":
+      incompletePath = joinPath(globalIncomplete, category?.incompletePath || category?.name || "");
+      break;
+    case "off":
+      break;
+    default:
+      if (settings?.incompletePathEnabled) {
+        incompletePath =
+          category && auto ? joinPath(globalIncomplete, category.name) : globalIncomplete;
+      }
+  }
+  return { savePath, incompletePath };
+}
+
 /** Non-empty lines. */
 export function lines(text: string): string[] {
   return text
@@ -84,6 +127,9 @@ export function AddTorrentDialog({
   const [category, setCategory] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [savePath, setSavePath] = useState("");
+  const [autoManaged, setAutoManaged] = useState<boolean | undefined>(undefined);
+  const [useIncomplete, setUseIncomplete] = useState<boolean | undefined>(undefined);
+  const [incompletePath, setIncompletePath] = useState("");
   const [stopped, setStopped] = useState<boolean | undefined>(undefined);
   const [sequential, setSequential] = useState(false);
   const [firstLastPiece, setFirstLastPiece] = useState(false);
@@ -95,8 +141,30 @@ export function AddTorrentDialog({
   const [dragOver, setDragOver] = useState(false);
 
   const startStopped = stopped ?? settings?.settings.addStopped ?? false;
-  const categoryPath = categories.find((c) => c.name === category)?.savePath;
-  const defaultPath = categoryPath || settings?.settings.defaultSavePath || "";
+  const auto = autoManaged ?? settings?.settings.autoManagement ?? false;
+  const defaults = defaultPaths(
+    settings?.settings,
+    categories.find((c) => c.name === category),
+    auto,
+  );
+  const incompleteOn =
+    useIncomplete ?? (incompletePath.trim() !== "" || defaults.incompletePath !== "");
+
+  // The incomplete folder to ask for: none when turned off, the typed or
+  // default one when turned on, and the default when left alone.
+  const incompleteChoice = (): string | undefined => {
+    if (auto) {
+      return undefined;
+    }
+    if (useIncomplete === false) {
+      return "";
+    }
+    const typed = incompletePath.trim();
+    if (typed || useIncomplete === undefined) {
+      return typed || undefined;
+    }
+    return defaults.incompletePath || settings?.settings.incompletePath || undefined;
+  };
 
   const sources = useMemo(() => {
     if (tab === "magnet") {
@@ -137,7 +205,9 @@ export function AddTorrentDialog({
     const options: AddTorrentRequest = {
       category: category || undefined,
       tags: tags.length > 0 ? tags : undefined,
-      savePath: savePath.trim() || undefined,
+      savePath: (!auto && savePath.trim()) || undefined,
+      autoManaged,
+      incompletePath: incompleteChoice(),
       stopped: startStopped,
       sequential: sequential || undefined,
       firstLastPiece: firstLastPiece || undefined,
@@ -317,12 +387,35 @@ export function AddTorrentDialog({
                 <FieldLabel htmlFor="add-path">Save path</FieldLabel>
                 <Input
                   id="add-path"
-                  value={savePath}
+                  value={auto ? "" : savePath}
                   onChange={(e) => setSavePath(e.target.value)}
-                  placeholder={defaultPath}
+                  placeholder={defaults.savePath}
+                  disabled={auto}
                   className="font-mono text-xs"
                 />
               </Field>
+            </div>
+            <div className="grid gap-3">
+              <CheckOption
+                checked={auto}
+                onChange={setAutoManaged}
+                label="Automatic management: the paths follow the category"
+              />
+              <CheckOption
+                checked={auto ? defaults.incompletePath !== "" : incompleteOn}
+                onChange={setUseIncomplete}
+                disabled={auto}
+                label="Keep it in an incomplete folder until complete"
+              />
+              {!auto && incompleteOn && (
+                <Input
+                  aria-label="Incomplete folder"
+                  value={incompletePath}
+                  onChange={(e) => setIncompletePath(e.target.value)}
+                  placeholder={defaults.incompletePath || settings?.settings.incompletePath}
+                  className="font-mono text-xs"
+                />
+              )}
             </div>
             <div className="grid gap-5 sm:grid-cols-2">
               <Field>
@@ -394,14 +487,20 @@ function CheckOption({
   checked,
   onChange,
   label,
+  disabled,
 }: {
   checked: boolean;
   onChange: (checked: boolean) => void;
   label: string;
+  disabled?: boolean;
 }) {
   return (
     <Label className="flex items-center gap-2.5 font-normal normal-case">
-      <Checkbox checked={checked} onCheckedChange={(v) => onChange(v === true)} />
+      <Checkbox
+        checked={checked}
+        disabled={disabled}
+        onCheckedChange={(v) => onChange(v === true)}
+      />
       {label}
     </Label>
   );

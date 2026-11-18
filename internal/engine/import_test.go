@@ -77,6 +77,35 @@ func TestReadQBittorrent(t *testing.T) {
 	if !single.Stopped || single.RatioLimit != -2 || single.Complete || single.Trackers != nil {
 		t.Fatalf("single: %+v", single)
 	}
+	// Both are manually managed, with a download path their data isn't in.
+	for _, it := range []Imported{show, single} {
+		if it.AutoManaged || it.IncompletePath != "/downloads/temp" || it.InIncompletePath {
+			t.Fatalf("paths: %+v", it)
+		}
+	}
+}
+
+// TestReadQBittorrentPaths reads qBittorrent 5.3.0's resume data of two
+// torrents halfway through downloading into their download path: one
+// automatically managed in the movies category, whose resume data has no
+// paths but where the data is, and one manually managed.
+func TestReadQBittorrentPaths(t *testing.T) {
+	items, errs := ReadQBittorrent("testdata/import/qbittorrent-paths")
+	if len(errs) > 0 || len(items) != 2 {
+		t.Fatalf("items %d, errors %v", len(items), errs)
+	}
+	byHash := map[string]Imported{}
+	for _, it := range items {
+		byHash[strings.TrimSuffix(filepath.Base(it.Source), ".fastresume")] = it
+	}
+	auto, manual := byHash["d32d0fe6d64ea9a08f0fdbad5c5efd8bd7ae5cf6"], byHash["79e8bfedcd0da0d7284a7d268372490141b9e71a"]
+	if !auto.AutoManaged || auto.Category != "movies" || auto.SavePath != "/downloads/temp/movies" || auto.IncompletePath != "" {
+		t.Fatalf("automatically managed: %+v", auto)
+	}
+	if manual.AutoManaged || manual.SavePath != "/downloads/done3" || manual.IncompletePath != "/downloads/dl3" ||
+		!manual.InIncompletePath {
+		t.Fatalf("manually managed: %+v", manual)
+	}
 }
 
 func TestImport(t *testing.T) {
@@ -91,6 +120,7 @@ func TestImport(t *testing.T) {
 	root := t.TempDir()
 	for i := range items {
 		items[i].SavePath = root // as --map would
+		items[i].IncompletePath = filepath.Join(root, "temp")
 	}
 
 	// A dry run writes nothing.

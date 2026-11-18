@@ -184,9 +184,9 @@ func (s *Server) torrent(t engine.Torrent) Torrent {
 		ConnectionsCount: t.Seeds + t.Peers, ConnectionsLimit: st.MaxConnectionsPerTorrent,
 		CreatedBy: t.CreatedBy, CreationDate: createdAt, PieceSize: t.PieceSize, PiecesHave: t.PiecesHave,
 		PiecesNum: t.Pieces,
-		AddedOn:   t.AddedAt, AmountLeft: max(t.Size-t.Completed, 0), Category: t.Category,
+		AddedOn:   t.AddedAt, AmountLeft: max(t.Size-t.Completed, 0), AutoTMM: t.AutoManaged, Category: t.Category,
 		Comment: t.Comment, Completed: t.Completed, CompletionOn: completedOn, ContentPath: t.ContentPath,
-		DlLimit: -1, Dlspeed: t.DownRate, Downloaded: t.Downloaded,
+		DlLimit: -1, Dlspeed: t.DownRate, DownloadPath: t.IncompletePath, Downloaded: t.Downloaded,
 		DownloadedSession: t.SessionDown, ETA: eta(t), FLPiecePrio: t.FirstLast, ForceStart: t.Forced,
 		HasMetadata: t.HasMetadata, Hash: t.Hash, InactiveSeedingTimeLimit: t.InactiveSeedingTimeLimit,
 		InfohashV1: t.Hash, LastActivity: t.LastActive, MagnetURI: magnet(t),
@@ -402,7 +402,7 @@ func (s *Server) properties(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, map[string]any{
 		"hash": t.Hash, "name": t.Name, "infohash_v1": t.Hash, "infohash_v2": "",
-		"save_path": t.SavePath, "download_path": "", "creation_date": minusOne(t.CreatedAt),
+		"save_path": t.SavePath, "download_path": t.IncompletePath, "creation_date": minusOne(t.CreatedAt),
 		"piece_size": pieceSize, "comment": t.Comment, "total_wasted": 0,
 		"total_uploaded": t.Uploaded, "total_uploaded_session": t.SessionUp,
 		"total_downloaded": t.Downloaded, "total_downloaded_session": t.SessionDown,
@@ -604,6 +604,17 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 	if p := r.FormValue("savepath"); p != "" {
 		base.SavePath = s.absolute(p)
 	}
+	// autoTMM, and the download path: a relative one is inside the global
+	// one, as in qBittorrent.
+	if v, ok := formBool(r, "autoTMM"); ok {
+		base.AutoManaged = &v
+	}
+	var useDownloadPath *bool
+	if v, ok := formBool(r, "useDownloadPath"); ok {
+		useDownloadPath = &v
+	}
+	base.IncompletePath = engine.IncompleteFromQBittorrent(useDownloadPath, strings.TrimSpace(r.FormValue("downloadPath")),
+		s.settings.Get().IncompletePath)
 	// stopped replaced paused in WebAPI 2.11.
 	if v, ok := formBool(r, "stopped"); ok {
 		base.Stopped = &v

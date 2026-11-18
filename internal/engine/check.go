@@ -98,10 +98,17 @@ func (e *Engine) loadCompletionLocked(m *managed) bool {
 }
 
 // hasDataLocked reports whether any of a torrent's files exists and isn't
-// empty.
+// empty, where its data is.
 func (e *Engine) hasDataLocked(m *managed) bool {
-	for _, rel := range m.pathsOf().relativePaths(m.info) {
-		fi, err := os.Stat(filepath.Join(m.rec.SavePath, filepath.FromSlash(rel)))
+	return m.hasDataIn(m.dataDir())
+}
+
+// hasDataIn reports whether any of a torrent's files exists in dir and
+// isn't empty.
+func (m *managed) hasDataIn(dir string) bool {
+	paths := m.pathsOf()
+	for _, rel := range paths.relativePaths(m.info) {
+		fi, err := os.Stat(filepath.Join(dir, filepath.FromSlash(rel)))
 		if err == nil && fi.Mode().IsRegular() && fi.Size() > 0 {
 			return true
 		}

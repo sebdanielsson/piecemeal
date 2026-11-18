@@ -129,7 +129,7 @@ func (q *Queries) ListTorrentTags(ctx context.Context) ([]TorrentTag, error) {
 }
 
 const listTorrents = `-- name: ListTorrents :many
-SELECT info_hash, name, magnet, metainfo, save_path, category, added_at, completed_at, stopped, forced, sequential, first_last_piece, queue_position, uploaded, downloaded, seeding_seconds, active_seconds, last_activity_at, ratio_limit, seeding_time_limit, inactive_seeding_time_limit, file_priorities, error, trackers, web_seeds, file_paths, content_layout, comment, seed_goal_action, seed_goal_mode FROM torrents ORDER BY added_at, info_hash
+SELECT info_hash, name, magnet, metainfo, save_path, category, added_at, completed_at, stopped, forced, sequential, first_last_piece, queue_position, uploaded, downloaded, seeding_seconds, active_seconds, last_activity_at, ratio_limit, seeding_time_limit, inactive_seeding_time_limit, file_priorities, error, trackers, web_seeds, file_paths, content_layout, comment, seed_goal_action, seed_goal_mode, incomplete_path, in_incomplete_path, auto_managed FROM torrents ORDER BY added_at, info_hash
 `
 
 func (q *Queries) ListTorrents(ctx context.Context) ([]Torrent, error) {
@@ -172,6 +172,9 @@ func (q *Queries) ListTorrents(ctx context.Context) ([]Torrent, error) {
 			&i.Comment,
 			&i.SeedGoalAction,
 			&i.SeedGoalMode,
+			&i.IncompletePath,
+			&i.InIncompletePath,
+			&i.AutoManaged,
 		); err != nil {
 			return nil, err
 		}
@@ -205,7 +208,8 @@ INSERT INTO torrents (
     info_hash, name, magnet, metainfo, save_path, category, added_at, completed_at, stopped, forced,
     sequential, first_last_piece, queue_position, uploaded, downloaded, seeding_seconds, active_seconds,
     last_activity_at, ratio_limit, seeding_time_limit, inactive_seeding_time_limit, file_priorities,
-    error, trackers, web_seeds, file_paths, content_layout, comment, seed_goal_action, seed_goal_mode
+    error, trackers, web_seeds, file_paths, content_layout, comment, seed_goal_action, seed_goal_mode,
+    incomplete_path, in_incomplete_path, auto_managed
 ) VALUES (
     ?1, ?2, ?3, ?4, ?5,
     ?6, ?7, ?8, ?9, ?10,
@@ -214,7 +218,8 @@ INSERT INTO torrents (
     ?19, ?20, ?21,
     ?22, ?23,
     ?24, ?25, ?26, ?27,
-    ?28, ?29, ?30
+    ?28, ?29, ?30,
+    ?31, ?32, ?33
 )
 ON CONFLICT (info_hash) DO UPDATE SET
     name = excluded.name,
@@ -244,7 +249,10 @@ ON CONFLICT (info_hash) DO UPDATE SET
     comment = excluded.comment,
     content_layout = excluded.content_layout,
     seed_goal_action = excluded.seed_goal_action,
-    seed_goal_mode = excluded.seed_goal_mode
+    seed_goal_mode = excluded.seed_goal_mode,
+    incomplete_path = excluded.incomplete_path,
+    in_incomplete_path = excluded.in_incomplete_path,
+    auto_managed = excluded.auto_managed
 `
 
 type UpsertTorrentParams struct {
@@ -278,6 +286,9 @@ type UpsertTorrentParams struct {
 	Comment                  sql.NullString
 	SeedGoalAction           string
 	SeedGoalMode             string
+	IncompletePath           string
+	InIncompletePath         bool
+	AutoManaged              bool
 }
 
 func (q *Queries) UpsertTorrent(ctx context.Context, arg UpsertTorrentParams) error {
@@ -312,6 +323,9 @@ func (q *Queries) UpsertTorrent(ctx context.Context, arg UpsertTorrentParams) er
 		arg.Comment,
 		arg.SeedGoalAction,
 		arg.SeedGoalMode,
+		arg.IncompletePath,
+		arg.InIncompletePath,
+		arg.AutoManaged,
 	)
 	return err
 }

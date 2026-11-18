@@ -154,9 +154,10 @@ func (e *Engine) forgetInfo(ih metainfo.Hash) {
 	})
 }
 
-// pathsOf returns a torrent's file placement.
+// pathsOf returns a torrent's file placement: in the folder its data is in
+// now, see dataDir.
 func (m *managed) pathsOf() torrentPaths {
-	return torrentPaths{savePath: m.rec.SavePath, layout: m.rec.ContentLayout, renames: m.renames}
+	return torrentPaths{savePath: m.dataDir(), layout: m.rec.ContentLayout, renames: m.renames}
 }
 
 // recordPathsLocked publishes a torrent's file placement to the storage.
@@ -199,6 +200,7 @@ func (e *Engine) RenamePath(hash, oldPath, newPath string) error {
 		return fmt.Errorf("%w: the torrent is being moved", ErrInvalid)
 	}
 	paths := m.pathsOf()
+	dir := paths.savePath
 	current := paths.relativePaths(m.info)
 	files := m.info.UpvertedFiles()
 	moves := map[int]string{}
@@ -233,8 +235,8 @@ func (e *Engine) RenamePath(hash, oldPath, newPath string) error {
 		if !filepath.IsLocal(cur) {
 			return fmt.Errorf("%w: file path %q", ErrInvalid, current[i])
 		}
-		from := filepath.Join(m.rec.SavePath, cur)
-		to := filepath.Join(m.rec.SavePath, filepath.FromSlash(np))
+		from := filepath.Join(dir, cur)
+		to := filepath.Join(dir, filepath.FromSlash(np))
 		if toInfo, err := os.Lstat(to); err == nil {
 			if fromInfo, err := os.Lstat(from); err != nil || !os.SameFile(fromInfo, toInfo) {
 				return fmt.Errorf("%w: %q already exists on disk", ErrExists, np)
@@ -252,7 +254,7 @@ func (e *Engine) RenamePath(hash, oldPath, newPath string) error {
 	var errs []error
 	for i, np := range moves {
 		from, to := disk[i].from, disk[i].to
-		if !within(m.rec.SavePath, to) {
+		if !within(dir, to) {
 			errs = append(errs, fmt.Errorf("%w: %s", ErrPathForbidden, np))
 			continue
 		}
@@ -271,7 +273,7 @@ func (e *Engine) RenamePath(hash, oldPath, newPath string) error {
 	for i := range moves {
 		oldDirs = append(oldDirs, disk[i].from)
 	}
-	removeEmptyDirs(m.rec.SavePath, oldDirs)
+	removeEmptyDirs(dir, oldDirs)
 
 	m.renames = renames
 	m.dirty = true

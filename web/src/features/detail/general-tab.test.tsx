@@ -62,3 +62,28 @@ test("the goals form says what the defaults come to and saves the action and mod
     body: { seedGoalAction: "stop", seedGoalMode: "any" },
   });
 });
+
+test("automatic management switches on and the incomplete folder shows", async () => {
+  const requests: unknown[] = [];
+  const t = torrent({ category: "tv", incompletePath: "/downloads/temp/tv" });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (req: Request) => {
+      const body = await req.json();
+      requests.push(body);
+      return new Response(JSON.stringify({ ...t, ...(body as object) }), { status: 200 });
+    }),
+  );
+  const qc = new QueryClient();
+  qc.setQueryData(keys.categories, []);
+  qc.setQueryData(keys.tags, []);
+  const user = userEvent.setup();
+  render(
+    <QueryClientProvider client={qc}>
+      <GeneralTab torrent={t} />
+    </QueryClientProvider>,
+  );
+  expect(screen.getByTitle("/downloads/temp/tv")).toBeTruthy();
+  await user.click(screen.getByRole("switch", { name: "Automatic management" }));
+  await vi.waitFor(() => expect(requests).toEqual([{ autoManaged: true }]));
+});

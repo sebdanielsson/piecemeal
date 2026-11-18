@@ -35,6 +35,8 @@ type Category struct {
 	InactiveSeedingTimeLimit int64
 	SeedGoalAction           string
 	SeedGoalMode             string
+	IncompletePathMode       string
+	IncompletePath           string
 }
 
 type Kv struct {
@@ -129,6 +131,9 @@ type Torrent struct {
 	Comment                  sql.NullString
 	SeedGoalAction           string
 	SeedGoalMode             string
+	IncompletePath           string
+	InIncompletePath         bool
+	AutoManaged              bool
 }
 
 type TorrentTag struct {

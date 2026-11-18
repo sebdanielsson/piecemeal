@@ -31,7 +31,7 @@ func TestShareLimits(t *testing.T) {
 	var cats map[string]map[string]any
 	e.get("torrents/categories").json(t, &cats)
 	want := map[string]any{
-		"name": "tv", "savePath": e.save + "/tv", "download_path": nil, "ratio_limit": 1.5, "seeding_time_limit": 60.0,
+		"name": "tv", "savePath": "tv", "download_path": nil, "ratio_limit": 1.5, "seeding_time_limit": 60.0,
 		"inactive_seeding_time_limit": -2.0, "share_limit_action": "Remove", "share_limits_mode": "MatchAll",
 	}
 	if !jsonEqual(t, cats["tv"], want) {

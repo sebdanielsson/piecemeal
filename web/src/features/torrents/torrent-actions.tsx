@@ -127,6 +127,7 @@ export function TorrentActionItems({
     const n = torrents.filter((t) => (t.tags ?? []).includes(tag)).length;
     return n === 0 ? false : n === torrents.length ? true : "mixed";
   };
+  const autoManaged = torrents.filter((t) => t.autoManaged).length;
 
   return (
     <>
@@ -215,6 +216,15 @@ export function TorrentActionItems({
         <FolderInputIcon />
         Move…
       </P.Item>
+      <P.CheckboxItem
+        checked={autoManaged > 0 && autoManaged === torrents.length}
+        onCheckedChange={(checked: boolean) => run("setAutoManaged", { autoManaged: checked })}
+      >
+        Automatic management
+        {autoManaged > 0 && autoManaged < torrents.length && (
+          <span className="ml-auto text-muted-foreground normal-case">some</span>
+        )}
+      </P.CheckboxItem>
       {queueing && (
         <P.Sub>
           <P.SubTrigger>

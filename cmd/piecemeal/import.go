@@ -81,6 +81,9 @@ func importTorrents(ctx context.Context, args []string, out io.Writer) error {
 	}
 	for i := range items {
 		items[i].SavePath = maps.apply(items[i].SavePath)
+		if items[i].IncompletePath != "" {
+			items[i].IncompletePath = maps.apply(items[i].IncompletePath)
+		}
 	}
 
 	cfg, err := config.FromOS()

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"path/filepath"
 	"reflect"
 
 	"github.com/sebdanielsson/piecemeal/internal/auth"
@@ -164,6 +165,21 @@ func preferencesToSettings(in map[string]any, cur settings.Settings) (map[string
 	kib := func(n int64) int64 { return max(n, 0) * 1024 }
 
 	str("save_path", "defaultSavePath")
+	boolean("temp_path_enabled", "incompletePathEnabled")
+	str("temp_path", "incompletePath")
+	// qBittorrent resolves a relative or empty temp_path against the temp
+	// folder in the default save path, the new one if it changes too.
+	if v, ok := out["incompletePath"].(string); ok && !filepath.IsAbs(v) {
+		base := cur.DefaultSavePath
+		if s, ok := out["defaultSavePath"].(string); ok {
+			base = s
+		}
+		out["incompletePath"] = filepath.Join(base, "temp", v)
+	}
+	boolean("auto_tmm_enabled", "autoManagement")
+	boolean("torrent_changed_tmm_enabled", "relocateOnCategoryChange")
+	boolean("save_path_changed_tmm_enabled", "relocateOnDefaultPathChange")
+	boolean("category_changed_tmm_enabled", "relocateOnCategoryPathChange")
 	boolean("start_paused_enabled", "addStopped")
 	boolean("add_stopped_enabled", "addStopped")
 	integer("dl_limit", "downloadLimit", roundLimit)

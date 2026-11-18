@@ -340,9 +340,19 @@ func (s *Server) maindata(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, out)
 }
 
+// categoryObject is a category as torrents/categories and sync/maindata
+// report it. download_path is null when the category follows the global
+// setting, false when it has none, and its path (possibly empty) otherwise.
 func categoryObject(c engine.Category) map[string]any {
+	var downloadPath any
+	switch c.IncompletePathMode {
+	case engine.IncompleteOn:
+		downloadPath = c.IncompletePath
+	case engine.IncompleteOff:
+		downloadPath = false
+	}
 	return map[string]any{
-		"name": c.Name, "savePath": c.SavePath, "download_path": nil,
+		"name": c.Name, "savePath": c.SavePath, "download_path": downloadPath,
 		"ratio_limit": c.RatioLimit, "seeding_time_limit": c.SeedingTimeLimit,
 		"inactive_seeding_time_limit": c.InactiveSeedingTimeLimit,
 		"share_limit_action":          shareLimitAction(c.SeedGoalAction), "share_limits_mode": shareLimitsMode(c.SeedGoalMode),
