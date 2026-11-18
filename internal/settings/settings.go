@@ -71,6 +71,11 @@ type Settings struct {
 	SlowUploadRate        int64 `json:"slowUploadRate" minimum:"0" doc:"A torrent below this upload rate, in bytes per second, is slow."`
 	SlowTorrentTime       int64 `json:"slowTorrentTime" minimum:"0" doc:"Seconds a torrent must stay below the slow rates to count as slow."`
 
+	// IP filter
+	IPFilterEnabled bool   `json:"ipFilterEnabled" doc:"Refuse peers in the ranges of the IP filter file."`
+	IPFilterPath    string `json:"ipFilterPath" doc:"An IP filter file: eMule .dat, PeerGuardian .p2p, or one IP address or CIDR range per line."`
+	BannedIPs       string `json:"bannedIPs" doc:"Peers to refuse: IP addresses or CIDR ranges, one per line."`
+
 	// Alternative speed schedule
 	AltSpeedSchedule     bool   `json:"altSpeedSchedule" doc:"Turn the alternative limits on and off on a schedule."`
 	AltSpeedScheduleFrom string `json:"altSpeedScheduleFrom" pattern:"^([01][0-9]|2[0-3]):[0-5][0-9]$" doc:"When the alternative limits start, HH:MM local time."`

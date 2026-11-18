@@ -96,6 +96,8 @@ type Engine struct {
 	// at the last check, nil before the first.
 	lastWindow *bool
 
+	creator creator
+
 	session sessionCounters
 
 	ctx    context.Context
@@ -159,6 +161,7 @@ func New(ctx context.Context, cfg Config, st *store.Store, sm *settings.Manager,
 		cats:     map[string]Category{},
 		tags:     map[string]struct{}{},
 		bus:      newBus(),
+		creator:  creator{wake: make(chan struct{}, 1)},
 		down:     rate.NewLimiter(rate.Inf, 1<<20),
 		up:       rate.NewLimiter(rate.Inf, 1<<20),
 	}
@@ -211,6 +214,7 @@ func New(ctx context.Context, cfg Config, st *store.Store, sm *settings.Manager,
 	})
 	e.tick(time.Now())
 	e.wg.Go(e.loop)
+	e.wg.Go(e.runCreator)
 	return e, nil
 }
 
@@ -268,6 +272,7 @@ func (e *Engine) onSettingsChanged(old, cur settings.Settings) {
 		}
 	}
 	needsRestart := cur.DHT != old.DHT || cur.PEX != old.PEX || cur.UTP != old.UTP ||
+		cur.IPFilterEnabled != old.IPFilterEnabled || cur.IPFilterPath != old.IPFilterPath || cur.BannedIPs != old.BannedIPs ||
 		cur.Encryption != old.Encryption || cur.MaxHalfOpenConnections != old.MaxHalfOpenConnections ||
 		(!e.cfg.PortForwarded && cur.PeerPort != old.PeerPort)
 	if needsRestart {
@@ -343,6 +348,11 @@ func (e *Engine) clientConfig(port int, s settings.Settings) *torrent.ClientConf
 		tc.CryptoProvides = mse.CryptoMethodPlaintext
 	default:
 		tc.HeaderObfuscationPolicy = torrent.HeaderObfuscationPolicy{Preferred: true}
+	}
+	if bl, err := e.blocklist(s.IPFilterEnabled, s.IPFilterPath, s.BannedIPs); err != nil {
+		e.log.Error("not filtering peers", "error", err)
+	} else if bl != nil {
+		tc.IPBlocklist = bl
 	}
 	tc.Slogger = e.log.With("component", "anacrolix")
 	if e.cfg.ClientConfig != nil {

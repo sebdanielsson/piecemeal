@@ -368,6 +368,9 @@ func (e *Engine) Add(ctx context.Context, p AddParams) (string, error) {
 		}
 	}
 	e.torrents[ih] = m
+	if p.SkipChecking && m.info != nil {
+		e.markCompleteLocked(m)
+	}
 	e.normalizeQueueLocked()
 	if !stopped && !s.QueueingEnabled {
 		if err := e.attachLocked(m, attachOpts{spec: spec, skipChecking: p.SkipChecking}); err != nil {
@@ -1130,4 +1133,17 @@ func (e *Engine) saveLocked(m *managed) {
 		return
 	}
 	m.dirty = false
+}
+
+// markCompleteLocked records every piece as complete without checking the
+// data: skip checking (qBittorrent's seed mode) trusts what's on disk, and
+// the torrent creator has just hashed it. anacrolix's own option only skips
+// the check, leaving the pieces unknown and so missing.
+func (e *Engine) markCompleteLocked(m *managed) {
+	for i := range m.info.NumPieces() {
+		if err := e.pc.Set(metainfo.PieceKey{InfoHash: m.hash, Index: i}, g.Some(true)); err != nil {
+			e.log.Warn("marking pieces complete", "hash", m.rec.InfoHash, "error", err)
+			return
+		}
+	}
 }
