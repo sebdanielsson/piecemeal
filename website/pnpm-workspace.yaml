@@ -1,5 +1,8 @@
-# GHSA-9wv6-86v2-598j: @vercel/routing-utils (through Blume's Vercel
-# adapter) still pins path-to-regexp 6.1.0; 6.3.0 is the fixed release of
-# the same major. Drop this once routing-utils updates it.
+# Build-time dependencies of Blume that pin vulnerable versions in their
+# latest releases; each override is the fixed release of the same major.
+# Drop them once the pinning packages update.
 overrides:
+  # GHSA-9wv6-86v2-598j, through @vercel/routing-utils (Blume's Vercel adapter).
   path-to-regexp@6.1.0: 6.3.0
+  # GHSA-rj75-hqrm-r3gf, through @tailwindcss/typography.
+  postcss-selector-parser@<6.1.5: 6.1.6
