@@ -50,3 +50,15 @@ func TestGetFollowsMagnetRedirect(t *testing.T) {
 		t.Fatalf("magnet redirect: %+v, %v", res, err)
 	}
 }
+
+func TestGetRefusesOtherURLs(t *testing.T) {
+	f := New(nil)
+	for _, u := range []string{"file:///etc/passwd", "http:///path", "ftp://example.com/x", "gopher://x", "http://", "not a url"} {
+		if _, err := f.Get(context.Background(), u); err == nil || errors.Is(err, ErrForbidden) {
+			t.Errorf("%q: %v, want a bad URL error", u, err)
+		}
+	}
+	if res, err := f.Get(context.Background(), "MAGNET:?xt=urn:btih:abc"); err != nil || res.Magnet == "" {
+		t.Errorf("magnet: %+v %v", res, err)
+	}
+}

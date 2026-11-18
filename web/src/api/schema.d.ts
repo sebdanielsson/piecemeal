@@ -1059,6 +1059,8 @@ export interface components {
        */
       lastActivityAt: number;
       magnet: string;
+      /** @description The torrent's files are in a root folder, even if there is only one. */
+      multiFile: boolean;
       name: string;
       /**
        * Format: int64
@@ -1105,6 +1107,16 @@ export interface components {
       sequential: boolean;
       /**
        * Format: int64
+       * @description Payload bytes downloaded since piecemeal started.
+       */
+      sessionDownloaded: number;
+      /**
+       * Format: int64
+       * @description Payload bytes uploaded since piecemeal started.
+       */
+      sessionUploaded: number;
+      /**
+       * Format: int64
        * @description Bytes in the wanted files.
        */
       size: number;
@@ -1134,6 +1146,11 @@ export interface components {
       totalSize: number;
       /** @description The first tracker's URL. */
       tracker: string;
+      /**
+       * Format: int64
+       * @description Number of trackers.
+       */
+      trackers: number;
       /**
        * Format: int64
        * @description Bytes per second, 0 for unlimited.

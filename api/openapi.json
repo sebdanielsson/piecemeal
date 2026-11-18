@@ -1319,6 +1319,10 @@
           "magnet": {
             "type": "string"
           },
+          "multiFile": {
+            "description": "The torrent's files are in a root folder, even if there is only one.",
+            "type": "boolean"
+          },
           "name": {
             "type": "string"
           },
@@ -1381,6 +1385,16 @@
           "sequential": {
             "type": "boolean"
           },
+          "sessionDownloaded": {
+            "description": "Payload bytes downloaded since piecemeal started.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "sessionUploaded": {
+            "description": "Payload bytes uploaded since piecemeal started.",
+            "format": "int64",
+            "type": "integer"
+          },
           "size": {
             "description": "Bytes in the wanted files.",
             "format": "int64",
@@ -1427,6 +1441,11 @@
             "description": "The first tracker's URL.",
             "type": "string"
           },
+          "trackers": {
+            "description": "Number of trackers.",
+            "format": "int64",
+            "type": "integer"
+          },
           "uploadLimit": {
             "description": "Bytes per second, 0 for unlimited.",
             "format": "int64",
@@ -1455,6 +1474,10 @@
           "completed",
           "downloaded",
           "uploaded",
+          "sessionDownloaded",
+          "sessionUploaded",
+          "multiFile",
+          "trackers",
           "downloadRate",
           "uploadRate",
           "eta",

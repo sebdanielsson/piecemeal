@@ -4,7 +4,7 @@ piecemeal is a self-hosted BitTorrent client: a single Go binary built on [anacr
 
 It grows out of the test daemon in [`sebdanielsson/infra` `docker/transmission-wireguard/anacrolix`](https://github.com/sebdanielsson/infra/tree/main/docker/transmission-wireguard/anacrolix), which proved the library on the target host: NAT-PMP port forwarding through a WireGuard VPN, a responsive API under heavy disk load, and 9.7 MiB/s onto a ZFS RAID-Z1 pool once mmap storage was turned off.
 
-Status: Phase 0 is done (v0.1.0). Phase 1 is in progress: the engine, store, settings, NAT-PMP, watch folder, metrics, local auth and the native API with its event stream.
+Status: Phase 0 is done (v0.1.0). Phase 1's code shipped in v0.2.0 (engine, store, settings, NAT-PMP, watch folder, metrics, local auth and the native API with its event stream); its deployment to hogsmeade is pending. Phase 2 (qBittorrent API for the *arrs) and Phase 3 (web UI) are in progress.
 
 ## Goals
 
@@ -115,13 +115,13 @@ Resources under `/api/piecemeal/v1`: `torrents` (with `files`, `peers`, `tracker
 
 ## qBittorrent compatibility
 
-Target: qBittorrent 5.3.0's WebAPI 2.16.2. piecemeal reports the qBittorrent and WebAPI versions it actually covers at each phase, because clients choose code paths by version: for example, `torrents/stop` and `start` replaced `pause` and `resume` in WebAPI 2.11, and Radarr only uses labels and API keys on new enough versions. The pre-2.11 names are accepted as aliases.
+Target: qBittorrent 5.3.0's WebAPI 2.16.2. piecemeal reports exactly that from Phase 2 and follows 5.3.0's behaviour on every endpoint it implements. Clients choose code paths by version, and the *arrs behave the same for any WebAPI from 2.11.2 up: they gate categories, paths, share limits and `stopped` on the version, but not API keys or tags. Reporting 5.3.0 early means tools such as VueTorrent may call Phase 4 endpoints before they exist; building 5.0 behaviour first would mean changing it again later. The pre-2.11 names (`pause`, `resume`, `paused`) are accepted as aliases. [docs/qbittorrent-compat.md](qbittorrent-compat.md) tracks every endpoint.
 
 | Group | Endpoints | Phase | Notes |
 | --- | --- | --- | --- |
-| auth | 2 | 2 | `login` (form, `SID` cookie) and `logout`. Bearer API keys accepted on every endpoint. |
+| auth | 2 | 2 | `login` (204 with `QBT_SID_<port>` and `SID` cookies) and `logout`. Bearer API keys and Basic credentials accepted on every endpoint; unauthenticated requests get 403, which the *arrs rely on. |
 | app | 17 | 2 (core), 4 (rest) | `version`, `webapiVersion`, `buildInfo`, `preferences` and `setPreferences` mapped onto piecemeal settings. `rotateAPIKey` and `deleteAPIKey` manage the caller's key. `shutdown` and `sendTestEmail` answer "not supported". |
-| torrents | 62 | 2 (Radarr/Sonarr/Prowlarr subset), 4 (rest) | Phase 2: `add`, `info`, `properties`, `files`, `delete`, `categories`, `createCategory`, `setCategory`, `setForceStart`, `setShareLimits`, `topPrio`, `start`, `stop`. `setSuperSeeding` and the SSL parameter endpoints answer "not supported". |
+| torrents | 62 | 2 (Radarr/Sonarr/Prowlarr subset), 4 (rest) | The *arrs call `add`, `info`, `properties`, `files`, `delete`, `categories`, `createCategory`, `setCategory`, `setForceStart`, `setShareLimits`, `topPrio` and `addTags`, plus `auth/login`, `app/webapiVersion` and `app/preferences`. Phase 2 also covers the cheap neighbours: start, stop, tags, category editing, toggles, limits, rename. `setSuperSeeding` and the SSL parameter endpoints answer "not supported". |
 | transfer | 13 | 4 | Global and alternative limits, speed-limit mode, `banPeers`, session start and stop. |
 | sync | 2 | 4 | `maindata` and `torrentPeers` with `rid` deltas, which VueTorrent and qBittorrent's own WebUI depend on. |
 | log | 2 | 4 | From piecemeal's structured log. |

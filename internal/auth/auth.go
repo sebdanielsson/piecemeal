@@ -24,6 +24,9 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/crypto/argon2"
+	"golang.org/x/sync/singleflight"
+
 	"github.com/sebdanielsson/piecemeal/internal/store"
 )
 
@@ -107,7 +110,12 @@ type Service struct {
 	limiter *loginLimiter
 	// verifying bounds concurrent password verifications.
 	verifying chan struct{}
-	now       func() time.Time
+
+	basicMu     sync.Mutex
+	basicOK     map[[32]byte]time.Time
+	basicSalt   []byte
+	basicFlight singleflight.Group
+	now         func() time.Time
 
 	adminID int64
 
@@ -158,8 +166,8 @@ func New(ctx context.Context, cfg Config, st *store.Store, log *slog.Logger) (*S
 	}
 	s := &Service{
 		cfg: cfg, store: st, log: log, limiter: newLoginLimiter(5, 15*time.Minute), now: time.Now,
-		verifying: make(chan struct{}, 2),
-		touched:   map[string]time.Time{},
+		verifying: make(chan struct{}, 2), basicOK: map[[32]byte]time.Time{}, basicSalt: []byte(randomToken(16)),
+		touched: map[string]time.Time{},
 	}
 	u, err := st.GetUserByUsername(ctx, cfg.AdminUsername)
 	switch {
@@ -189,34 +197,81 @@ func (s *Service) Config() Config { return s.cfg }
 // Login checks the local admin's password and opens a session. It returns
 // the session token to set as a cookie.
 func (s *Service) Login(ctx context.Context, r *http.Request, username, password, kind string) (string, *Principal, error) {
+	if err := s.checkPassword(ctx, r, username, password); err != nil {
+		return "", nil, err
+	}
+	return s.OpenSession(ctx, r, s.adminID, kind)
+}
+
+// Basic authenticates HTTP Basic credentials, as qBittorrent 5.2 accepts
+// them. Successes are remembered for a few minutes, so clients that send
+// Basic on every request don't pay for a password hash each time.
+func (s *Service) Basic(ctx context.Context, r *http.Request, username, password string) (*Principal, error) {
+	// The cache key is a cheap argon2id hash with a per-process salt, so the
+	// cache never holds anything a password could be recovered from.
+	key := [32]byte(argon2.IDKey([]byte(username+"\x00"+password), s.basicSalt, 1, 4*1024, 1, 32))
+	now := s.now()
+	s.basicMu.Lock()
+	exp, ok := s.basicOK[key]
+	s.basicMu.Unlock()
+	if !ok || now.After(exp) {
+		// Parallel requests with the same credentials share one check, so a
+		// burst of correct ones can't trip the lockout.
+		_, err, _ := s.basicFlight.Do(string(key[:]), func() (any, error) {
+			if err := s.checkPassword(ctx, r, username, password); err != nil {
+				return nil, err
+			}
+			s.basicMu.Lock()
+			if len(s.basicOK) > 1000 {
+				clear(s.basicOK)
+			}
+			s.basicOK[key] = now.Add(5 * time.Minute)
+			s.basicMu.Unlock()
+			return nil, nil
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	u, err := s.store.GetUser(ctx, s.adminID)
+	if err != nil {
+		return nil, err
+	}
+	return &Principal{
+		UserID: u.ID, Username: u.Username, Name: u.DisplayName, IsAdmin: u.IsAdmin, Method: "basic", Scope: ScopeFull,
+	}, nil
+}
+
+// checkPassword verifies the local admin's credentials, with the lockout.
+func (s *Service) checkPassword(ctx context.Context, r *http.Request, username, password string) error {
 	ip := s.ClientIP(r)
 	if !s.cfg.LocalLogin {
-		return "", nil, ErrLocalDisabled
+		return ErrLocalDisabled
 	}
 	// The attempt counts as a failure until it succeeds, so parallel
 	// guesses can't all pass the check before any of them is recorded.
 	if !s.limiter.begin(ip, s.now()) {
 		s.audit(ctx, username, "login.lockedOut", "ip="+ip)
-		return "", nil, ErrLockedOut
+		return ErrLockedOut
 	}
 	// Each verification takes 64 MiB; bound how many run at once.
 	select {
 	case s.verifying <- struct{}{}:
 	case <-ctx.Done():
-		return "", nil, ctx.Err()
+		return ctx.Err()
 	}
 	userOK := subtle.ConstantTimeCompare([]byte(username), []byte(s.cfg.AdminUsername)) == 1
 	pwOK, err := VerifyPassword(s.cfg.AdminPasswordHash, password)
 	<-s.verifying
 	if err != nil {
-		return "", nil, err
+		return err
 	}
 	if !userOK || !pwOK {
 		s.audit(ctx, username, "login.failed", "ip="+ip)
-		return "", nil, ErrBadCredentials
+		return ErrBadCredentials
 	}
 	s.limiter.reset(ip)
-	return s.OpenSession(ctx, r, s.adminID, kind)
+	return nil
 }
 
 // OpenSession starts a session for a user who has signed in.
@@ -272,6 +327,16 @@ func (s *Service) Authenticate(r *http.Request, cookie string) (*Principal, erro
 		return nil, ErrUnauthenticated
 	}
 	return s.authenticateSession(ctx, c.Value)
+}
+
+// Session authenticates a session token from a cookie.
+func (s *Service) Session(ctx context.Context, token string) (*Principal, error) {
+	return s.authenticateSession(ctx, token)
+}
+
+// Key authenticates an API key.
+func (s *Service) Key(ctx context.Context, key string) (*Principal, error) {
+	return s.authenticateKey(ctx, key)
 }
 
 func (s *Service) authenticateSession(ctx context.Context, token string) (*Principal, error) {

@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -101,17 +102,21 @@ type Result struct {
 	Body   []byte
 }
 
+// fetchableURL is an http(s) URL with a host. Which addresses the host
+// may resolve to is checked when dialing.
+var fetchableURL = regexp.MustCompile(`(?i)^https?://[^/?#\s]+([/?#]\S*)?$`)
+
 // Get downloads rawURL.
 func (f *Fetcher) Get(ctx context.Context, rawURL string) (Result, error) {
+	if strings.HasPrefix(strings.ToLower(rawURL), "magnet:") {
+		return Result{Magnet: rawURL}, nil
+	}
+	if !fetchableURL.MatchString(rawURL) {
+		return Result{}, fmt.Errorf("bad URL %q: only http and https URLs with a host can be fetched", rawURL)
+	}
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return Result{}, fmt.Errorf("bad URL: %w", err)
-	}
-	if u.Scheme == "magnet" {
-		return Result{Magnet: rawURL}, nil
-	}
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return Result{}, fmt.Errorf("unsupported URL scheme %q", u.Scheme)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {

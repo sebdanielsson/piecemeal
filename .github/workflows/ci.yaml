@@ -116,6 +116,33 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  # Radarr, Sonarr and Prowlarr containers use piecemeal as their qBittorrent
+  # download client, and a real qBittorrent is compared with piecemeal's
+  # qBittorrent API. See test/e2e.
+  e2e:
+    name: End-to-end
+    runs-on: ubuntu-26.04-arm
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup tools
+        uses: jdx/mise-action@v5
+        with:
+          install_args: go
+
+      - name: Run end-to-end tests
+        run: test/e2e/run.sh
+
+      - name: Upload container logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-logs
+          path: test/e2e/tmp/compose.log
+          if-no-files-found: ignore
+
   # The one check the main ruleset requires, so adding or renaming jobs never means editing
   # the ruleset. `always()` makes it run, and fail, when a needed job failed or was cancelled,
   # instead of being skipped (a skipped required check counts as passing).
@@ -126,6 +153,7 @@ jobs:
       - web
       - go
       - docker
+      - e2e
     runs-on: ubuntu-26.04-arm
     timeout-minutes: 5
     steps:

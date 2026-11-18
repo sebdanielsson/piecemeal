@@ -51,12 +51,25 @@ type managed struct {
 	timesAt  time.Time
 	timeAcc  time.Duration
 	meta     metaFields
+	// Payload this session, and when it last moved, for stall detection.
+	sessionDown, sessionUp int64
+	lastDownAt, lastUpAt   time.Time
 }
 
 // metaFields are read from the torrent file once, for the status.
 type metaFields struct {
 	comment, createdBy, tracker string
 	createdAt                   int64
+	trackers                    int
+}
+
+func (m *managed) setMagnetTrackers(al [][]string) {
+	if len(al) > 0 && len(al[0]) > 0 {
+		m.meta.tracker = al[0][0]
+	}
+	for _, tier := range al {
+		m.meta.trackers += len(tier)
+	}
 }
 
 func (m *managed) setMetainfo(b []byte) {
@@ -66,8 +79,12 @@ func (m *managed) setMetainfo(b []byte) {
 		return
 	}
 	m.meta = metaFields{comment: mi.Comment, createdBy: mi.CreatedBy, createdAt: mi.CreationDate}
-	if al := mi.UpvertedAnnounceList(); len(al) > 0 && len(al[0]) > 0 {
+	al := mi.UpvertedAnnounceList()
+	if len(al) > 0 && len(al[0]) > 0 {
 		m.meta.tracker = al[0][0]
+	}
+	for _, tier := range al {
+		m.meta.trackers += len(tier)
 	}
 	if m.info == nil {
 		if info, err := mi.UnmarshalInfo(); err == nil {
@@ -266,8 +283,8 @@ func (e *Engine) Add(ctx context.Context, p AddParams) (string, error) {
 	}
 	if mib != nil {
 		m.setMetainfo(mib)
-	} else if spec != nil && len(spec.Trackers) > 0 && len(spec.Trackers[0]) > 0 {
-		m.meta.tracker = spec.Trackers[0][0]
+	} else if spec != nil {
+		m.setMagnetTrackers(spec.Trackers)
 	}
 	if p.RatioLimit != nil {
 		m.rec.RatioLimit = *p.RatioLimit
@@ -973,8 +990,8 @@ func (e *Engine) loadTorrents(ctx context.Context) error {
 		}
 		if r.Metainfo != nil {
 			m.setMetainfo(r.Metainfo)
-		} else if spec, err := torrent.TorrentSpecFromMagnetUri(r.Magnet); err == nil && len(spec.Trackers) > 0 && len(spec.Trackers[0]) > 0 {
-			m.meta.tracker = spec.Trackers[0][0]
+		} else if spec, err := torrent.TorrentSpecFromMagnetUri(r.Magnet); err == nil {
+			m.setMagnetTrackers(spec.Trackers)
 		}
 		e.savePaths.Store(ih, r.SavePath)
 		e.torrents[ih] = m
