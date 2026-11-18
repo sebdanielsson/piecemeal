@@ -217,6 +217,15 @@ func Redact(u *url.URL) string {
 	return r.String()
 }
 
+// urlInText finds http(s) URLs in text, such as error messages, which
+// quote them in double quotes.
+var urlInText = regexp.MustCompile(`(?i)https?://[^\s"'<>]+`)
+
+// RedactText redacts every http(s) URL in s, as Redact.
+func RedactText(s string) string {
+	return urlInText.ReplaceAllStringFunc(s, RedactString)
+}
+
 // RedactString is Redact for a URL in text; anything that doesn't parse
 // is replaced whole.
 func RedactString(s string) string {

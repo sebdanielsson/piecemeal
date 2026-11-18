@@ -94,7 +94,6 @@ var userSettings = map[string]bool{
 	"altSpeedEnabled": true,
 }
 
-// requireAdmin answers 403 unless the caller is an admin.
 // isAdmin reports whether the caller may use admin endpoints: an admin
 // signed in, with Basic credentials, or with a full-scope key, as in the
 // native API. A key for an *arr app (qbittorrent scope) or a dashboard
@@ -103,6 +102,7 @@ func isAdmin(p *auth.Principal) bool {
 	return p != nil && p.IsAdmin && (p.Method != "apiKey" || p.Scope == auth.ScopeFull)
 }
 
+// requireAdmin answers 403 unless the caller is an admin.
 func requireAdmin(w http.ResponseWriter, r *http.Request) bool {
 	if !isAdmin(principal(r)) {
 		http.Error(w, "Forbidden", http.StatusForbidden)

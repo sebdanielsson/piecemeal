@@ -70,6 +70,8 @@ func (f FeedInfo) Name() string { return lastName(f.Path) }
 // for callers who may not see them.
 func (f FeedInfo) Masked() FeedInfo {
 	f.URL = fetch.RedactString(f.URL)
+	// Errors from before fetch errors were redacted quote the whole URL.
+	f.Error = fetch.RedactText(f.Error)
 	return f
 }
 

@@ -92,3 +92,12 @@ func TestErrorsHideSecrets(t *testing.T) {
 		t.Errorf("Redact: %s", got)
 	}
 }
+
+func TestRedactText(t *testing.T) {
+	in := `Get "https://t.example/rss?passkey=SECRET": dial tcp: lookup t.example: no such host; see http://other.example/x?k=v.`
+	got := RedactText(in)
+	if strings.Contains(got, "SECRET") || strings.Contains(got, "k=v") ||
+		!strings.Contains(got, `"https://t.example/rss?…"`) || !strings.Contains(got, "lookup t.example") {
+		t.Fatalf("RedactText: %s", got)
+	}
+}

@@ -187,21 +187,50 @@ func (e *Engine) reloadFilter(s settings.Settings) {
 	e.filter.list.Store(iplist.New(mergeRanges(ranges)))
 }
 
-// maxIPFilterSize bounds what is read of a filter file; published lists
-// are a few tens of MiB.
+// maxIPFilterSize bounds a filter file; published lists are a few tens
+// of MiB.
 const maxIPFilterSize = 512 << 20
 
 func readIPFilter(path string) ([]iplist.Range, int, error) {
+	// A device would never end, and opening a FIFO blocks until something
+	// writes to it: check before opening.
+	regular := func(st os.FileInfo) error {
+		switch {
+		case !st.Mode().IsRegular():
+			return fmt.Errorf("%s is not a regular file", path)
+		case st.Size() > maxIPFilterSize:
+			return fmt.Errorf("%s is larger than %d MiB", path, maxIPFilterSize>>20)
+		}
+		return nil
+	}
+	st, err := os.Stat(path)
+	if err != nil {
+		return nil, 0, err
+	}
+	if err := regular(st); err != nil {
+		return nil, 0, err
+	}
 	f, err := os.Open(path) //nolint:gosec // the admin's choice of file
 	if err != nil {
 		return nil, 0, err
 	}
 	defer func() { _ = f.Close() }()
-	// A device or a FIFO would never end, or block for good.
-	if st, err := f.Stat(); err != nil || !st.Mode().IsRegular() {
-		return nil, 0, fmt.Errorf("%s is not a regular file", path)
+	// It may have been replaced in between.
+	if st, err = f.Stat(); err != nil {
+		return nil, 0, err
 	}
-	return ParseIPFilter(io.LimitReader(f, maxIPFilterSize))
+	if err := regular(st); err != nil {
+		return nil, 0, err
+	}
+	// A file still growing is read up to the limit and then refused.
+	b, err := io.ReadAll(io.LimitReader(f, maxIPFilterSize+1))
+	if err != nil {
+		return nil, 0, err
+	}
+	if len(b) > maxIPFilterSize {
+		return nil, 0, fmt.Errorf("%s is larger than %d MiB", path, maxIPFilterSize>>20)
+	}
+	return ParseIPFilter(bytes.NewReader(b))
 }
 
 // dropBlockedPeersLocked closes connections to peers the filter now

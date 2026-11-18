@@ -242,16 +242,26 @@ func TestLimiterKeys(t *testing.T) {
 	if !l.begin("192.0.2.1", now) || !l.begin("192.0.2.2", now) {
 		t.Fatal("IPv4 addresses were counted together")
 	}
-	// A full table refuses new addresses instead of forgetting the others.
+	// Private IPv6 addresses, as on a LAN or a container network, count
+	// one by one.
+	for range 2 {
+		l.begin("fd00::1", now)
+	}
+	if !l.locked("fd00::1", now) || !l.begin("fd00::2", now) || l.locked("fd00::3", now) {
+		t.Fatal("private IPv6 addresses were counted together")
+	}
+	// A full table keeps the addresses it has and lets new ones through
+	// untracked, instead of locking out everyone.
 	for i := range maxTracked {
 		l.fails[fmt.Sprintf("x%d", i)] = []time.Time{now}
 	}
-	if l.begin("198.51.100.1", now) || !l.locked("2001:db8::1", now) {
-		t.Fatal("a full table forgot or admitted")
+	if !l.begin("198.51.100.1", now) || l.locked("198.51.100.1", now) || !l.locked("2001:db8::1", now) {
+		t.Fatal("a full table forgot or refused")
 	}
-	// Once the entries expire they're swept.
-	if !l.begin("198.51.100.1", now.Add(2*time.Minute)) {
-		t.Fatal("expired entries weren't swept")
+	// Once the entries expire they're swept and tracking resumes.
+	later := now.Add(2 * time.Minute)
+	if !l.begin("198.51.100.1", later) || len(l.fails) != 1 {
+		t.Fatalf("expired entries weren't swept: %d left", len(l.fails))
 	}
 }
 

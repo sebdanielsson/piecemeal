@@ -762,17 +762,22 @@ type loginLimiter struct {
 	max    int
 	window time.Duration
 	fails  map[string][]time.Time
+	// swept is when a full table was last swept of expired entries.
+	swept time.Time
 }
 
 func newLoginLimiter(maxFails int, window time.Duration) *loginLimiter {
 	return &loginLimiter{max: maxFails, window: window, fails: map[string][]time.Time{}}
 }
 
-// limitKey is the address the limiter counts by: an IPv6 client's /64,
-// since one host usually has the whole /64, or the IPv4 address.
+// limitKey is the address the limiter counts by: a public IPv6 client's
+// /64, since one host on the internet usually has the whole /64, or the
+// address itself. Private, link-local and loopback IPv6 addresses count
+// one by one: a LAN or a container network shares one /64, and one client
+// with a stale password shouldn't lock out the rest.
 func limitKey(ip string) string {
 	a, err := netip.ParseAddr(ip)
-	if err != nil || a.Unmap().Is4() {
+	if err != nil || a.Unmap().Is4() || a.IsPrivate() || a.IsLinkLocalUnicast() || a.IsLoopback() {
 		return ip
 	}
 	return netip.PrefixFrom(a, 64).Masked().String()
@@ -801,13 +806,20 @@ func (l *loginLimiter) begin(ip string, now time.Time) bool {
 		return false
 	}
 	if len(f) == 0 && len(l.fails) >= maxTracked {
-		// Too many addresses: drop the expired ones, and if that isn't
-		// enough, refuse new addresses rather than forget the others.
-		for k := range l.fails {
-			l.recent(k, now)
+		// Too many addresses: drop the expired ones, at most once a
+		// minute since that walks the whole table.
+		if now.Sub(l.swept) >= time.Minute {
+			l.swept = now
+			for k := range l.fails {
+				l.recent(k, now)
+			}
 		}
+		// Still full: let the attempt through untracked rather than
+		// lock out everyone, the admin included. Whoever fills the table
+		// controls that many addresses anyway; the bound on concurrent
+		// password hashing still limits how fast they can guess.
 		if len(l.fails) >= maxTracked {
-			return false
+			return true
 		}
 	}
 	l.fails[ip] = append(f, now)

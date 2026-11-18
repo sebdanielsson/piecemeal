@@ -77,10 +77,6 @@ type sessionsOutput struct {
 	}
 }
 
-type userIDInput struct {
-	ID int64 `path:"id"`
-}
-
 type sessionIDInput struct {
 	ID string `path:"id" pattern:"^[0-9a-f]{64}$"`
 }
@@ -235,7 +231,7 @@ func (a *API) registerAdmin() {
 	op.DefaultStatus = http.StatusNoContent
 	op.Description = "SSO users who are still allowed to sign in are created again on their next sign-in. " +
 		"Remove them from the allowed groups at the provider first. The local admin can't be removed."
-	huma.Register(a.huma, op, func(ctx context.Context, in *userIDInput) (*struct{}, error) {
+	huma.Register(a.huma, op, func(ctx context.Context, in *idInput) (*struct{}, error) {
 		return nil, apiError(a.Auth.DeleteUser(ctx, Principal(ctx), in.ID))
 	})
 
