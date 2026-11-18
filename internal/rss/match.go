@@ -45,7 +45,13 @@ func compileText(expr string, useRegex bool) textMatcher {
 	for alt := range strings.SplitSeq(expr, "|") {
 		var terms []*regexp.Regexp
 		for _, term := range strings.Fields(alt) {
-			terms = append(terms, regexp.MustCompile("(?i)"+wildcardRegexp(term)))
+			// A character class such as [!] or [z-a] doesn't compile; like
+			// an invalid regular expression, the term then matches nothing.
+			re, err := regexp.Compile("(?i)" + wildcardRegexp(term))
+			if err != nil {
+				return textMatcher{invalid: true}
+			}
+			terms = append(terms, re)
 		}
 		alts = append(alts, terms)
 	}

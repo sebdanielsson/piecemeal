@@ -19,7 +19,7 @@ import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { errorMessage, unwrap } from "@/lib/api";
-import { keys, rssQuery } from "@/lib/queries";
+import { keys, rssQuery, rssRulesQuery } from "@/lib/queries";
 
 /** A new rule, as the server would create it. */
 export function newRule(): RSSRule {
@@ -50,9 +50,13 @@ export function RuleDialog({
 }) {
   const qc = useQueryClient();
   const { data: tree } = useQuery(rssQuery);
+  const { data: existing = {} } = useQuery(rssRulesQuery);
   const [draft, setDraft] = useState<{ name: string; rule: RSSRule } | null>(null);
   const current = draft ?? { name: name ?? "", rule: rule ?? newRule() };
   const r = current.rule;
+  const newName = current.name.trim();
+  // Saving under another rule's name would replace it and its history.
+  const taken = newName !== name && Object.hasOwn(existing, newName);
   const set = (patch: Partial<RSSRule>) => setDraft({ ...current, rule: { ...r, ...patch } });
   const setAdd = (patch: Partial<RSSRule["add"]>) => set({ add: { ...r.add, ...patch } });
   const close = () => {
@@ -71,7 +75,6 @@ export function RuleDialog({
   });
   const save = useMutation({
     mutationFn: async () => {
-      const newName = current.name.trim();
       if (name && newName !== name) {
         await unwrap(
           api.POST("/rss/rules/{name}/rename", { params: { path: { name } }, body: { newName } }),
@@ -121,7 +124,13 @@ export function RuleDialog({
                   onChange={(e) => setDraft({ ...current, name: e.target.value })}
                   required
                   autoFocus={!name}
+                  aria-invalid={taken || undefined}
                 />
+                {taken && (
+                  <FieldDescription className="text-destructive">
+                    A rule with that name exists.
+                  </FieldDescription>
+                )}
               </Field>
               <Check label="Enabled" checked={r.enabled} onChange={(enabled) => set({ enabled })} />
             </div>
@@ -238,7 +247,7 @@ export function RuleDialog({
             </section>
           )}
           <DialogFooter>
-            <Button type="submit" size="sm" disabled={!current.name.trim() || save.isPending}>
+            <Button type="submit" size="sm" disabled={!newName || taken || save.isPending}>
               Save
             </Button>
           </DialogFooter>

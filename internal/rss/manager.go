@@ -73,6 +73,9 @@ type feed struct {
 	namedByURL bool
 	refresh    bool // fetch at the next opportunity
 	seq        int64
+	// hidden are articles dropped past the limit that the feed still
+	// lists, so they don't come back as new.
+	hidden map[string]bool
 }
 
 // Deps are the services the manager uses.
@@ -97,6 +100,13 @@ type Manager struct {
 	smart    smartFilter
 	lastHost map[string]time.Time
 
+	// ruleGen counts each rule's replacements, so an auto-download run
+	// doesn't undo a rule saved while it ran.
+	ruleGen map[string]int
+
+	// ctx is the manager's lifetime, for background work: a request's
+	// context ends when its handler returns.
+	ctx context.Context
 	// runMu serialises auto-download runs, so an article isn't taken twice
 	// before it is marked read.
 	runMu sync.Mutex
@@ -108,7 +118,7 @@ type Manager struct {
 func New(ctx context.Context, d Deps) (*Manager, error) {
 	m := &Manager{
 		d: d, now: time.Now, folders: map[string]bool{}, feeds: map[string]*feed{}, rules: map[string]Rule{},
-		lastHost: map[string]time.Time{}, wake: make(chan struct{}, 1),
+		lastHost: map[string]time.Time{}, ruleGen: map[string]int{}, ctx: ctx, wake: make(chan struct{}, 1),
 	}
 	if err := m.load(ctx); err != nil {
 		return nil, err
@@ -128,7 +138,7 @@ func New(ctx context.Context, d Deps) (*Manager, error) {
 			m.mu.Unlock()
 		}
 		if cur.RSSAutoDownload && !old.RSSAutoDownload {
-			m.goAutoDownload(ctx)
+			m.goAutoDownload()
 		}
 		m.poke()
 	})
@@ -175,11 +185,15 @@ func (m *Manager) load(ctx context.Context) error {
 		if f == nil {
 			continue
 		}
+		f.seq = max(f.seq, a.Seq)
+		if a.Hidden {
+			f.hide(a.ID)
+			continue
+		}
 		f.Articles = append(f.Articles, Article{
 			ID: a.ID, Title: a.Title, Date: time.Unix(a.Date, 0).UTC(), TorrentURL: a.TorrentUrl, Link: a.Link,
 			Description: a.Description, Author: a.Author, Category: a.Category, Read: a.IsRead, seq: a.Seq,
 		})
-		f.seq = max(f.seq, a.Seq)
 	}
 	rules, err := m.d.Store.ListRSSRules(ctx)
 	if err != nil {
@@ -299,8 +313,15 @@ func (m *Manager) fetch(ctx context.Context, uid, u string) {
 	m.saveFeedLocked(ctx, f)
 	m.mu.Unlock()
 	if added > 0 {
-		m.goAutoDownload(ctx)
+		m.goAutoDownload()
 	}
+}
+
+func (f *feed) hide(id string) {
+	if f.hidden == nil {
+		f.hidden = map[string]bool{}
+	}
+	f.hidden[id] = true
 }
 
 // mergeLocked stores articles the feed doesn't have yet and drops the
@@ -309,6 +330,22 @@ func (m *Manager) mergeLocked(ctx context.Context, f *feed, articles []Article) 
 	have := map[string]bool{}
 	for _, a := range f.Articles {
 		have[a.ID] = true
+	}
+	listed := map[string]bool{}
+	for _, a := range articles {
+		listed[a.ID] = true
+		if f.hidden[a.ID] {
+			have[a.ID] = true
+		}
+	}
+	// Forget dropped articles the feed no longer lists.
+	for id := range f.hidden {
+		if !listed[id] {
+			delete(f.hidden, id)
+			if err := m.d.Store.DeleteRSSArticle(ctx, store.DeleteRSSArticleParams{FeedUid: f.UID, ID: id}); err != nil {
+				m.d.Log.Error("forgetting an RSS article", "feed", f.Path, "error", err)
+			}
+		}
 	}
 	now := m.now().UTC().Truncate(time.Second)
 	added := 0
@@ -349,7 +386,8 @@ func (m *Manager) trimLocked(ctx context.Context, f *feed, limit int) {
 	drop := map[string]bool{}
 	for _, a := range byAge[:len(byAge)-max(limit, 0)] {
 		drop[a.ID] = true
-		if err := m.d.Store.DeleteRSSArticle(ctx, store.DeleteRSSArticleParams{FeedUid: f.UID, ID: a.ID}); err != nil {
+		f.hide(a.ID)
+		if err := m.d.Store.HideRSSArticle(ctx, store.HideRSSArticleParams{FeedUid: f.UID, ID: a.ID}); err != nil {
 			m.d.Log.Error("dropping an RSS article", "feed", f.Path, "error", err)
 		}
 	}
@@ -739,6 +777,7 @@ func (m *Manager) Rules() map[string]Rule {
 
 func (m *Manager) putRuleLocked(ctx context.Context, name string, r Rule) {
 	m.rules[name] = r
+	m.ruleGen[name]++
 	b, _ := json.Marshal(r)
 	if err := m.d.Store.PutRSSRule(ctx, store.PutRSSRuleParams{Name: name, Def: string(b)}); err != nil {
 		m.d.Log.Error("saving an RSS rule", "rule", name, "error", err)
@@ -752,7 +791,7 @@ func (m *Manager) SetRule(ctx context.Context, name string, r Rule) {
 	m.putRuleLocked(ctx, name, r.clone())
 	m.mu.Unlock()
 	if r.Enabled {
-		m.goAutoDownload(ctx)
+		m.goAutoDownload()
 	}
 }
 

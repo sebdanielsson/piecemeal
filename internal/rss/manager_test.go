@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -27,7 +28,8 @@ type env struct {
 	engine   *engine.Engine
 	fetcher  *fetch.Fetcher
 	srv      *httptest.Server
-	feed     string // the feed document
+	feed     string   // the feed document
+	failing  sync.Map // torrent names whose downloads fail
 	m        *Manager
 	cancel   context.CancelFunc
 }
@@ -63,6 +65,10 @@ func newEnv(t *testing.T) *env {
 	}
 	env.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if name, ok := strings.CutPrefix(r.URL.Path, "/t/"); ok {
+			if _, fail := env.failing.Load(name); fail {
+				http.Error(w, "busy", http.StatusServiceUnavailable)
+				return
+			}
 			_, _ = w.Write(torrents[name])
 			return
 		}
@@ -216,4 +222,80 @@ func TestFetchErrors(t *testing.T) {
 		feeds := e.m.Feeds(false)
 		return len(feeds) == 2 && feeds[0].Error != "" && feeds[1].Error != ""
 	})
+}
+
+// TestFailedAddIsRetried checks that a failed add leaves the article and
+// the rule's history as they were, so the next run takes it, and that a
+// rule saved with a request's context, which ends at once, still runs.
+func TestFailedAddIsRetried(t *testing.T) {
+	e := newEnv(t)
+	ctx := e.ctx
+	e.feed = `<rss><channel><title>Show</title>` + e.item("Show.S01E01.1080p", "e01", "Mon, 16 Nov 2026 10:00:00 +0000") + `</channel></rss>`
+	f, err := e.m.AddFeed(ctx, e.srv.URL+"/feed", "Show", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.waitFor("the fetch", func() bool { return len(e.m.Feeds(true)[0].Articles) == 1 })
+	if _, err := e.settings.Set(ctx, map[string]any{"rssAutoDownload": true}); err != nil {
+		t.Fatal(err)
+	}
+	e.failing.Store("e01", true)
+	rule := NewRule()
+	rule.SmartFilter, rule.AffectedFeeds = true, []string{f.URL}
+	reqCtx, cancel := context.WithCancel(ctx)
+	e.m.SetRule(reqCtx, "Show", rule)
+	cancel()
+	e.m.AutoDownload(ctx) // waits for the run SetRule started
+	if r := e.m.Rules()["Show"]; len(r.PreviouslyMatchedEpisodes) != 0 || r.LastMatch != nil {
+		t.Fatalf("a failed add was recorded: %+v", r)
+	}
+	if e.m.Feeds(false)[0].Unread != 1 {
+		t.Fatal("a failed add marked the article read")
+	}
+	e.failing.Delete("e01")
+	e.m.AutoDownload(ctx)
+	if len(e.engine.List()) != 1 {
+		t.Fatalf("not retried: %v", e.engine.List())
+	}
+	if r := e.m.Rules()["Show"]; len(r.PreviouslyMatchedEpisodes) != 1 || r.LastMatch == nil {
+		t.Fatalf("the retry wasn't recorded: %+v", r)
+	}
+}
+
+// TestDroppedArticlesStayDropped checks that articles dropped past the
+// limit don't come back as new while the feed still lists them.
+func TestDroppedArticlesStayDropped(t *testing.T) {
+	e := newEnv(t)
+	ctx := e.ctx
+	if _, err := e.settings.Set(ctx, map[string]any{"rssMaxArticles": 2}); err != nil {
+		t.Fatal(err)
+	}
+	e.feed = `<rss><channel><title>Many</title>` +
+		e.item("A.S01E03", "e03", "Wed, 18 Nov 2026 10:00:00 +0000") +
+		e.item("A.S01E02", "e02", "Tue, 17 Nov 2026 10:00:00 +0000") +
+		e.item("A.S01E01", "e01", "Mon, 16 Nov 2026 10:00:00 +0000") + `</channel></rss>`
+	if _, err := e.m.AddFeed(ctx, e.srv.URL+"/feed", "Many", 0); err != nil {
+		t.Fatal(err)
+	}
+	e.waitFor("the fetch", func() bool { return len(e.m.Feeds(true)[0].Articles) == 2 })
+	check := func(when string) {
+		t.Helper()
+		f := e.m.Feeds(true)[0]
+		if len(f.Articles) != 2 || f.Articles[1].Title != "A.S01E02" {
+			t.Fatalf("%s: %+v", when, f.Articles)
+		}
+	}
+	for range 2 {
+		before := e.m.Feeds(false)[0].FetchedAt
+		e.m.Refresh("Many")
+		e.waitFor("a refetch", func() bool { return e.m.Feeds(false)[0].FetchedAt.After(before) })
+		check("after a refetch")
+	}
+	e.cancel()
+	e.start()
+	check("after a restart")
+	before := e.m.Feeds(false)[0].FetchedAt
+	e.m.Refresh("Many")
+	e.waitFor("a refetch", func() bool { return e.m.Feeds(false)[0].FetchedAt.After(before) })
+	check("after a restart and a refetch")
 }

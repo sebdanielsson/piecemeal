@@ -50,6 +50,7 @@ type RssArticle struct {
 	Author      string
 	Category    string
 	IsRead      bool
+	Hidden      bool
 }
 
 type RssFeed struct {

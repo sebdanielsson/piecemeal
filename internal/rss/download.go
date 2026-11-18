@@ -78,22 +78,27 @@ func (m *Manager) acceptLocked(c compiledRule, r *Rule, a Article, record bool) 
 
 // download is an article a rule took.
 type download struct {
-	feedUID, feedPath, articleID, title, torrentURL, rule string
-	add                                                   AddOptions
+	feedUID, articleID, title, torrentURL, rule string
+	add                                         AddOptions
+	// episode is the smart filter's ID, "" without the smart filter.
+	episode string
+	date    time.Time
 }
 
-func (m *Manager) goAutoDownload(ctx context.Context) {
+func (m *Manager) goAutoDownload() {
 	if !m.d.Settings.Get().RSSAutoDownload {
 		return
 	}
-	m.wg.Go(func() { m.AutoDownload(ctx) })
+	m.wg.Go(func() { m.AutoDownload(m.ctx) })
 }
 
 // AutoDownload runs the enabled rules over the unread articles, newest
-// first, and adds what they take. A rule records the article's date as
-// its last match and, with the smart filter, the episode. Articles are
-// marked read once added, or when the torrent was already there; a
-// failed add leaves the article for the next run.
+// first, and adds what they take. A rule that takes an article records
+// its date as the last match and, with the smart filter, the episode, so
+// other releases of the episode in the same run are refused. Articles are
+// marked read once added, or when the torrent was already there. A failed
+// add leaves the article unread and takes its record back, so the next run
+// tries again.
 func (m *Manager) AutoDownload(ctx context.Context) {
 	if !m.d.Settings.Get().RSSAutoDownload {
 		return
@@ -115,8 +120,10 @@ func (m *Manager) AutoDownload(ctx context.Context) {
 	for _, name := range names {
 		compiled[name] = compileRule(m.rules[name])
 	}
+	// What each touched rule was before the run, and its generation.
+	before := map[string]Rule{}
+	gen := map[string]int{}
 	var jobs []download
-	changed := map[string]bool{}
 	for _, f := range m.sortedFeedsLocked() {
 		articles := slices.Clone(f.Articles)
 		slices.SortStableFunc(articles, func(a, b Article) int {
@@ -132,43 +139,74 @@ func (m *Manager) AutoDownload(ctx context.Context) {
 					continue
 				}
 				r = r.clone()
-				if _, ok := m.acceptLocked(compiled[name], &r, a, true); !ok {
+				episode, ok := m.acceptLocked(compiled[name], &r, a, true)
+				if !ok {
 					continue
+				}
+				if _, seen := before[name]; !seen {
+					before[name], gen[name] = m.rules[name].clone(), m.ruleGen[name]
 				}
 				d := a.Date
 				r.LastMatch = &d
 				m.rules[name] = r
-				changed[name] = true
 				jobs = append(jobs, download{
-					feedUID: f.UID, feedPath: f.Path, articleID: a.ID, title: a.Title, torrentURL: a.TorrentURL,
-					rule: name, add: r.Add,
+					feedUID: f.UID, articleID: a.ID, title: a.Title, torrentURL: a.TorrentURL,
+					rule: name, add: r.Add, episode: episode, date: a.Date,
 				})
 				break
 			}
 		}
 	}
-	for name := range changed {
-		m.putRuleLocked(ctx, name, m.rules[name])
-	}
 	m.mu.Unlock()
 
-	for _, j := range jobs {
-		m.d.Log.Info("RSS article accepted by rule, adding the torrent", "article", j.title, "rule", j.rule, "feed", j.feedPath)
+	failed := map[int]bool{}
+	for i, j := range jobs {
+		m.d.Log.Info("RSS article accepted by rule, adding the torrent", "article", j.title, "rule", j.rule)
 		hash, err := m.add(ctx, j.torrentURL, j.add)
 		switch {
 		case errors.Is(err, engine.ErrExists):
 			m.d.Log.Info("RSS article's torrent was already added", "article", j.title, "hash", hash)
 		case err != nil:
 			m.d.Log.Warn("adding an RSS article's torrent failed", "article", j.title, "rule", j.rule, "error", err)
+			failed[i] = true
 			continue
 		}
 		m.mu.Lock()
-		if f := m.feeds[j.feedUID]; f != nil {
-			m.mu.Unlock()
-			m.MarkAsRead(ctx, f.Path, j.articleID)
-		} else {
-			m.mu.Unlock()
+		f := m.feeds[j.feedUID]
+		path := ""
+		if f != nil {
+			path = f.Path
 		}
+		m.mu.Unlock()
+		if f != nil {
+			m.MarkAsRead(ctx, path, j.articleID)
+		}
+	}
+
+	// Keep the records of what was added and take back the rest, then save
+	// the rules, unless one was replaced meanwhile.
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for name, orig := range before {
+		r, ok := m.rules[name]
+		if !ok || m.ruleGen[name] != gen[name] {
+			continue
+		}
+		r.LastMatch = orig.LastMatch
+		for i, j := range jobs {
+			if j.rule != name {
+				continue
+			}
+			if failed[i] {
+				if k := slices.Index(r.PreviouslyMatchedEpisodes, j.episode); j.episode != "" && k >= 0 {
+					r.PreviouslyMatchedEpisodes = slices.Delete(r.PreviouslyMatchedEpisodes, k, k+1)
+				}
+				continue
+			}
+			d := j.date
+			r.LastMatch = &d
+		}
+		m.putRuleLocked(m.ctx, name, r)
 	}
 }
 

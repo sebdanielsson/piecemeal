@@ -31,6 +31,9 @@ CREATE TABLE rss_articles (
     author      TEXT    NOT NULL DEFAULT '',
     category    TEXT    NOT NULL DEFAULT '',
     is_read     INTEGER NOT NULL DEFAULT 0,
+    -- Dropped past the per-feed limit, but still in the feed: kept so it
+    -- doesn't come back as new on the next fetch.
+    hidden      INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (feed_uid, id)
 ) STRICT;
 

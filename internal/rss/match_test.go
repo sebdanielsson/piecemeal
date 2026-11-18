@@ -30,6 +30,9 @@ func TestWildcards(t *testing.T) {
 		"x264-GRP":               true,
 		"[unterminated":          false,
 		"Probe.Show.S01E02.1080": true,
+		"[!]":                    false, // invalid classes match nothing
+		"[z-a]":                  false,
+		"[[:x:]]":                false,
 	} {
 		m := compileText(expr, false)
 		got := m.empty || (!m.invalid && m.match(title))

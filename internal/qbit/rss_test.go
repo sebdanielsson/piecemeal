@@ -127,13 +127,14 @@ func TestRSSFeeds(t *testing.T) {
 
 	// Legacy fields, with affectedFeeds as a string, as qbittorrent-api
 	// sends them; and a definition that isn't JSON gets the defaults.
-	legacy := `{"mustContain":"none","addPaused":false,"assignedCategory":"old","savePath":"/x","affectedFeeds":"` + feedURL + `"}`
+	legacy := `{"mustContain":"none","addPaused":false,"assignedCategory":"old","savePath":"/x","torrentContentLayout":null,"lastMatch":null,"affectedFeeds":"` + feedURL + `"}`
 	expect(t, "legacy", e.post("rss/setRule", url.Values{"ruleName": {"Legacy"}, "ruleDef": {legacy}}), http.StatusOK)
 	expect(t, "bad def", e.post("rss/setRule", url.Values{"ruleName": {"Bad"}, "ruleDef": {"nope"}}), http.StatusOK)
 	rules = nil
 	e.get("rss/rules").json(t, &rules)
 	lp := rules["Legacy"]["torrentParams"].(map[string]any)
-	if lp["category"] != "old" || lp["stopped"] != false || lp["use_auto_tmm"] != false || len(rules["Legacy"]["affectedFeeds"].([]any)) != 1 {
+	if lp["category"] != "old" || lp["stopped"] != false || lp["use_auto_tmm"] != false || lp["content_layout"] != nil ||
+		len(rules["Legacy"]["affectedFeeds"].([]any)) != 1 || rules["Legacy"]["lastMatch"] != "" {
 		t.Fatalf("legacy rule: %v", rules["Legacy"])
 	}
 	if rules["Bad"]["enabled"] != true || rules["Bad"]["mustContain"] != "" {

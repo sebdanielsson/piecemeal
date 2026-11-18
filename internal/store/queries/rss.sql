@@ -34,6 +34,9 @@ VALUES (sqlc.arg(feed_uid), sqlc.arg(id), sqlc.arg(seq), sqlc.arg(title), sqlc.a
 -- name: SetRSSArticleRead :exec
 UPDATE rss_articles SET is_read = 1 WHERE feed_uid = sqlc.arg(feed_uid) AND id = sqlc.arg(id);
 
+-- name: HideRSSArticle :exec
+UPDATE rss_articles SET hidden = 1 WHERE feed_uid = sqlc.arg(feed_uid) AND id = sqlc.arg(id);
+
 -- name: DeleteRSSArticle :exec
 DELETE FROM rss_articles WHERE feed_uid = sqlc.arg(feed_uid) AND id = sqlc.arg(id);
 

@@ -50,6 +50,20 @@ func (q *Queries) DeleteRSSRule(ctx context.Context, name string) error {
 	return err
 }
 
+const hideRSSArticle = `-- name: HideRSSArticle :exec
+UPDATE rss_articles SET hidden = 1 WHERE feed_uid = ?1 AND id = ?2
+`
+
+type HideRSSArticleParams struct {
+	FeedUid string
+	ID      string
+}
+
+func (q *Queries) HideRSSArticle(ctx context.Context, arg HideRSSArticleParams) error {
+	_, err := q.db.ExecContext(ctx, hideRSSArticle, arg.FeedUid, arg.ID)
+	return err
+}
+
 const insertRSSArticle = `-- name: InsertRSSArticle :exec
 INSERT OR IGNORE INTO rss_articles
     (feed_uid, id, seq, title, date, torrent_url, link, description, author, category, is_read)
@@ -98,7 +112,7 @@ func (q *Queries) InsertRSSFolder(ctx context.Context, path string) error {
 }
 
 const listRSSArticles = `-- name: ListRSSArticles :many
-SELECT feed_uid, id, seq, title, date, torrent_url, link, description, author, category, is_read FROM rss_articles ORDER BY feed_uid, seq
+SELECT feed_uid, id, seq, title, date, torrent_url, link, description, author, category, is_read, hidden FROM rss_articles ORDER BY feed_uid, seq
 `
 
 func (q *Queries) ListRSSArticles(ctx context.Context) ([]RssArticle, error) {
@@ -122,6 +136,7 @@ func (q *Queries) ListRSSArticles(ctx context.Context) ([]RssArticle, error) {
 			&i.Author,
 			&i.Category,
 			&i.IsRead,
+			&i.Hidden,
 		); err != nil {
 			return nil, err
 		}

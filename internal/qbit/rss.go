@@ -347,10 +347,7 @@ func (s *Server) rssMatchingArticles(w http.ResponseWriter, r *http.Request) {
 // fields fill it.
 func decodeRule(def map[string]json.RawMessage) rss.Rule {
 	r := rss.NewRule()
-	get := func(key string, v any) bool {
-		raw, ok := def[key]
-		return ok && json.Unmarshal(raw, v) == nil
-	}
+	get := func(key string, v any) bool { return getJSON(def, key, v) }
 	var b bool
 	var n float64
 	var str string
@@ -411,9 +408,24 @@ func decodeRule(def map[string]json.RawMessage) rss.Rule {
 	return r
 }
 
+// getJSON decodes a field into v and reports whether it was there with a
+// value of the right type. null counts as absent: decoding it would leave
+// v as it was.
+func getJSON(obj map[string]json.RawMessage, key string, v any) bool {
+	raw, ok := obj[key]
+	return ok && !isNull(raw) && json.Unmarshal(raw, v) == nil
+}
+
+func isNull(raw json.RawMessage) bool {
+	return bytes.Equal(bytes.TrimSpace(raw), []byte("null"))
+}
+
 // stringList reads an array of strings, or a single string as a one-item
-// list.
+// list; anything else is an empty list.
 func stringList(raw json.RawMessage) []string {
+	if len(raw) == 0 || isNull(raw) {
+		return []string{}
+	}
 	var one string
 	if json.Unmarshal(raw, &one) == nil {
 		return []string{one}
@@ -456,10 +468,7 @@ var (
 
 func decodeTorrentParams(p map[string]json.RawMessage) rss.AddOptions {
 	o := rss.NewRule().Add
-	get := func(key string, v any) bool {
-		raw, ok := p[key]
-		return ok && json.Unmarshal(raw, v) == nil
-	}
+	get := func(key string, v any) bool { return getJSON(p, key, v) }
 	var str string
 	var b bool
 	var n float64
