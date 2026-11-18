@@ -296,9 +296,35 @@ func (m *managed) wanted() (size, done int64) {
 	return size, done
 }
 
+// complete reports whether every wanted piece is downloaded and has
+// passed its hash check. anacrolix's byte counts include chunks written
+// but not yet verified, so they alone would call a torrent complete while
+// its last pieces are still being checked, and a move or an import then
+// could take unfinished files.
 func (m *managed) complete() bool {
 	size, done := m.wanted()
-	return m.info != nil && done >= size
+	if m.info == nil || done < size {
+		return false
+	}
+	if m.t == nil || m.t.Info() == nil {
+		// Stopped: the counts come from the piece completion store, which
+		// only holds verified pieces.
+		return true
+	}
+	if m.filePrio == nil {
+		return m.t.Complete().Bool()
+	}
+	for _, f := range m.t.Files() {
+		if f.Priority() == types.PiecePriorityNone {
+			continue
+		}
+		for i := f.BeginPieceIndex(); i < f.EndPieceIndex(); i++ {
+			if !m.t.PieceState(i).Complete {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func (e *Engine) statusLocked(m *managed) *Torrent {
@@ -326,7 +352,12 @@ func (e *Engine) statusLocked(m *managed) *Torrent {
 		st.Private = m.info.Private != nil && *m.info.Private
 		st.ContentPath, st.RootPath = contentAndRoot(r.SavePath, m.pathsOf().relativePaths(m.info))
 		st.Size, st.Completed = m.wanted()
-		st.Complete = st.Completed >= st.Size
+		st.Complete = m.complete()
+		if !st.Complete && st.Size > 0 && st.Completed >= st.Size {
+			// Every chunk is written but the last pieces are still being
+			// checked: not 100% yet.
+			st.Completed = st.Size - 1
+		}
 		if st.Size > 0 {
 			st.Progress = float64(st.Completed) / float64(st.Size)
 		} else {
