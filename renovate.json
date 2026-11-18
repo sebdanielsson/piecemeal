@@ -33,6 +33,16 @@
         "typescript"
       ],
       "allowedVersions": "<6"
+    },
+    {
+      "description": "website/pnpm-workspace.yaml overrides pin patched releases of build-time dependencies that Blume's dependencies hold back; a newer major would break them. Drop each override once its dependent updates.",
+      "matchFileNames": [
+        "website/pnpm-workspace.yaml"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "enabled": false
     }
   ]
 }
