@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -128,7 +127,8 @@ func (a *API) registerSystem() {
 			if _, err := a.Settings.Set(ctx, values); err != nil {
 				return nil, apiError(err)
 			}
-			a.Auth.Audit(ctx, actor(ctx), "transfer.update", fmt.Sprint(values))
+			detail, _ := json.Marshal(values)
+			a.Auth.Audit(ctx, actor(ctx), "transfer.update", string(detail))
 		}
 		return &transferOutput{Body: a.Engine.Transfer()}, nil
 	})

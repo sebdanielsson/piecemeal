@@ -391,7 +391,9 @@ func (s *Service) CreateAPIKey(ctx context.Context, by *Principal, name string, 
 		return APIKey{}, "", fmt.Errorf("create API key: %w", err)
 	}
 	s.audit(ctx, by.Username, "apiKey.create", fmt.Sprintf("id=%d name=%q scope=%s", k.ID, name, scope))
-	return apiKeyFrom(k), secret, nil
+	key := apiKeyFrom(k)
+	key.Username = by.Username
+	return key, secret, nil
 }
 
 // ListAPIKeys lists keys: every key for admins, otherwise the caller's own.
