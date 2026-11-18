@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/sebdanielsson/piecemeal/compare/v0.3.0...v0.4.0) (2026-11-18)
+
+
+### Features
+
+* full qBittorrent WebAPI and Phase 5 engine features ([#18](https://github.com/sebdanielsson/piecemeal/issues/18)) ([2cf561f](https://github.com/sebdanielsson/piecemeal/commit/2cf561fad74f2af7485e8d89e89e59e7ea0fd6d2))
+
 ## [0.3.0](https://github.com/sebdanielsson/piecemeal/compare/v0.2.0...v0.3.0) (2026-11-18)
 
 
