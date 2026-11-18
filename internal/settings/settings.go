@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	"github.com/sebdanielsson/piecemeal/internal/store"
@@ -59,6 +60,27 @@ type Settings struct {
 	SeedingTimeLimit         int64   `json:"seedingTimeLimit" doc:"Stop seeding after this many minutes, -1 for unlimited."`
 	InactiveSeedingTimeLimit int64   `json:"inactiveSeedingTimeLimit" doc:"Stop seeding after this many minutes without upload, -1 for unlimited."`
 	SeedGoalAction           string  `json:"seedGoalAction" enum:"stop,remove,removeWithData" doc:"What to do once a torrent reaches a seeding goal."`
+
+	// Queueing
+	QueueingEnabled       bool  `json:"queueingEnabled" doc:"Run only a limited number of torrents at a time; the rest wait in the queue."`
+	MaxActiveDownloads    int   `json:"maxActiveDownloads" minimum:"-1" doc:"Torrents downloading at once, -1 for unlimited."`
+	MaxActiveUploads      int   `json:"maxActiveUploads" minimum:"-1" doc:"Torrents seeding at once, -1 for unlimited."`
+	MaxActiveTorrents     int   `json:"maxActiveTorrents" minimum:"-1" doc:"Torrents running at once, -1 for unlimited."`
+	DontCountSlowTorrents bool  `json:"dontCountSlowTorrents" doc:"Slow torrents don't count toward the limits."`
+	SlowDownloadRate      int64 `json:"slowDownloadRate" minimum:"0" doc:"A torrent below this download rate, in bytes per second, is slow."`
+	SlowUploadRate        int64 `json:"slowUploadRate" minimum:"0" doc:"A torrent below this upload rate, in bytes per second, is slow."`
+	SlowTorrentTime       int64 `json:"slowTorrentTime" minimum:"0" doc:"Seconds a torrent must stay below the slow rates to count as slow."`
+
+	// IP filter
+	IPFilterEnabled bool   `json:"ipFilterEnabled" doc:"Refuse peers in the ranges of the IP filter file."`
+	IPFilterPath    string `json:"ipFilterPath" doc:"An IP filter file: eMule .dat, PeerGuardian .p2p, or one IP address or CIDR range per line."`
+	BannedIPs       string `json:"bannedIPs" doc:"Peers to refuse: IP addresses or CIDR ranges, one per line."`
+
+	// Alternative speed schedule
+	AltSpeedSchedule     bool   `json:"altSpeedSchedule" doc:"Turn the alternative limits on and off on a schedule."`
+	AltSpeedScheduleFrom string `json:"altSpeedScheduleFrom" pattern:"^([01][0-9]|2[0-3]):[0-5][0-9]$" doc:"When the alternative limits start, HH:MM local time."`
+	AltSpeedScheduleTo   string `json:"altSpeedScheduleTo" pattern:"^([01][0-9]|2[0-3]):[0-5][0-9]$" doc:"When they end, HH:MM local time; earlier than the start means the next day."`
+	AltSpeedScheduleDays string `json:"altSpeedScheduleDays" enum:"everyDay,weekdays,weekends,monday,tuesday,wednesday,thursday,friday,saturday,sunday" doc:"The days the schedule applies, by the day it starts."`
 }
 
 // Defaults returns the built-in defaults. defaultSavePath is the configured
@@ -77,6 +99,15 @@ func Defaults(defaultSavePath string) Settings {
 		SeedingTimeLimit:         -1,
 		InactiveSeedingTimeLimit: -1,
 		SeedGoalAction:           "stop",
+		MaxActiveDownloads:       3,
+		MaxActiveUploads:         3,
+		MaxActiveTorrents:        5,
+		SlowDownloadRate:         2 << 10,
+		SlowUploadRate:           2 << 10,
+		SlowTorrentTime:          60,
+		AltSpeedScheduleFrom:     "08:00",
+		AltSpeedScheduleTo:       "20:00",
+		AltSpeedScheduleDays:     "everyDay",
 	}
 }
 
@@ -114,6 +145,24 @@ func (s Settings) Validate() error {
 	}
 	if !slices.Contains([]string{"stop", "remove", "removeWithData"}, s.SeedGoalAction) {
 		errs = append(errs, errors.New("seedGoalAction: must be stop, remove or removeWithData"))
+	}
+	for name, v := range map[string]int{
+		"maxActiveDownloads": s.MaxActiveDownloads, "maxActiveUploads": s.MaxActiveUploads, "maxActiveTorrents": s.MaxActiveTorrents,
+	} {
+		if v < -1 {
+			errs = append(errs, fmt.Errorf("%s: must be -1 or at least 0", name))
+		}
+	}
+	if s.SlowDownloadRate < 0 || s.SlowUploadRate < 0 || s.SlowTorrentTime < 0 {
+		errs = append(errs, errors.New("slow torrent thresholds: must not be negative"))
+	}
+	for name, v := range map[string]string{"altSpeedScheduleFrom": s.AltSpeedScheduleFrom, "altSpeedScheduleTo": s.AltSpeedScheduleTo} {
+		if _, err := ParseClock(v); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", name, err))
+		}
+	}
+	if !slices.Contains(scheduleDays, s.AltSpeedScheduleDays) {
+		errs = append(errs, errors.New("altSpeedScheduleDays: unknown value"))
 	}
 	return errors.Join(errs...)
 }
@@ -371,4 +420,55 @@ func setFromString(v reflect.Value, s string) error {
 		return fmt.Errorf("unsupported setting type %s", v.Kind())
 	}
 	return nil
+}
+
+var scheduleDays = []string{
+	"everyDay", "weekdays", "weekends", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+}
+
+// ParseClock parses HH:MM into minutes after midnight.
+func ParseClock(s string) (int, error) {
+	t, err := time.Parse("15:04", s)
+	if err != nil {
+		return 0, fmt.Errorf("%q is not HH:MM", s)
+	}
+	return t.Hour()*60 + t.Minute(), nil
+}
+
+// InAltSpeedWindow reports whether the alternative speed schedule is on at
+// now, in now's location.
+func (s Settings) InAltSpeedWindow(now time.Time) bool {
+	from, err1 := ParseClock(s.AltSpeedScheduleFrom)
+	to, err2 := ParseClock(s.AltSpeedScheduleTo)
+	if err1 != nil || err2 != nil || from == to {
+		return false
+	}
+	minute := now.Hour()*60 + now.Minute()
+	// The window belongs to the day it starts on: after midnight, an
+	// overnight window is yesterday's.
+	day := now.Weekday()
+	var in bool
+	switch {
+	case from < to:
+		in = minute >= from && minute < to
+	case minute >= from:
+		in = true
+	case minute < to:
+		in = true
+		day = (day + 6) % 7
+	}
+	return in && dayMatches(s.AltSpeedScheduleDays, day)
+}
+
+func dayMatches(days string, d time.Weekday) bool {
+	switch days {
+	case "everyDay":
+		return true
+	case "weekdays":
+		return d >= time.Monday && d <= time.Friday
+	case "weekends":
+		return d == time.Saturday || d == time.Sunday
+	default:
+		return strings.EqualFold(days, d.String())
+	}
 }

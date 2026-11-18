@@ -2,6 +2,11 @@ version: "2"
 
 linters:
   default: standard
+  settings:
+    misspell:
+      # qBittorrent's API field names.
+      ignore-rules:
+        - alltime
   enable:
     - bodyclose
     - errorlint

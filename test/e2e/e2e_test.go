@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/cookiejar"
+	"net/url"
 	"os"
 	"os/exec"
 	"regexp"
@@ -335,6 +336,13 @@ func TestContractQBittorrent(t *testing.T) {
 		shape bool
 		// required keys the *arrs read, which piecemeal must have.
 		required []string
+		// differs is why piecemeal deliberately answers differently; the
+		// difference is logged, not failed.
+		differs string
+		// sub compares the shape of this field of the response instead.
+		sub string
+		// same compares the bodies as text.
+		same bool
 	}
 	const magnet = "magnet:?xt=urn:btih:5555555555555555555555555555555555555555&dn=contract"
 	calls := []call{
@@ -364,6 +372,76 @@ func TestContractQBittorrent(t *testing.T) {
 		{name: "addTags", method: http.MethodPost, path: "/torrents/addTags", form: "hashes=5555555555555555555555555555555555555555&tags=a,b"},
 		{name: "setForceStart", method: http.MethodPost, path: "/torrents/setForceStart", form: "hashes=5555555555555555555555555555555555555555&value=false"},
 		{name: "setCategory missing", method: http.MethodPost, path: "/torrents/setCategory", form: "hashes=5555555555555555555555555555555555555555&category=missing"},
+		// Phase 4: what VueTorrent and qbit_manage use.
+		{name: "maindata", method: http.MethodGet, path: "/sync/maindata?rid=0", shape: true},
+		{name: "maindata server_state", method: http.MethodGet, path: "/sync/maindata?rid=0", shape: true, sub: "server_state"},
+		{name: "maindata torrents", method: http.MethodGet, path: "/sync/maindata?rid=0", shape: true, sub: "torrents"},
+		{name: "torrentPeers", method: http.MethodGet, path: "/sync/torrentPeers?rid=0&hash=5555555555555555555555555555555555555555", shape: true},
+		{name: "info by POST", method: http.MethodPost, path: "/torrents/info", form: "category=contract"},
+		{name: "addTags by GET", method: http.MethodGet, path: "/torrents/addTags?hashes=all&tags=x"},
+		{name: "count", method: http.MethodGet, path: "/torrents/count", same: true},
+		{name: "transfer info", method: http.MethodGet, path: "/transfer/info", shape: true},
+		{name: "setDownloadLimit", method: http.MethodPost, path: "/transfer/setDownloadLimit", form: "limit=5000"},
+		{name: "downloadLimit rounded", method: http.MethodGet, path: "/transfer/downloadLimit", same: true},
+		{name: "setSpeedLimits", method: http.MethodPost, path: "/transfer/setSpeedLimits", form: "dl_limit=0&up_limit=0&alt_dl_limit=10240&alt_up_limit=10240"},
+		{name: "getSpeedLimits", method: http.MethodGet, path: "/transfer/getSpeedLimits", same: true},
+		{name: "setSpeedLimitsMode bad", method: http.MethodPost, path: "/transfer/setSpeedLimitsMode", form: "mode=2"},
+		{name: "setPreferences flags", method: http.MethodPost, path: "/app/setPreferences", form: `json={"max_ratio_act":0,"max_ratio_enabled":false,"max_seeding_time_enabled":false,"max_inactive_seeding_time_enabled":false}`},
+		{name: "setPreferences bad json", method: http.MethodPost, path: "/app/setPreferences", form: "json=nope"},
+		{name: "processInfo", method: http.MethodGet, path: "/app/processInfo", shape: true},
+		{name: "buildInfo", method: http.MethodGet, path: "/app/buildInfo", shape: true},
+		{name: "getFreeSpaceAtPath", method: http.MethodGet, path: "/app/getFreeSpaceAtPath?path=/downloads"},
+		{name: "setCookies", method: http.MethodPost, path: "/app/setCookies", form: "cookies=[]"},
+		{name: "cookies", method: http.MethodGet, path: "/app/cookies", same: true},
+		{name: "clientdata store", method: http.MethodPost, path: "/clientdata/store", form: `data={"contract":{"a":[1]}}`},
+		{name: "clientdata load", method: http.MethodGet, path: "/clientdata/load?keys=%5B%22contract%22%5D", same: true},
+		{name: "clientdata bad", method: http.MethodPost, path: "/clientdata/store", form: "data=[1]"},
+		{name: "log main", method: http.MethodGet, path: "/log/main?last_known_id=-1", shape: true},
+		{name: "addTrackers", method: http.MethodPost, path: "/torrents/addTrackers", form: "hash=5555555555555555555555555555555555555555&urls=udp://tracker.invalid:1337"},
+		{name: "trackers", method: http.MethodGet, path: "/torrents/trackers?hash=5555555555555555555555555555555555555555", shape: true},
+		{name: "editTracker missing", method: http.MethodPost, path: "/torrents/editTracker", form: "hash=5555555555555555555555555555555555555555&url=udp://none.invalid:1&newUrl=udp://other.invalid:1"},
+		{name: "removeTrackers encoded", method: http.MethodPost, path: "/torrents/removeTrackers", form: "hash=5555555555555555555555555555555555555555&urls=" + url.QueryEscape(url.QueryEscape("udp://tracker.invalid:1337"))},
+		{name: "webseeds", method: http.MethodGet, path: "/torrents/webseeds?hash=5555555555555555555555555555555555555555", same: true},
+		{name: "setTags", method: http.MethodPost, path: "/torrents/setTags", form: "hashes=5555555555555555555555555555555555555555&tags=c"},
+		{name: "export without metadata", method: http.MethodGet, path: "/torrents/export?hash=5555555555555555555555555555555555555555"},
+		{name: "pieceHashes without metadata", method: http.MethodGet, path: "/torrents/pieceHashes?hash=5555555555555555555555555555555555555555", same: true},
+		{name: "SSLParameters", method: http.MethodGet, path: "/torrents/SSLParameters?hash=5555555555555555555555555555555555555555"},
+		{name: "downloadLimit per torrent", method: http.MethodGet, path: "/torrents/downloadLimit?hashes=5555555555555555555555555555555555555555", same: true},
+		{name: "setSpeedLimitsMode 2", method: http.MethodPost, path: "/transfer/setSpeedLimitsMode", form: "mode=2"},
+		{name: "speedLimitsMode after 2", method: http.MethodGet, path: "/transfer/speedLimitsMode", same: true},
+		{name: "toggleSpeedLimitsMode", method: http.MethodPost, path: "/transfer/toggleSpeedLimitsMode"},
+		{name: "speedLimitsMode after toggle", method: http.MethodGet, path: "/transfer/speedLimitsMode", same: true},
+		{name: "banPeers", method: http.MethodPost, path: "/transfer/banPeers", form: "peers=203.0.113.9:6881"},
+		{name: "setPreferences no json", method: http.MethodPost, path: "/app/setPreferences"},
+		{name: "setPreferences queueing", method: http.MethodPost, path: "/app/setPreferences", form: `json={"queueing_enabled":true}`},
+		{name: "topPrio", method: http.MethodPost, path: "/torrents/topPrio", form: "hashes=5555555555555555555555555555555555555555"},
+		{name: "stop", method: http.MethodPost, path: "/torrents/stop", form: "hashes=5555555555555555555555555555555555555555"},
+		{name: "start", method: http.MethodPost, path: "/torrents/start", form: "hashes=5555555555555555555555555555555555555555"},
+		{name: "reannounce", method: http.MethodPost, path: "/torrents/reannounce", form: "hashes=5555555555555555555555555555555555555555"},
+		{name: "setShareLimits", method: http.MethodPost, path: "/torrents/setShareLimits", form: "hashes=5555555555555555555555555555555555555555&ratioLimit=-2&seedingTimeLimit=-2&inactiveSeedingTimeLimit=-2&shareLimitAction=Default&shareLimitsMode=Default"},
+		{name: "setShareLimits without 5.x fields", method: http.MethodPost, path: "/torrents/setShareLimits", form: "hashes=5555555555555555555555555555555555555555&ratioLimit=-2&seedingTimeLimit=-2&inactiveSeedingTimeLimit=-2", differs: "accepted, for clients older than qBittorrent 5"},
+		{name: "setDownloadLimit per torrent", method: http.MethodPost, path: "/torrents/setDownloadLimit", form: "hashes=5555555555555555555555555555555555555555&limit=0"},
+		{name: "toggleSequentialDownload", method: http.MethodPost, path: "/torrents/toggleSequentialDownload", form: "hashes=5555555555555555555555555555555555555555"},
+		{name: "toggleFirstLastPiecePrio", method: http.MethodPost, path: "/torrents/toggleFirstLastPiecePrio", form: "hashes=5555555555555555555555555555555555555555"},
+		{name: "rename", method: http.MethodPost, path: "/torrents/rename", form: "hash=5555555555555555555555555555555555555555&name=renamed"},
+		{name: "removeTags", method: http.MethodPost, path: "/torrents/removeTags", form: "hashes=5555555555555555555555555555555555555555&tags=c"},
+		{name: "createTags", method: http.MethodPost, path: "/torrents/createTags", form: "tags=x,y"},
+		{name: "deleteTags", method: http.MethodPost, path: "/torrents/deleteTags", form: "tags=x,y"},
+		{name: "editCategory", method: http.MethodPost, path: "/torrents/editCategory", form: "category=contract&savePath="},
+		{name: "editCategory missing", method: http.MethodPost, path: "/torrents/editCategory", form: "category=missing&savePath="},
+		{name: "createCategory other", method: http.MethodPost, path: "/torrents/createCategory", form: "category=other"},
+		{name: "removeCategories", method: http.MethodPost, path: "/torrents/removeCategories", form: "categories=other"},
+		{name: "setAutoManagement", method: http.MethodPost, path: "/torrents/setAutoManagement", form: "hashes=5555555555555555555555555555555555555555&enable=false"},
+		{name: "addWebSeeds", method: http.MethodPost, path: "/torrents/addWebSeeds", form: "hash=5555555555555555555555555555555555555555&urls=https://ws.invalid/a"},
+		{name: "removeWebSeeds", method: http.MethodPost, path: "/torrents/removeWebSeeds", form: "hash=5555555555555555555555555555555555555555&urls=https://ws.invalid/a"},
+		{name: "addPeers", method: http.MethodPost, path: "/torrents/addPeers", form: "hashes=5555555555555555555555555555555555555555&peers=203.0.113.1:6881|bad", same: true},
+		{name: "addPeers invalid", method: http.MethodPost, path: "/torrents/addPeers", form: "hashes=5555555555555555555555555555555555555555&peers=nope"},
+		{name: "filePrio without metadata", method: http.MethodPost, path: "/torrents/filePrio", form: "hash=5555555555555555555555555555555555555555&id=0&priority=1"},
+		{name: "renameFile without metadata", method: http.MethodPost, path: "/torrents/renameFile", form: "hash=5555555555555555555555555555555555555555&oldPath=a&newPath=b"},
+		{name: "setLocation", method: http.MethodPost, path: "/torrents/setLocation", form: "hashes=5555555555555555555555555555555555555555&location=/downloads/moved", differs: "qBittorrent's container can't write /downloads"},
+		{name: "setLocation empty", method: http.MethodPost, path: "/torrents/setLocation", form: "hashes=5555555555555555555555555555555555555555&location="},
+		{name: "rotateAPIKey", method: http.MethodPost, path: "/app/rotateAPIKey", shape: true},
+		{name: "deleteAPIKey", method: http.MethodPost, path: "/app/deleteAPIKey"},
 		{name: "delete", method: http.MethodPost, path: "/torrents/delete", form: "hashes=5555555555555555555555555555555555555555&deleteFiles=false"},
 		{name: "unknown endpoint", method: http.MethodGet, path: "/app/nope"},
 	}
@@ -377,6 +455,10 @@ func TestContractQBittorrent(t *testing.T) {
 		qbStatus, qbText := doForm(t, qb, c.method, c.path, qbForm, &qbBody)
 		pmStatus, pmText := doForm(t, pm, c.method, c.path, pmForm, &pmBody)
 		t.Logf("%s: qBittorrent %d %.120q, piecemeal %d %.120q", c.name, qbStatus, qbText, pmStatus, pmText)
+		if c.differs != "" {
+			t.Logf("%s: differs on purpose: %s", c.name, c.differs)
+			continue
+		}
 		if qbStatus != pmStatus {
 			failures = append(failures, fmt.Sprintf("%s: status qBittorrent %d, piecemeal %d", c.name, qbStatus, pmStatus))
 		}
@@ -384,8 +466,14 @@ func TestContractQBittorrent(t *testing.T) {
 			// qBittorrent adds magnets in the background; give it a moment.
 			time.Sleep(2 * time.Second)
 		}
+		if c.same && !sameJSON(qbText, pmText) {
+			failures = append(failures, fmt.Sprintf("%s: body qBittorrent %q, piecemeal %q", c.name, qbText, pmText))
+		}
 		if !c.shape {
 			continue
+		}
+		if c.sub != "" {
+			qbBody, pmBody = field(qbBody, c.sub), field(pmBody, c.sub)
 		}
 		qbShape, pmShape := shape(qbBody), shape(pmBody)
 		for _, k := range c.required {
@@ -430,6 +518,26 @@ func doForm(t *testing.T, c *client, method, path, form string, out *any) (int, 
 		*out = nil
 	}
 	return status, string(raw)
+}
+
+// sameJSON compares two bodies as JSON values, or as text when they
+// aren't JSON.
+func sameJSON(a, b string) bool {
+	var va, vb any
+	if json.Unmarshal([]byte(a), &va) != nil || json.Unmarshal([]byte(b), &vb) != nil {
+		return strings.TrimSpace(a) == strings.TrimSpace(b)
+	}
+	ja, _ := json.Marshal(va)
+	jb, _ := json.Marshal(vb)
+	return string(ja) == string(jb)
+}
+
+// field is a field of a JSON object, or nil.
+func field(v any, name string) any {
+	if m, ok := v.(map[string]any); ok {
+		return m[name]
+	}
+	return nil
 }
 
 // shape flattens a JSON object, or the first element of an array of
@@ -487,4 +595,39 @@ func qbittorrentPassword(t *testing.T) string {
 		return false
 	})
 	return pw
+}
+
+// TestVueTorrent checks that piecemeal serves VueTorrent at /qbittorrent/
+// and the qBittorrent API under it, which VueTorrent calls relative to its
+// own location.
+func TestVueTorrent(t *testing.T) {
+	piecemeal(t)
+	resp, err := http.Get(piecemealURL + "/qbittorrent/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || !strings.Contains(strings.ToLower(string(body)), "vuetorrent") {
+		t.Fatalf("GET /qbittorrent/: %d %.200q", resp.StatusCode, body)
+	}
+	vt := newClient(t, piecemealURL+"/qbittorrent/api/v2", nil)
+	if s, _, _ := vt.raw(http.MethodPost, "/auth/login", "username=admin&password="+url.QueryEscape(password())); s != http.StatusNoContent {
+		t.Fatalf("login: %d", s)
+	}
+	var version string
+	if s, raw, _ := vt.raw(http.MethodGet, "/app/version", nil); s != http.StatusOK {
+		t.Fatalf("version: %d", s)
+	} else {
+		version = string(raw)
+	}
+	var main map[string]any
+	if s := vt.do(http.MethodGet, "/sync/maindata?rid=0", nil, &main); s != http.StatusOK || main["full_update"] != true {
+		t.Fatalf("maindata: %d %v", s, main)
+	}
+	var prefs map[string]any
+	if s := vt.do(http.MethodGet, "/app/preferences", nil, &prefs); s != http.StatusOK || prefs["alternative_webui_enabled"] != true {
+		t.Fatalf("preferences: %d alternative_webui_enabled=%v", s, prefs["alternative_webui_enabled"])
+	}
+	t.Logf("VueTorrent sees qBittorrent %s", version)
 }

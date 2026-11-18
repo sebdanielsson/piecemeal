@@ -22,6 +22,7 @@ import (
 // Fetcher downloads torrent files.
 type Fetcher struct {
 	client  *http.Client
+	jar     *jar
 	maxSize int64
 }
 
@@ -59,9 +60,10 @@ func New(allowed []netip.Prefix) *Fetcher {
 		// Proxies would make the address check meaningless.
 		Proxy: nil,
 	}
-	f := &Fetcher{maxSize: 16 << 20}
+	f := &Fetcher{maxSize: 16 << 20, jar: &jar{now: time.Now}}
 	f.client = &http.Client{
 		Transport: transport,
+		Jar:       f.jar,
 		Timeout:   30 * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 5 {

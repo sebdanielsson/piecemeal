@@ -78,6 +78,7 @@ type AddTorrentRequest struct {
 	DownloadLimit            int64    `json:"downloadLimit,omitempty" minimum:"0"`
 	UploadLimit              int64    `json:"uploadLimit,omitempty" minimum:"0"`
 	SkipChecking             bool     `json:"skipChecking,omitempty" doc:"Trust data already on disk instead of verifying it."`
+	ContentLayout            string   `json:"contentLayout,omitempty" enum:"Original,Subfolder,NoSubfolder" doc:"Original keeps the torrent's own layout, Subfolder puts a single file in a folder, NoSubfolder drops the top folder."`
 }
 
 type addTorrentInput struct{ Body AddTorrentRequest }
@@ -91,6 +92,7 @@ type addTorrentOutput struct {
 // are.
 type UpdateTorrentRequest struct {
 	Name                     *string   `json:"name,omitempty"`
+	SavePath                 *string   `json:"savePath,omitempty" doc:"Moves the data there in the background; the state is moving until it's done."`
 	Category                 *string   `json:"category,omitempty" doc:"Empty removes the category."`
 	Tags                     *[]string `json:"tags,omitempty" doc:"Replaces the torrent's tags."`
 	Stopped                  *bool     `json:"stopped,omitempty"`
@@ -117,8 +119,9 @@ type deleteTorrentInput struct {
 // BulkAction applies an action to several torrents.
 type BulkAction struct {
 	Hashes     []string `json:"hashes" minItems:"1" doc:"Infohashes, or [\"all\"]."`
-	Action     string   `json:"action" enum:"start,stop,forceStart,recheck,reannounce,remove,setCategory,addTags,removeTags"`
+	Action     string   `json:"action" enum:"start,stop,forceStart,recheck,reannounce,remove,setCategory,addTags,removeTags,move,queueTop,queueBottom,queueUp,queueDown"`
 	DeleteData bool     `json:"deleteData,omitempty" doc:"With remove: also delete the files."`
+	SavePath   string   `json:"savePath,omitempty" doc:"With move: where to move the data."`
 	Category   string   `json:"category,omitempty" doc:"With setCategory; empty removes the category."`
 	Tags       []string `json:"tags,omitempty" doc:"With addTags and removeTags; removeTags without tags removes all."`
 }
@@ -169,6 +172,7 @@ type piecesOutput struct {
 
 func (a *API) registerTorrents() {
 	const tag = "Torrents"
+	defer a.registerEditing()
 	huma.Register(a.huma, a.operation(http.MethodGet, "/torrents", "listTorrents", "List torrents", tag, accessUser),
 		func(_ context.Context, in *listTorrentsInput) (*listTorrentsOutput, error) {
 			return a.listTorrents(in)
@@ -414,7 +418,7 @@ func (a *API) addTorrent(ctx context.Context, req AddTorrentRequest) (*addTorren
 		Tags: req.Tags, Stopped: req.Stopped, Sequential: req.Sequential, FirstLastPiece: req.FirstLastPiece,
 		Name: req.Name, RatioLimit: req.RatioLimit, SeedingTimeLimit: req.SeedingTimeLimit,
 		InactiveSeedingTimeLimit: req.InactiveSeedingTimeLimit, DownloadLimit: req.DownloadLimit,
-		UploadLimit: req.UploadLimit, SkipChecking: req.SkipChecking,
+		UploadLimit: req.UploadLimit, SkipChecking: req.SkipChecking, ContentLayout: req.ContentLayout,
 	}
 	if req.URL != "" {
 		res, err := a.Fetcher.Get(ctx, req.URL)
@@ -504,6 +508,11 @@ func (a *API) updateTorrent(ctx context.Context, hash string, u UpdateTorrentReq
 	if u.Forced != nil {
 		errs = append(errs, e.SetForced(ctx, *u.Forced, hash))
 	}
+	if u.SavePath != nil {
+		if st, _ := e.Get(hash); st.SavePath != *u.SavePath {
+			errs = append(errs, e.Move(ctx, hash, *u.SavePath))
+		}
+	}
 	if u.Stopped != nil {
 		if *u.Stopped {
 			errs = append(errs, e.Stop(ctx, hash))
@@ -536,6 +545,23 @@ func (a *API) bulk(ctx context.Context, b BulkAction) error {
 		return e.AddTags(ctx, b.Tags, h...)
 	case "removeTags":
 		return e.RemoveTags(ctx, b.Tags, h...)
+	case "move":
+		if len(h) == 1 && h[0] == "all" {
+			h = nil
+			for _, t := range e.List() {
+				h = append(h, t.Hash)
+			}
+		}
+		var errs []error
+		for _, hash := range h {
+			errs = append(errs, e.Move(ctx, hash, b.SavePath))
+		}
+		return errors.Join(errs...)
+	case "queueTop", "queueBottom", "queueUp", "queueDown":
+		if !a.Settings.Get().QueueingEnabled {
+			return fmt.Errorf("%w: queueing is off", engine.ErrInvalid)
+		}
+		return e.QueueMove(ctx, strings.ToLower(strings.TrimPrefix(b.Action, "queue")), h...)
 	default:
 		return fmt.Errorf("%w: unknown action %q", engine.ErrInvalid, b.Action)
 	}

@@ -2,6 +2,7 @@ package engine
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,6 +12,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"time"
@@ -40,6 +42,16 @@ type managed struct {
 	completed int64
 	// filePrio holds the per-file priorities, nil for all normal.
 	filePrio []Priority
+	// renames maps original file paths to renamed ones; see torrentPaths.
+	renames map[string]string
+	// trackers and webSeeds replace the torrent file's when set.
+	trackers [][]string
+	webSeeds []string
+	moving   bool
+	// queued: runnable but held back by the queue limits.
+	queued    bool
+	slow      bool
+	slowSince time.Time
 	// boosted holds the piece priorities applyPiecePrioritiesLocked set.
 	boosted map[int]types.PiecePriority
 	// seqFrom is where the search for the next missing piece starts, for
@@ -61,9 +73,13 @@ type metaFields struct {
 	comment, createdBy, tracker string
 	createdAt                   int64
 	trackers                    int
+	// announce is the torrent file's or magnet's announce list, parsed
+	// once.
+	announce [][]string
 }
 
 func (m *managed) setMagnetTrackers(al [][]string) {
+	m.meta.announce = al
 	if len(al) > 0 && len(al[0]) > 0 {
 		m.meta.tracker = al[0][0]
 	}
@@ -80,6 +96,7 @@ func (m *managed) setMetainfo(b []byte) {
 	}
 	m.meta = metaFields{comment: mi.Comment, createdBy: mi.CreatedBy, createdAt: mi.CreationDate}
 	al := mi.UpvertedAnnounceList()
+	m.meta.announce = al
 	if len(al) > 0 && len(al[0]) > 0 {
 		m.meta.tracker = al[0][0]
 	}
@@ -91,6 +108,32 @@ func (m *managed) setMetainfo(b []byte) {
 			m.info = &info
 		}
 	}
+}
+
+// jsonOrEmpty encodes v, or returns "" for nil. An empty, non-nil value
+// is kept: for trackers and web seeds it means all were removed.
+func jsonOrEmpty[T any](v T) string {
+	rv := reflect.ValueOf(v)
+	if !rv.IsValid() || rv.IsNil() {
+		return ""
+	}
+	b, _ := json.Marshal(v)
+	return string(b)
+}
+
+// loadOverrides decodes the record's JSON columns into the managed fields.
+func (m *managed) loadOverrides() error {
+	var errs []error
+	if m.rec.Trackers != "" {
+		errs = append(errs, json.Unmarshal([]byte(m.rec.Trackers), &m.trackers))
+	}
+	if m.rec.WebSeeds != "" {
+		errs = append(errs, json.Unmarshal([]byte(m.rec.WebSeeds), &m.webSeeds))
+	}
+	if m.rec.FilePaths != "" {
+		errs = append(errs, json.Unmarshal([]byte(m.rec.FilePaths), &m.renames))
+	}
+	return errors.Join(errs...)
 }
 
 func (m *managed) addCounters(down, up int64) {
@@ -126,6 +169,8 @@ func (m *managed) params() store.UpsertTorrentParams {
 		RatioLimit: r.RatioLimit, SeedingTimeLimit: r.SeedingTimeLimit,
 		InactiveSeedingTimeLimit: r.InactiveSeedingTimeLimit, DownloadLimit: r.DownloadLimit,
 		UploadLimit: r.UploadLimit, FilePriorities: prio, Error: r.Error,
+		Trackers: jsonOrEmpty(m.trackers), WebSeeds: jsonOrEmpty(m.webSeeds), FilePaths: jsonOrEmpty(m.renames),
+		ContentLayout: cmp.Or(r.ContentLayout, LayoutOriginal),
 	}
 }
 
@@ -177,6 +222,8 @@ type AddParams struct {
 	UploadLimit              int64
 	// SkipChecking trusts existing data instead of hashing it.
 	SkipChecking bool
+	// ContentLayout is Original (the default), Subfolder or NoSubfolder.
+	ContentLayout string
 }
 
 // ParseSource turns the body of an add request, a magnet URI or a .torrent
@@ -265,6 +312,9 @@ func (e *Engine) Add(ctx context.Context, p AddParams) (string, error) {
 	slices.Sort(tags)
 	tags = slices.Compact(tags)
 
+	if !validLayout(p.ContentLayout) {
+		return "", fmt.Errorf("%w: content layout %q", ErrInvalid, p.ContentLayout)
+	}
 	stopped := s.AddStopped
 	if p.Stopped != nil {
 		stopped = *p.Stopped
@@ -279,6 +329,7 @@ func (e *Engine) Add(ctx context.Context, p AddParams) (string, error) {
 			Category: p.Category, AddedAt: now, Stopped: stopped, Sequential: p.Sequential,
 			FirstLastPiece: p.FirstLastPiece, RatioLimit: -2, SeedingTimeLimit: -2,
 			InactiveSeedingTimeLimit: -2, DownloadLimit: p.DownloadLimit, UploadLimit: p.UploadLimit,
+			ContentLayout: cmp.Or(p.ContentLayout, LayoutOriginal),
 		},
 	}
 	if mib != nil {
@@ -323,11 +374,16 @@ func (e *Engine) Add(ctx context.Context, p AddParams) (string, error) {
 		}
 	}
 	e.torrents[ih] = m
-	if !stopped {
+	if p.SkipChecking && m.info != nil {
+		e.markCompleteLocked(m)
+	}
+	e.normalizeQueueLocked()
+	if !stopped && !s.QueueingEnabled {
 		if err := e.attachLocked(m, attachOpts{spec: spec, skipChecking: p.SkipChecking}); err != nil {
 			m.setError(err)
 		}
 	}
+	e.scheduleLocked(time.Now())
 	e.refreshLocked(m)
 	e.log.Info("torrent added", "hash", m.rec.InfoHash, "name", name, "savePath", savePath, "stopped", stopped)
 	if newTags {
@@ -343,6 +399,9 @@ type attachOpts struct {
 
 // attachLocked adds a stopped or newly loaded torrent to the client.
 func (e *Engine) attachLocked(m *managed, opts ...attachOpts) error {
+	if m.moving {
+		return fmt.Errorf("%w: the torrent is being moved", ErrInvalid)
+	}
 	var o attachOpts
 	if len(opts) > 0 {
 		o = opts[0]
@@ -367,7 +426,13 @@ func (e *Engine) attachLocked(m *managed, opts ...attachOpts) error {
 	spec.DisplayName = m.rec.Name
 	spec.Storage = e.storage
 	spec.DisableInitialPieceCheck = o.skipChecking
-	e.savePaths.Store(m.hash, m.rec.SavePath)
+	if m.trackers != nil {
+		spec.Trackers = m.trackers
+	}
+	if m.webSeeds != nil {
+		spec.Webseeds = m.webSeeds
+	}
+	e.recordPathsLocked(m)
 
 	t, _, err := e.client.AddTorrentSpec(spec)
 	if err != nil {
@@ -556,6 +621,7 @@ func (e *Engine) detachLocked(m *managed) {
 	t := m.t
 	m.t = nil
 	t.Drop()
+	e.forgetInfo(m.hash)
 }
 
 func (e *Engine) get(hash string) (*managed, error) {
@@ -614,13 +680,35 @@ func (e *Engine) each(ctx context.Context, hashes []string, fn func(m *managed) 
 
 // Start resumes stopped torrents.
 func (e *Engine) Start(ctx context.Context, hashes ...string) error {
-	return e.each(ctx, hashes, func(m *managed) error {
+	queueing := e.settings.Get().QueueingEnabled
+	err := e.each(ctx, hashes, func(m *managed) error {
 		m.rec.Stopped = false
 		if m.t != nil {
 			return nil
 		}
+		if queueing {
+			// The scheduler skips torrents in error: starting one retries
+			// it, as attachLocked does with queueing off.
+			m.rec.Error = ""
+			return nil
+		}
 		return e.attachLocked(m)
 	})
+	if queueing {
+		e.mu.Lock()
+		e.scheduleLocked(time.Now())
+		e.refreshLocked(e.allLocked()...)
+		e.mu.Unlock()
+	}
+	return err
+}
+
+func (e *Engine) allLocked() []*managed {
+	out := make([]*managed, 0, len(e.torrents))
+	for _, m := range e.torrents {
+		out = append(out, m)
+	}
+	return out
 }
 
 // Stop stops torrents: they leave the swarm, and keep their data and record.
@@ -628,6 +716,7 @@ func (e *Engine) Stop(ctx context.Context, hashes ...string) error {
 	return e.each(ctx, hashes, func(m *managed) error {
 		m.rec.Stopped = true
 		m.rec.Forced = false
+		m.queued = false
 		e.detachLocked(m)
 		return nil
 	})
@@ -859,12 +948,18 @@ func (e *Engine) Remove(ctx context.Context, deleteData bool, hashes ...string) 
 	}
 	var removals []removal
 	for _, m := range targets {
+		if m.moving {
+			e.mu.Unlock()
+			return fmt.Errorf("%w: %s is being moved", ErrInvalid, m.rec.InfoHash)
+		}
+	}
+	for _, m := range targets {
 		e.detachLocked(m)
 		delete(e.torrents, m.hash)
 		r := removal{hash: m.hash}
 		if deleteData && m.info != nil {
 			r.root = m.rec.SavePath
-			r.paths = contentFiles(m.rec.SavePath, m.info)
+			r.paths = contentFiles(m.rec.SavePath, m.pathsOf().relativePaths(m.info))
 			r.n = m.info.NumPieces()
 		}
 		removals = append(removals, r)
@@ -884,7 +979,7 @@ func (e *Engine) Remove(ctx context.Context, deleteData bool, hashes ...string) 
 		errs = append(errs, fmt.Errorf("delete torrents: %w", err))
 	}
 	for _, r := range removals {
-		e.savePaths.Delete(r.hash)
+		e.paths.Delete(r.hash)
 		if r.root != "" {
 			if err := removeContent(r.root, r.paths); err != nil {
 				errs = append(errs, err)
@@ -901,16 +996,13 @@ func (e *Engine) Remove(ctx context.Context, deleteData bool, hashes ...string) 
 	return errors.Join(errs...)
 }
 
-// contentFiles lists the paths a torrent's files are stored at, including
-// the .part names anacrolix uses for incomplete files.
-func contentFiles(savePath string, info *metainfo.Info) []string {
+// contentFiles lists the absolute paths of a torrent's files, from their
+// paths relative to the save path, including the .part names anacrolix
+// uses for incomplete files when part files are on.
+func contentFiles(savePath string, rel []string) []string {
 	var paths []string
-	for _, f := range info.UpvertedFiles() {
-		parts := []string{savePath}
-		if info.BestName() != metainfo.NoName {
-			parts = append(parts, info.BestName())
-		}
-		p := filepath.Join(append(parts, f.BestPath()...)...)
+	for _, r := range rel {
+		p := filepath.Join(savePath, filepath.FromSlash(r))
 		paths = append(paths, p, p+".part")
 	}
 	return paths
@@ -993,12 +1085,21 @@ func (e *Engine) loadTorrents(ctx context.Context) error {
 		} else if spec, err := torrent.TorrentSpecFromMagnetUri(r.Magnet); err == nil {
 			m.setMagnetTrackers(spec.Trackers)
 		}
-		e.savePaths.Store(ih, r.SavePath)
+		if err := m.loadOverrides(); err != nil {
+			e.log.Warn("ignoring a stored tracker, web seed or file path override", "hash", r.InfoHash, "error", err)
+		}
+		if m.trackers != nil {
+			announce := m.meta.announce
+			m.meta.tracker, m.meta.trackers = "", 0
+			m.setMagnetTrackers(m.trackers)
+			m.meta.announce = announce
+		}
+		e.recordPathsLocked(m)
 		e.torrents[ih] = m
 		if m.info != nil {
 			m.completed = e.completedFromStore(m)
 		}
-		if !r.Stopped {
+		if !r.Stopped && !e.settings.Get().QueueingEnabled {
 			if err := e.attachLocked(m); err != nil {
 				e.log.Error("starting torrent", "hash", r.InfoHash, "error", err)
 				m.setError(err)
@@ -1038,4 +1139,26 @@ func (e *Engine) AddPeers(ctx context.Context, addrs []string, hashes ...string)
 		}
 		return nil
 	})
+}
+
+// saveLocked writes a torrent's record now.
+func (e *Engine) saveLocked(m *managed) {
+	if err := e.store.UpsertTorrent(e.ctxOrBackground(), m.params()); err != nil {
+		e.log.Error("saving torrent", "hash", m.rec.InfoHash, "error", err)
+		return
+	}
+	m.dirty = false
+}
+
+// markCompleteLocked records every piece as complete without checking the
+// data: skip checking (qBittorrent's seed mode) trusts what's on disk, and
+// the torrent creator has just hashed it. anacrolix's own option only skips
+// the check, leaving the pieces unknown and so missing.
+func (e *Engine) markCompleteLocked(m *managed) {
+	for i := range m.info.NumPieces() {
+		if err := e.pc.Set(metainfo.PieceKey{InfoHash: m.hash, Index: i}, g.Some(true)); err != nil {
+			e.log.Warn("marking pieces complete", "hash", m.rec.InfoHash, "error", err)
+			return
+		}
+	}
 }

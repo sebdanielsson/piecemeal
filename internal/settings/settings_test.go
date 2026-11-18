@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/sebdanielsson/piecemeal/internal/store"
 )
@@ -98,5 +99,38 @@ func TestEmptyEnvIsUnset(t *testing.T) {
 	}
 	if len(m.Locked()) != 0 {
 		t.Fatalf("locked: %v", m.Locked())
+	}
+}
+
+func TestAltSpeedWindow(t *testing.T) {
+	at := func(day, clock string) time.Time {
+		tm, err := time.Parse("2006-01-02 15:04", day+" "+clock)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tm
+	}
+	// 2026-11-16 is a Monday.
+	for _, tc := range []struct {
+		from, to, days string
+		now            time.Time
+		want           bool
+	}{
+		{"08:00", "20:00", "everyDay", at("2026-11-16", "12:00"), true},
+		{"08:00", "20:00", "everyDay", at("2026-11-16", "20:00"), false},
+		{"22:00", "06:00", "everyDay", at("2026-11-16", "23:00"), true},
+		{"22:00", "06:00", "everyDay", at("2026-11-16", "05:59"), true},
+		{"22:00", "06:00", "everyDay", at("2026-11-16", "12:00"), false},
+		{"08:00", "20:00", "weekends", at("2026-11-16", "12:00"), false},
+		{"08:00", "20:00", "weekdays", at("2026-11-16", "12:00"), true},
+		// Friday night's window runs into Saturday morning: it is Friday's.
+		{"22:00", "06:00", "friday", at("2026-11-21", "03:00"), true},
+		{"22:00", "06:00", "saturday", at("2026-11-21", "03:00"), false},
+		{"08:00", "08:00", "everyDay", at("2026-11-16", "08:00"), false},
+	} {
+		s := Settings{AltSpeedScheduleFrom: tc.from, AltSpeedScheduleTo: tc.to, AltSpeedScheduleDays: tc.days}
+		if got := s.InAltSpeedWindow(tc.now); got != tc.want {
+			t.Errorf("%s-%s %s at %s: %v, want %v", tc.from, tc.to, tc.days, tc.now.Format("Mon 15:04"), got, tc.want)
+		}
 	}
 }

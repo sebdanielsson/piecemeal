@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { OptionSelect } from "@/components/form/option-select";
 import { formatBytes, formatLimit, formatRate } from "@/lib/format";
 import { useTransfer, useTransferHistory } from "@/lib/live/hooks";
-import { altSpeedGroup, speedGroup } from "../settings/groups";
+import { altSpeedGroup, scheduleGroup, speedGroup } from "../settings/groups";
 import { SettingsForm } from "../settings/settings-form";
 import { Page, PageSection } from "../shell/page";
 import { SpeedChart } from "./speed-chart";
@@ -77,7 +77,7 @@ export function TransferPage() {
           </dl>
         </PageSection>
       )}
-      <SettingsForm groups={[speedGroup, altSpeedGroup]} />
+      <SettingsForm groups={[speedGroup, altSpeedGroup, scheduleGroup]} />
     </Page>
   );
 }

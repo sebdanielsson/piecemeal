@@ -11,11 +11,7 @@ import (
 func (s *Server) categories(w http.ResponseWriter, _ *http.Request) {
 	out := map[string]any{}
 	for _, c := range s.engine.Categories() {
-		out[c.Name] = map[string]any{
-			"name": c.Name, "savePath": c.SavePath, "download_path": nil,
-			"ratio_limit": -2, "seeding_time_limit": -2, "inactive_seeding_time_limit": -2,
-			"share_limit_action": "Default", "share_limits_mode": "Default",
-		}
+		out[c.Name] = categoryObject(c)
 	}
 	writeJSON(w, out)
 }
@@ -53,7 +49,7 @@ func (s *Server) putCategory(w http.ResponseWriter, r *http.Request, create bool
 	case errors.Is(err, engine.ErrExists):
 		http.Error(w, "Category already exists", http.StatusConflict)
 	case errors.Is(err, engine.ErrNotFound):
-		http.Error(w, "Category does not exist", http.StatusConflict)
+		http.Error(w, "Category does not exist", http.StatusNotFound)
 	case errors.Is(err, engine.ErrInvalid), errors.Is(err, engine.ErrPathForbidden):
 		http.Error(w, err.Error(), http.StatusConflict)
 	case err != nil:
@@ -93,7 +89,7 @@ func (s *Server) setCategory(w http.ResponseWriter, r *http.Request) {
 	hs := s.known(hashes(r, "hashes"))
 	err := s.engine.SetCategory(r.Context(), r.FormValue("category"), hs...)
 	if errors.Is(err, engine.ErrNotFound) {
-		http.Error(w, "Category does not exist", http.StatusConflict)
+		http.Error(w, "Incorrect category name", http.StatusConflict)
 		return
 	}
 	if err != nil {

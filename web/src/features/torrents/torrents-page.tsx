@@ -63,6 +63,7 @@ import { useTorrentMap } from "@/lib/live/hooks";
 import { useTorrentAction } from "@/lib/mutations";
 import { sortTorrents } from "@/lib/sort";
 import { openAddDialog } from "./add-store";
+import { MoveDialog } from "./move-dialog";
 import { NewTagDialog } from "./new-tag-dialog";
 import { RemoveDialog } from "./remove-dialog";
 import { listFilterFrom, type ListSearch } from "./search";
@@ -221,6 +222,7 @@ export function TorrentsPage() {
 
   const [removeOpen, setRemoveOpen] = useState(false);
   const [newTagOpen, setNewTagOpen] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
   const action = useTorrentAction();
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -345,6 +347,7 @@ export function TorrentsPage() {
               torrents={selectedTorrents}
               onRemove={() => setRemoveOpen(true)}
               onNewTag={() => setNewTagOpen(true)}
+              onMove={() => setMoveOpen(true)}
             />
           ) : (
             <ContextMenuItem onClick={() => openAddDialog()}>
@@ -439,6 +442,7 @@ export function TorrentsPage() {
                   torrents={selectedTorrents}
                   onRemove={() => setRemoveOpen(true)}
                   onNewTag={() => setNewTagOpen(true)}
+                  onMove={() => setMoveOpen(true)}
                 />
               </DropdownMenuContent>
             </DropdownMenu>
@@ -494,6 +498,7 @@ export function TorrentsPage() {
         }}
       />
       <NewTagDialog hashes={selectedHashes} open={newTagOpen} onOpenChange={setNewTagOpen} />
+      <MoveDialog torrents={selectedTorrents} open={moveOpen} onOpenChange={setMoveOpen} />
     </div>
   );
 }

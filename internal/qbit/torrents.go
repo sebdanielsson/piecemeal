@@ -172,12 +172,13 @@ func effective[T int64 | float64](own, global T) T {
 	return own
 }
 
-// rootPath is the torrent's top folder, empty for a single file.
-func rootPath(t engine.Torrent) string {
-	if t.MultiFile {
-		return t.ContentPath
+// queuePriority is qBittorrent's priority field: the queue position, 0 for
+// torrents outside the queue (complete ones), and -1 with queueing off.
+func queuePriority(t engine.Torrent, queueing bool) int64 {
+	if !queueing {
+		return -1
 	}
-	return ""
+	return t.QueuePosition
 }
 
 func (s *Server) torrent(t engine.Torrent) Torrent {
@@ -204,8 +205,8 @@ func (s *Server) torrent(t engine.Torrent) Torrent {
 		MaxRatio:               effective(t.RatioLimit, st.RatioLimit),
 		MaxSeedingTime:         effective(t.SeedingTimeLimit, st.SeedingTimeLimit),
 		Name:                   t.Name, NumComplete: t.Seeds, NumIncomplete: max(t.SwarmPeers-t.Seeds, t.Peers),
-		NumLeechs: t.Peers, NumSeeds: t.Seeds, Priority: -1, Private: t.Private, Progress: t.Progress,
-		Ratio: ratio(t.Ratio), RatioLimit: t.RatioLimit, RootPath: rootPath(t), SavePath: t.SavePath,
+		NumLeechs: t.Peers, NumSeeds: t.Seeds, Priority: queuePriority(t, st.QueueingEnabled), Private: t.Private, Progress: t.Progress,
+		Ratio: ratio(t.Ratio), RatioLimit: t.RatioLimit, RootPath: t.RootPath, SavePath: t.SavePath,
 		SeedingTime: t.SeedingTime, SeedingTimeLimit: t.SeedingTimeLimit, SeenComplete: completedOn,
 		SeqDl: t.Sequential, ShareLimitAction: "Default", ShareLimitsMode: "Default", Size: t.Size,
 		State: State(t), Tags: strings.Join(t.Tags, ", "), TimeActive: t.ActiveTime, TotalSize: t.TotalSize,
@@ -261,7 +262,7 @@ func matches(t engine.Torrent, filter string) bool {
 }
 
 func (s *Server) info(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
+	q := r.Form
 	want := map[string]bool{}
 	for _, h := range hashes(r, "hashes") {
 		want[h] = true
@@ -392,7 +393,7 @@ func (s *Server) properties(w http.ResponseWriter, r *http.Request) {
 		"pieces_have": t.PiecesHave, "pieces_num": pieces, "reannounce": 0, "seeds": t.Seeds,
 		"seeds_total": t.Seeds, "total_size": minusOne(t.TotalSize),
 		"up_speed_avg": avg(t.Uploaded, t.ActiveTime), "up_speed": t.UpRate,
-		"private": t.Private, "has_metadata": t.HasMetadata, "progress": t.Progress,
+		"private": t.Private, "is_private": t.Private, "has_metadata": t.HasMetadata, "progress": t.Progress,
 		"popularity": 0, "availability": 0,
 	})
 }
@@ -507,9 +508,10 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	base := engine.AddParams{
-		Category: r.FormValue("category"),
-		Tags:     list(r.FormValue("tags")),
-		Name:     strings.TrimSpace(r.FormValue("rename")),
+		Category:      r.FormValue("category"),
+		ContentLayout: r.FormValue("contentLayout"),
+		Tags:          list(r.FormValue("tags")),
+		Name:          strings.TrimSpace(r.FormValue("rename")),
 	}
 	if p := r.FormValue("savepath"); p != "" {
 		base.SavePath = s.absolute(p)
@@ -676,22 +678,21 @@ func (s *Server) setForceStart(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// withHashes parses the form and runs fn on the known torrents in hashes.
+// withHashes runs fn on the known torrents in hashes and answers 200.
 func (s *Server) withHashes(w http.ResponseWriter, r *http.Request, fn func(hs []string) error) {
-	if err := parseForm(w, r); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+	s.withHashesStatus(w, r, http.StatusOK, fn)
+}
+
+// withHashesStatus runs fn on the known torrents in hashes and answers
+// status.
+func (s *Server) withHashesStatus(w http.ResponseWriter, r *http.Request, status int, fn func(hs []string) error) {
+	if hs := s.known(hashes(r, "hashes")); len(hs) > 0 {
+		if err := fn(hs); err != nil {
+			s.engineError(w, err)
+			return
+		}
 	}
-	hs := s.known(hashes(r, "hashes"))
-	if len(hs) == 0 {
-		done(w)
-		return
-	}
-	if err := fn(hs); err != nil {
-		s.engineError(w, err)
-		return
-	}
-	done(w)
+	w.WriteHeader(status)
 }
 
 func (s *Server) setShareLimits(w http.ResponseWriter, r *http.Request) {
@@ -824,11 +825,4 @@ func (s *Server) rename(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	done(w)
-}
-
-// queueing answers the queue position endpoints. piecemeal has no queue
-// yet, which qBittorrent reports as 409.
-func (s *Server) queueing(w http.ResponseWriter, r *http.Request) {
-	_ = parseForm(w, r)
-	http.Error(w, "Torrent queueing must be enabled", http.StatusConflict)
 }

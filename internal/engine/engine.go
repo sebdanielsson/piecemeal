@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	g "github.com/anacrolix/generics"
@@ -72,8 +73,12 @@ type Engine struct {
 
 	pc      storage.PieceCompletion
 	storage storage.ClientImplCloser
-	// Save paths by infohash, read by the storage's TorrentDirMaker.
-	savePaths sync.Map
+	// Where each torrent's files go (infohash to torrentPaths), and which
+	// torrent a *metainfo.Info belongs to: the storage's path makers read
+	// them.
+	paths      sync.Map
+	infoOwners sync.Map
+	filter     peerFilter
 
 	down, up *rate.Limiter
 
@@ -88,6 +93,12 @@ type Engine struct {
 
 	snap atomic.Pointer[snapshot]
 	bus  *Bus
+
+	// lastWindow is whether the alternative speed schedule's window was on
+	// at the last check, nil before the first.
+	lastWindow *bool
+
+	creator creator
 
 	session sessionCounters
 
@@ -152,10 +163,11 @@ func New(ctx context.Context, cfg Config, st *store.Store, sm *settings.Manager,
 		cats:     map[string]Category{},
 		tags:     map[string]struct{}{},
 		bus:      newBus(),
+		creator:  creator{wake: make(chan struct{}, 1)},
 		down:     rate.NewLimiter(rate.Inf, 1<<20),
 		up:       rate.NewLimiter(rate.Inf, 1<<20),
 	}
-	e.storage = storage.NewFileOpts(storage.NewFileClientOpts{
+	opts := storage.NewFileClientOpts{
 		ClientBaseDir:   cfg.DataDir,
 		PieceCompletion: nopClosePieceCompletion{pc},
 		DisableMmap:     !cfg.Mmap,
@@ -164,16 +176,10 @@ func New(ctx context.Context, cfg Config, st *store.Store, sm *settings.Manager,
 		// writer on promotion while the piece hasher may still be reading
 		// through it (a data race in storage/file-io-classic.go).
 		UsePartFiles: g.Some(false),
-		TorrentDirMaker: func(_ string, _ *metainfo.Info, ih metainfo.Hash) string {
-			if p, ok := e.savePaths.Load(ih); ok {
-				return p.(string)
-			}
-			// Unreachable: a save path is recorded before any torrent is
-			// added. Fail closed into the data dir rather than anywhere else.
-			return filepath.Join(cfg.DataDir, "orphaned", ih.HexString())
-		},
-		Logger: log.With("component", "storage"),
-	})
+		Logger:       log.With("component", "storage"),
+	}
+	e.storagePaths(&opts)
+	e.storage = storage.NewFileOpts(opts)
 	e.applyLimits(sm.Get())
 	e.snap.Store(&snapshot{byHash: map[string]*Torrent{}})
 
@@ -189,6 +195,7 @@ func New(ctx context.Context, cfg Config, st *store.Store, sm *settings.Manager,
 	if cfg.PortForwarded {
 		port = cfg.InitialPort
 	}
+	e.reloadFilter(s)
 	if err := e.startClient(port, s); err != nil {
 		return nil, errors.Join(err, e.closeStorage())
 	}
@@ -197,6 +204,10 @@ func New(ctx context.Context, cfg Config, st *store.Store, sm *settings.Manager,
 	}
 
 	e.ctx, e.cancel = context.WithCancel(context.Background())
+	e.mu.Lock()
+	e.normalizeQueueLocked()
+	e.scheduleLocked(time.Now())
+	e.mu.Unlock()
 	sm.Subscribe(e.onSettingsChanged)
 	sm.AddValidator(func(s settings.Settings) error {
 		if _, err := e.confine(s.DefaultSavePath); err != nil {
@@ -206,6 +217,7 @@ func New(ctx context.Context, cfg Config, st *store.Store, sm *settings.Manager,
 	})
 	e.tick(time.Now())
 	e.wg.Go(e.loop)
+	e.wg.Go(e.runCreator)
 	return e, nil
 }
 
@@ -253,6 +265,12 @@ func (e *Engine) SetPort(port int) error {
 
 func (e *Engine) onSettingsChanged(old, cur settings.Settings) {
 	e.applyLimits(cur)
+	filterChanged := cur.IPFilterEnabled != old.IPFilterEnabled || cur.IPFilterPath != old.IPFilterPath ||
+		cur.BannedIPs != old.BannedIPs
+	if filterChanged {
+		// Outside the lock: a large filter file takes a while to parse.
+		e.reloadFilter(cur)
+	}
 	e.mu.Lock()
 	e.refreshTransferLocked()
 	if cur.MaxConnectionsPerTorrent != old.MaxConnectionsPerTorrent {
@@ -262,12 +280,17 @@ func (e *Engine) onSettingsChanged(old, cur settings.Settings) {
 			}
 		}
 	}
+	if filterChanged {
+		e.dropBlockedPeersLocked()
+	}
 	needsRestart := cur.DHT != old.DHT || cur.PEX != old.PEX || cur.UTP != old.UTP ||
 		cur.Encryption != old.Encryption || cur.MaxHalfOpenConnections != old.MaxHalfOpenConnections ||
 		(!e.cfg.PortForwarded && cur.PeerPort != old.PeerPort)
 	if needsRestart {
+		// Keep the port in use unless the port setting changed, also when
+		// it is 0 (random).
 		port := e.port
-		if !e.cfg.PortForwarded {
+		if !e.cfg.PortForwarded && cur.PeerPort != old.PeerPort {
 			port = cur.PeerPort
 		}
 		if err := e.restartClientLocked(port, cur); err != nil {
@@ -339,6 +362,7 @@ func (e *Engine) clientConfig(port int, s settings.Settings) *torrent.ClientConf
 	default:
 		tc.HeaderObfuscationPolicy = torrent.HeaderObfuscationPolicy{Preferred: true}
 	}
+	tc.IPBlocklist = &e.filter
 	tc.Slogger = e.log.With("component", "anacrolix")
 	if e.cfg.ClientConfig != nil {
 		e.cfg.ClientConfig(tc)
@@ -357,6 +381,21 @@ func (e *Engine) startClient(port int, s settings.Settings) error {
 	return nil
 }
 
+// startClientRetrying starts a client on port, waiting for the previous
+// client to let go of it: anacrolix's Client.Close closes its listeners in
+// goroutines (v1.63.0, client.go: go s.Close()), so the port can still be
+// bound for a moment after Close returns.
+func (e *Engine) startClientRetrying(port int, s settings.Settings) error {
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		err := e.startClient(port, s)
+		if err == nil || port == 0 || !errors.Is(err, syscall.EADDRINUSE) || time.Now().After(deadline) {
+			return err
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
 // restartClientLocked replaces the client, for changes anacrolix only reads
 // at startup such as the listen port. Running torrents are re-added; piece
 // completion is persisted, so they don't rehash.
@@ -370,8 +409,9 @@ func (e *Engine) restartClientLocked(port int, s settings.Settings) error {
 	}
 	for _, m := range e.torrents {
 		m.t = nil
+		e.forgetInfo(m.hash)
 	}
-	if err := e.startClient(port, s); err != nil {
+	if err := e.startClientRetrying(port, s); err != nil {
 		// Leave the engine usable: fall back to any free port.
 		e.log.Error("restarting torrent client, falling back to a random port", "error", err)
 		if err2 := e.startClient(0, s); err2 != nil {
@@ -409,8 +449,13 @@ func (e *Engine) loop() {
 		case <-e.ctx.Done():
 			return
 		case now := <-tick.C:
+			e.mu.Lock()
+			e.normalizeQueueLocked()
+			e.scheduleLocked(now)
+			e.mu.Unlock()
 			e.tick(now)
 			e.enforceSeedGoals()
+			e.applySchedule(now)
 		case <-checkpoint.C:
 			if err := e.checkpoint(e.ctx, false); err != nil && !errors.Is(err, context.Canceled) {
 				e.log.Error("saving torrent counters", "error", err)

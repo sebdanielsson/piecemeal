@@ -32,6 +32,7 @@ type testServer struct {
 	client *http.Client
 	store  *store.Store
 	auth   *auth.Service
+	save   string
 }
 
 func newTestServer(t *testing.T) *testServer {
@@ -78,7 +79,7 @@ func newTestServer(t *testing.T) *testServer {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	jar, _ := cookiejar.New(nil)
-	return &testServer{Server: srv, t: t, client: &http.Client{Jar: jar}, store: st, auth: a}
+	return &testServer{Server: srv, t: t, client: &http.Client{Jar: jar}, store: st, auth: a, save: saveDir}
 }
 
 // do sends a request and decodes a JSON response into out. headers are

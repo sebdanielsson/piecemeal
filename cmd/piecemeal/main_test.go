@@ -103,7 +103,11 @@ func TestRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mux, _ := routes(routeDeps{cfg: cfg, engine: e, settings: sm, auth: a, logs: logbuf.New(10), log: log})
+	cfg.QBittorrentWebUIDir = t.TempDir()
+	if err := os.WriteFile(filepath.Join(cfg.QBittorrentWebUIDir, "index.html"), []byte("<html></html>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mux, _ := routes(routeDeps{cfg: cfg, engine: e, settings: sm, auth: a, store: st, logs: logbuf.New(10), log: log})
 	for _, tc := range []struct {
 		method, path string
 		want         int
@@ -116,6 +120,11 @@ func TestRoutes(t *testing.T) {
 		{http.MethodGet, "/api/v2/app/webapiVersion", http.StatusForbidden},
 		{http.MethodPost, "/api/v2/auth/login", http.StatusUnauthorized},
 		{http.MethodGet, "/api/v2/auth/login", http.StatusMethodNotAllowed},
+		{http.MethodGet, "/qbittorrent/", http.StatusOK},
+		{http.MethodGet, "/qbittorrent", http.StatusTemporaryRedirect},
+		{http.MethodGet, "/qbittorrent/missing.js", http.StatusNotFound},
+		{http.MethodGet, "/qbittorrent/api/v2/app/webapiVersion", http.StatusForbidden},
+		{http.MethodPost, "/qbittorrent/api/v2/app/webapiVersion", http.StatusForbidden},
 	} {
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, httptest.NewRequest(tc.method, tc.path, nil))

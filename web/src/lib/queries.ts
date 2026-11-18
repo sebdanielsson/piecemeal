@@ -22,6 +22,7 @@ export const keys = {
   files: (hash: string) => ["torrent", hash, "files"] as const,
   peers: (hash: string) => ["torrent", hash, "peers"] as const,
   trackers: (hash: string) => ["torrent", hash, "trackers"] as const,
+  webSeeds: (hash: string) => ["torrent", hash, "webSeeds"] as const,
   pieces: (hash: string) => ["torrent", hash, "pieces"] as const,
   apiKeys: ["api-keys"] as const,
   sessions: ["sessions"] as const,

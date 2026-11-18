@@ -8,13 +8,22 @@ CI checks it two ways (see [`test/e2e`](../test/e2e)): Radarr, Sonarr and Prowla
 
 - `auth/login` answers 204 and sets the session cookie twice: as `QBT_SID_<port>` (qBittorrent 5.2 and later) and as `SID` (older clients). Wrong credentials get 401; too many failures get 403 for 15 minutes.
 - Every other endpoint accepts the session cookie, piecemeal's own web session, an API key as `Authorization: Bearer pm_...`, or HTTP Basic credentials when there is no session. Basic credentials are the qBittorrent 5.2 behaviour that current Radarr, Sonarr and Prowlarr rely on.
-- API keys with the `qbittorrent` or `full` scope work; `read-only` keys can only make GET requests. Create them in piecemeal, not with qBittorrent's `app/rotateAPIKey`.
+- API keys with the `qbittorrent` or `full` scope work; `read-only` keys can only call endpoints that read. `app/rotateAPIKey` creates a `qbittorrent`-scoped key for the signed-in user (see below); keys can also be created in piecemeal.
 - Anything unauthenticated, including an unknown key, gets 403, which the *arrs read as "log in again".
 - When a request has an `Origin` or `Referer` header, it must name the host the request went to (CSRF protection).
 
+## Requests
+
+- Endpoints that read accept GET and POST, since some clients send everything as POST. Endpoints that change something accept only POST and answer 405 to GET.
+- Parameters come from the query string and from urlencoded or multipart bodies. Bodies are read only after authentication and are capped at 64 MiB.
+- Endpoints for features piecemeal doesn't have answer 409 with a short reason, qBittorrent's status for a valid request it can't carry out.
+- Actions answer 200 with an empty body, or 204 where qBittorrent 5.3.0 does (`setSpeedLimits`, `addTrackers`, `editTracker`, `removeTrackers`, `setTags`, `deleteAPIKey`, `clientdata/store`).
+- Instance-wide changes and private data need an admin, as in piecemeal's own API: other users' `setPreferences` applies the speed limits only, and their `banPeers`, `cookies`, `setCookies` and `log/main` get 403.
+- Endpoints that take a single `hash` answer 404 for an unknown one; endpoints that take `hashes` skip unknown ones.
+
 ## Endpoints
 
-Status: **yes** is implemented, **partial** works with the differences noted, **no** answers 404 for now, and **never** won't be implemented.
+Status: **yes** is implemented, **partial** works with the differences noted, **no** answers 404 `Endpoint does not exist` for now, and **never** answers 409.
 
 ### app
 
@@ -23,9 +32,16 @@ Status: **yes** is implemented, **partial** works with the differences noted, **
 | `version` | yes | `v5.3.0` |
 | `webapiVersion` | yes | `2.16.2` |
 | `buildInfo` | partial | Library versions are empty strings. |
-| `preferences` | partial | Download, speed, connection, BitTorrent, seeding goal and Web UI keys, mapped from piecemeal's settings. Keys for features piecemeal doesn't have are absent. |
+| `processInfo` | yes | |
+| `preferences` | yes | All 241 keys of qBittorrent 5.3.0 with their types. Keys piecemeal maps come from its settings (download, speed, connection, queueing, seeding goals, IP filter, schedule, Web UI); the rest report qBittorrent's defaults and are fixed. `web_ui_api_key` is the prefix of the caller's key from `rotateAPIKey`, or empty: piecemeal stores only key hashes. |
+| `setPreferences` | partial | Applies the keys piecemeal maps and ignores the rest, so writing back the whole object works. Keys pinned by environment variables are ignored. A mapped key with a bad value fails the whole request with 400; a `json` that isn't an object is ignored, as in qBittorrent. Rate limits are rounded down to whole KiB/s, as qBittorrent does. `web_ui_password` is ignored: manage users in piecemeal. |
 | `defaultSavePath` | yes | |
-| `setPreferences`, `shutdown`, `networkInterfaceList`, `networkInterfaceAddressList`, `sendTestEmail`, `getDirectoryContent`, `cookies`, `setCookies`, `rotateAPIKey`, `deleteAPIKey` | no | Phase 4. |
+| `networkInterfaceList`, `networkInterfaceAddressList` | yes | Listed for the settings page; piecemeal binds with `PIECEMEAL_LISTEN_HOST`, so choosing one has no effect. |
+| `getDirectoryContent` | partial | Only inside the allowed roots; 404 elsewhere. Strings only: `withMetadata` is ignored. |
+| `getFreeSpaceAtPath` | yes | Only inside the allowed roots; 404 elsewhere. |
+| `cookies`, `setCookies` | yes | Sent with torrent files fetched by URL, matched by domain, path and expiry. Kept across restarts. Admins only: they're usually tracker logins. |
+| `rotateAPIKey`, `deleteAPIKey` | yes | Manage the caller's own `qbittorrent`-scoped key, named "qBittorrent API key". Need a session or a `full`-scope key. |
+| `shutdown`, `sendTestEmail` | never | piecemeal runs as a service and sends no mail. |
 
 ### auth
 
@@ -34,38 +50,77 @@ Status: **yes** is implemented, **partial** works with the differences noted, **
 | `login` | yes | See above. |
 | `logout` | yes | |
 
+### sync
+
+| Endpoint | Status | Notes |
+| --- | --- | --- |
+| `maindata` | yes | Full and partial updates with the `rid` protocol, per session or API key. `server_state` has the 5.3.0 fields; counters piecemeal doesn't keep are 0. |
+| `torrentPeers` | yes | Full and partial updates. `client`, `country` and `relevance` are empty or 0. |
+
+### transfer
+
+| Endpoint | Status | Notes |
+| --- | --- | --- |
+| `info` | yes | |
+| `speedLimitsMode`, `setSpeedLimitsMode`, `toggleSpeedLimitsMode` | yes | Any `mode` but 0 turns the alternative limits on, as in qBittorrent. |
+| `downloadLimit`, `uploadLimit`, `setDownloadLimit`, `setUploadLimit` | yes | The normal limits, whatever the mode, rounded down to whole KiB/s. |
+| `getSpeedLimits`, `setSpeedLimits` | yes | |
+| `banPeers` | yes | Adds the addresses to `banned_IPs`. |
+| `pauseSession`, `resumeSession` | never | anacrolix has no session pause. |
+
+### log
+
+| Endpoint | Status | Notes |
+| --- | --- | --- |
+| `main` | yes | piecemeal's own log, info and above, from a bounded buffer. Admins only. |
+| `peers` | partial | Always empty: piecemeal doesn't log refused peers. |
+
 ### torrents
 
 | Endpoint | Status | Notes |
 | --- | --- | --- |
-| `info` | yes | `filter`, `category`, `tag`, `hashes`, `private`, `sort`, `reverse`, `limit` and `offset`. Not yet `includeFiles` and `includeTrackers`. `availability` is 0, as qBittorrent reports for torrents without connected peers, and `priority` is -1 (no queueing yet). |
+| `info` | yes | `filter`, `category`, `tag`, `hashes`, `private`, `sort`, `reverse`, `limit` and `offset`. Not yet `includeFiles` and `includeTrackers`. `availability` is 0. `priority` is the queue position, 0 outside the queue, and -1 with queueing off. |
 | `properties` | yes | 404 for unknown hashes, 200 for magnets still fetching metadata. |
 | `files` | yes | `availability` is 0. |
 | `trackers` | partial | Trackers and their tiers, with status "not contacted" and -1 counts: anacrolix doesn't expose announce results. DHT, PeX and LSD rows as in qBittorrent. |
-| `pieceStates` | yes | |
-| `add` | partial | `urls` (magnets, and http(s) links fetched with SSRF protection), `torrents`, `savepath`, `category` (created if missing), `tags`, `stopped`/`paused`, `skip_checking`/`seedMode`, `rename`, `upLimit`, `dlLimit`, `ratioLimit`, `seedingTimeLimit`, `inactiveSeedingTimeLimit`, `sequentialDownload`, `firstLastPiecePrio`, `forced`. Synchronous. Answers 200 with qBittorrent 5.2's JSON counts, 409 when every torrent was already there, 415 for invalid torrent files. `contentLayout` and `autoTMM` are ignored: content always goes under the torrent's name, as `Original` does. |
+| `pieceStates`, `pieceHashes` | yes | |
+| `add` | partial | `urls` (magnets, and http(s) links fetched with SSRF protection and the cookie jar), `torrents`, `savepath`, `category` (created if missing), `tags`, `stopped`/`paused`, `skip_checking`/`seedMode`, `rename`, `contentLayout`, `upLimit`, `dlLimit`, `ratioLimit`, `seedingTimeLimit`, `inactiveSeedingTimeLimit`, `sequentialDownload`, `firstLastPiecePrio`, `forced`. Synchronous. Answers 200 with qBittorrent 5.2's JSON counts, 409 when every torrent was already there, 415 for invalid torrent files. `autoTMM` is ignored. |
 | `delete` | yes | Unknown hashes are ignored. |
 | `start`, `stop` | yes | |
 | `pause`, `resume` | yes | Aliases of `stop` and `start`, for WebAPI before 2.11. |
-| `recheck`, `reannounce` | yes | |
+| `recheck`, `reannounce` | yes | `reannounce` announces to every tracker; it doesn't take `trackers`/`urls`. |
 | `setForceStart` | yes | |
-| `setShareLimits` | partial | `ratioLimit`, `seedingTimeLimit`, `inactiveSeedingTimeLimit`; missing ones default to -2. `shareLimitAction` and `shareLimitsMode` are ignored: the global seed goal action applies, and any limit reached ends seeding. |
-| `setDownloadLimit`, `setUploadLimit` | partial | Stored and reported, not enforced yet (anacrolix has only client-wide limits). |
+| `setShareLimits` | partial | `ratioLimit`, `seedingTimeLimit`, `inactiveSeedingTimeLimit`; missing ones default to -2. `shareLimitAction` and `shareLimitsMode` are ignored: the global seed goal action applies, and any limit reached ends seeding. qBittorrent 5.3.0 requires those two; piecemeal doesn't, for older clients. |
+| `setDownloadLimit`, `setUploadLimit`, `downloadLimit`, `uploadLimit` | partial | Stored and reported, not enforced (anacrolix has only client-wide limits). |
 | `toggleSequentialDownload`, `toggleFirstLastPiecePrio`, `filePrio`, `rename` | yes | |
-| `topPrio`, `bottomPrio`, `increasePrio`, `decreasePrio` | partial | 409 "Torrent queueing must be enabled", as qBittorrent answers with queueing off. Queueing is Phase 5. |
+| `topPrio`, `bottomPrio`, `increasePrio`, `decreasePrio` | yes | 409 "Torrent queueing must be enabled" with queueing off, as in qBittorrent. |
 | `categories`, `createCategory`, `editCategory`, `removeCategories`, `setCategory` | yes | A category's `savePath` is used for torrents added to it without a save path. Changing a category doesn't move data, as in qBittorrent without automatic torrent management. |
-| `tags`, `createTags`, `deleteTags`, `addTags`, `removeTags` | yes | `addTags` creates unknown tags. |
-| `setSuperSeeding`, SSL parameter endpoints | never | anacrolix has no super seeding or SSL torrents. |
-| everything else | no | Phase 4. |
+| `tags`, `createTags`, `deleteTags`, `addTags`, `removeTags`, `setTags` | yes | `addTags` and `setTags` create unknown tags. |
+| `addTrackers`, `editTracker`, `removeTrackers` | yes | `hash` may name several torrents, `all`, or `*` for `removeTrackers`. Percent-encoded URLs, as VueTorrent sends them, are decoded. `editTracker` takes `url` or `origUrl`; `tier` is ignored. |
+| `webseeds`, `addWebSeeds`, `editWebSeed`, `removeWebSeeds` | yes | |
+| `addPeers` | yes | Answers with each torrent's count of added and invalid peers. |
+| `setLocation`, `setSavePath` | yes | Data moves in the background (state `moving`), inside the allowed roots. |
+| `renameFile`, `renameFolder` | yes | Renames on disk and remembers the mapping. |
+| `export` | yes | With the current trackers and web seeds, named after the torrent. |
+| `downloadFile` | yes | Complete files only, by index or path; supports ranges. |
+| `count` | yes | |
+| `SSLParameters` | partial | Empty strings: piecemeal has no SSL torrents. |
+| `setAutoManagement`, `setDownloadPath` | partial | Accepted and ignored: piecemeal has no automatic torrent management or incomplete folder. |
+| `setSuperSeeding`, `setSSLParameters` | never | anacrolix has no super seeding or SSL torrents. |
+| `setComment`, `pieceAvailability`, `fetchMetadata`, `parseMetadata`, `saveMetadata` | no | |
 
 ### Other groups
 
 | Group | Status | Notes |
 | --- | --- | --- |
-| `transfer` | partial | `info` only. The rest is Phase 4. |
-| `sync`, `log`, `clientdata` | no | Phase 4. |
-| `torrentcreator`, `rss` | no | Phase 5. |
+| `clientdata` | yes | `load` and `store`, kept across restarts, up to 1 MiB in all; a `store` past that gets 409. |
+| `torrentcreator` | yes | `addTask`, `status`, `torrentFile`, `deleteTask`. Sources must be inside the allowed roots. |
+| `rss` | no | Phase 5. |
 | `search` | never | Prowlarr covers search. |
+
+## VueTorrent and other qBittorrent web UIs
+
+qBittorrent web UIs call the API relative to where they are served, so they need to be served by piecemeal. Set `PIECEMEAL_QBITTORRENT_WEBUI_DIR` to the UI's directory, such as an unpacked [VueTorrent](https://github.com/VueTorrent/VueTorrent) release (the directory or its `public` folder). piecemeal serves it at `/qbittorrent/` and the API under it at `/qbittorrent/api/v2`, and reports `alternative_webui_enabled`. Sign in with a piecemeal user.
 
 ## Torrent states
 
@@ -78,6 +133,8 @@ Status: **yes** is implemented, **partial** works with the differences noted, **
 | Complete, nothing for 30 s | `stalledUP`, `forcedUP` |
 | Checking | `checkingDL`, `checkingUP` |
 | Stopped, including at a seed goal | `stoppedDL`, `stoppedUP` |
+| Waiting in the queue | `queuedDL`, `queuedUP` |
+| Moving data | `moving` |
 | Error | `error` |
 
 Seed goals stop the torrent by default (`max_ratio_act` 0), which is what Radarr and Sonarr wait for before removing a finished download. Setting piecemeal's `seedGoalAction` to `remove` or `removeWithData` reports 1 or 3, and the *arrs then warn that the client removes completed downloads.

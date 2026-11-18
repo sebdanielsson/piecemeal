@@ -3,7 +3,6 @@ package engine
 import (
 	"cmp"
 	"math"
-	"path/filepath"
 	"reflect"
 	"slices"
 	"time"
@@ -59,7 +58,9 @@ type Torrent struct {
 	Peers       int      `json:"peers" doc:"Connected peers that are not seeds."`
 	SwarmPeers  int      `json:"swarmPeers" doc:"Peers known in the swarm."`
 	SavePath    string   `json:"savePath"`
-	ContentPath string   `json:"contentPath" doc:"The torrent's root directory, or its file for single-file torrents."`
+	ContentPath string   `json:"contentPath" doc:"The torrent's file, or its top folder, or the save path when its files share no folder."`
+	RootPath    string   `json:"rootPath" doc:"The torrent's top folder, empty when it has none."`
+	Layout      string   `json:"contentLayout" enum:"Original,Subfolder,NoSubfolder"`
 	Category    string   `json:"category"`
 	Tags        []string `json:"tags"`
 	AddedAt     int64    `json:"addedAt" doc:"Unix time."`
@@ -312,6 +313,7 @@ func (e *Engine) statusLocked(m *managed) *Torrent {
 		FirstLast: r.FirstLastPiece, Magnet: r.Magnet, Error: r.Error, RatioLimit: r.RatioLimit,
 		SeedingTimeLimit: r.SeedingTimeLimit, InactiveSeedingTimeLimit: r.InactiveSeedingTimeLimit,
 		DownloadLimit: r.DownloadLimit, UploadLimit: r.UploadLimit, QueuePosition: r.QueuePosition,
+		Layout: cmp.Or(r.ContentLayout, LayoutOriginal),
 	}
 	if st.Tags == nil {
 		st.Tags = []string{}
@@ -322,7 +324,7 @@ func (e *Engine) statusLocked(m *managed) *Torrent {
 		st.PieceSize = m.info.PieceLength
 		st.Pieces = m.info.NumPieces()
 		st.Private = m.info.Private != nil && *m.info.Private
-		st.ContentPath = filepath.Join(r.SavePath, m.info.BestName())
+		st.ContentPath, st.RootPath = contentAndRoot(r.SavePath, m.pathsOf().relativePaths(m.info))
 		st.Size, st.Completed = m.wanted()
 		st.Complete = st.Completed >= st.Size
 		if st.Size > 0 {
@@ -354,8 +356,12 @@ func (e *Engine) statusLocked(m *managed) *Torrent {
 	}
 
 	switch {
+	case m.moving:
+		st.State = StateMoving
 	case r.Error != "":
 		st.State = StateError
+	case m.queued:
+		st.State = StateQueued
 	case m.t == nil:
 		st.State = StateStopped
 	case m.checking:

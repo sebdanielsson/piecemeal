@@ -20,6 +20,7 @@ import (
 	"github.com/sebdanielsson/piecemeal/internal/engine"
 	"github.com/sebdanielsson/piecemeal/internal/engine/enginetest"
 	"github.com/sebdanielsson/piecemeal/internal/fetch"
+	"github.com/sebdanielsson/piecemeal/internal/logbuf"
 	"github.com/sebdanielsson/piecemeal/internal/settings"
 	"github.com/sebdanielsson/piecemeal/internal/store"
 )
@@ -31,6 +32,7 @@ type env struct {
 	auth   *auth.Service
 	client *http.Client
 	save   string
+	store  *store.Store
 }
 
 func newEnv(t *testing.T, environ ...string) *env {
@@ -66,16 +68,23 @@ func newEnv(t *testing.T, environ ...string) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := httptest.NewServer(New(Deps{Engine: e, Settings: sm, Auth: a, Fetcher: fetch.New(nil), Log: log, HTTPPort: 8080}))
+	logs := logbuf.New(100)
+	srv := httptest.NewServer(New(Deps{Engine: e, Settings: sm, Auth: a, Fetcher: fetch.New(nil), Store: st, Logs: logs, Log: log, HTTPPort: 8080}))
 	t.Cleanup(srv.Close)
 	jar, _ := cookiejar.New(nil)
-	return &env{t: t, srv: srv, engine: e, auth: a, client: &http.Client{Jar: jar}, save: save}
+	return &env{t: t, srv: srv, engine: e, auth: a, client: &http.Client{Jar: jar}, save: save, store: st}
 }
 
 type response struct {
 	status int
 	body   []byte
 	header http.Header
+}
+
+// newEnvClient is another client of the same server, with its own cookies.
+func newEnvClient(e *env) *env {
+	jar, _ := cookiejar.New(nil)
+	return &env{t: e.t, srv: e.srv, engine: e.engine, auth: e.auth, client: &http.Client{Jar: jar}, save: e.save, store: e.store}
 }
 
 func (r response) json(t *testing.T, v any) {
@@ -223,6 +232,7 @@ func TestAPIKeyScopes(t *testing.T) {
 		t.Fatal("a key-authenticated request got a cookie")
 	}
 	expect(t, "read-only key reads", e.get("torrents/info", "Authorization", "Bearer "+roKey), http.StatusOK)
+	expect(t, "read-only key reads by POST", e.post("torrents/info", nil, "Authorization", "Bearer "+roKey), http.StatusOK)
 	expect(t, "read-only key writes", e.post("torrents/createTags", url.Values{"tags": {"x"}}, "Authorization", "Bearer "+roKey), http.StatusForbidden)
 }
 

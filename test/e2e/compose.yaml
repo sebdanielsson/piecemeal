@@ -25,8 +25,10 @@ services:
       PIECEMEAL_LOG_LEVEL: debug
       # The seeder is on the private test network.
       PIECEMEAL_FETCH_ALLOWED_NETWORKS: 172.30.0.0/24
+      PIECEMEAL_QBITTORRENT_WEBUI_DIR: /vuetorrent
     volumes:
       - ./tmp/downloads:/downloads
+      - ./tmp/vuetorrent:/vuetorrent:ro
     ports:
       - 127.0.0.1:18080:8080
     networks:

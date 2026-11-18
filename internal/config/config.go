@@ -48,6 +48,10 @@ type Config struct {
 	// "off".
 	Metrics string
 
+	// QBittorrentWebUIDir, when set, holds an alternative qBittorrent web
+	// UI such as VueTorrent, served at /qbittorrent/.
+	QBittorrentWebUIDir string
+
 	// PublicURL is where people reach piecemeal, such as
 	// https://piecemeal.example.com. OIDC needs it for its callback.
 	PublicURL string
@@ -114,6 +118,7 @@ func FromEnv(getenv func(string) string) (Config, error) {
 		DataDir:              get("DATA_DIR", "data"),
 		DownloadDir:          get("DOWNLOAD_DIR", "downloads"),
 		WatchDir:             get("WATCH_DIR", ""),
+		QBittorrentWebUIDir:  get("QBITTORRENT_WEBUI_DIR", ""),
 		ListenHost:           get("LISTEN_HOST", ""),
 		DisableIPv6:          boolean("DISABLE_IPV6", false),
 		Mmap:                 boolean("MMAP", false),
@@ -164,6 +169,11 @@ func FromEnv(getenv func(string) string) (Config, error) {
 	}
 	if c.WatchDir != "" {
 		if c.WatchDir, err = filepath.Abs(c.WatchDir); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if c.QBittorrentWebUIDir != "" {
+		if c.QBittorrentWebUIDir, err = filepath.Abs(c.QBittorrentWebUIDir); err != nil {
 			errs = append(errs, err)
 		}
 	}

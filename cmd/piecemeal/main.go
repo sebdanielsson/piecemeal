@@ -219,7 +219,7 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, logs *logbuf.
 	}
 
 	mux, nativeAPI := routes(routeDeps{
-		cfg: cfg, engine: e, settings: sm, auth: authSvc, oidc: oidcLogin, logs: logs, mapper: mapper, log: log,
+		cfg: cfg, engine: e, settings: sm, auth: authSvc, oidc: oidcLogin, store: st, logs: logs, mapper: mapper, log: log,
 	})
 
 	srv := &http.Server{
@@ -261,6 +261,7 @@ type routeDeps struct {
 	settings *settings.Manager
 	auth     *auth.Service
 	oidc     *auth.OIDC
+	store    *store.Store
 	logs     *logbuf.Buffer
 	mapper   *natpmp.Mapper
 	log      *slog.Logger
@@ -298,13 +299,22 @@ func routes(d routeDeps) (*http.ServeMux, *api.API) {
 		},
 	})
 	q := qbit.New(qbit.Deps{
-		Engine: d.engine, Settings: d.settings, Auth: d.auth, Fetcher: fetcher,
-		Log: d.log.With("component", "qbit"), HTTPPort: httpPort(d.cfg.Addr),
+		Engine: d.engine, Settings: d.settings, Auth: d.auth, Fetcher: fetcher, Store: d.store, Logs: d.logs,
+		Log: d.log.With("component", "qbit"), HTTPPort: httpPort(d.cfg.Addr), AltWebUI: d.cfg.QBittorrentWebUIDir != "",
 	})
 	// Method-specific patterns, so they and the web UI's "GET /" don't
 	// conflict; the qBittorrent API answers 405 itself for the wrong one.
 	mux.Handle("GET "+qbit.Prefix, q)
 	mux.Handle("POST "+qbit.Prefix, q)
+	if dir := d.cfg.QBittorrentWebUIDir; dir != "" {
+		// An alternative qBittorrent web UI calls the API relative to where
+		// it is served.
+		const at = "/qbittorrent"
+		mux.Handle("GET "+at+qbit.Prefix, http.StripPrefix(at, q))
+		mux.Handle("POST "+at+qbit.Prefix, http.StripPrefix(at, q))
+		mux.Handle("GET "+at+"/", http.StripPrefix(at, webui.Alternative(dir)))
+		d.log.Info("serving a qBittorrent web UI", "path", at+"/", "dir", dir)
+	}
 	mux.Handle("GET /", webui.Handler())
 	return mux, nativeAPI
 }

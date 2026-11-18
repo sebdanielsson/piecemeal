@@ -32,6 +32,12 @@ type Category struct {
 	SavePath string
 }
 
+type Kv struct {
+	Namespace string
+	Key       string
+	Value     string
+}
+
 type Session struct {
 	TokenHash  []byte
 	UserID     int64
@@ -78,6 +84,10 @@ type Torrent struct {
 	UploadLimit              int64
 	FilePriorities           string
 	Error                    string
+	Trackers                 string
+	WebSeeds                 string
+	FilePaths                string
+	ContentLayout            string
 }
 
 type TorrentTag struct {
