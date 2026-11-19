@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sebdanielsson/piecemeal/internal/proxy"
 	"github.com/sebdanielsson/piecemeal/internal/proxy/proxytest"
@@ -108,5 +109,42 @@ func TestProxyDown(t *testing.T) {
 	_, err := f.dialProxied(context.Background(), &proxy.Server{Type: proxy.SOCKS5, Addr: p.Addr}, "tcp", "localhost:80")
 	if !errors.Is(err, proxy.ErrUnreachable) || strings.Count(err.Error(), "can't reach") != 1 {
 		t.Fatalf("got %v", err)
+	}
+}
+
+// TestSetProxyNewConnections checks that a connection opened before the
+// proxy changed, kept alive or still in use, isn't reused afterwards.
+func TestSetProxyNewConnections(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/slow" {
+			<-release
+		}
+		_, _ = w.Write([]byte("d4:infod4:name1:xee"))
+	}))
+	t.Cleanup(srv.Close)
+	p := proxytest.Start(t, proxy.SOCKS5)
+	f := New(loopback)
+	f.public = func(netip.Addr) bool { return true }
+
+	// A request in flight on a direct connection while the proxy is set.
+	done := make(chan error, 1)
+	go func() {
+		_, err := f.Get(context.Background(), srv.URL+"/slow")
+		done <- err
+	}()
+	time.Sleep(100 * time.Millisecond)
+	f.SetProxy(Proxy{Server: &proxy.Server{Type: proxy.SOCKS5, Addr: p.Addr}, TorrentFiles: true})
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	for range 3 {
+		if _, err := f.Get(context.Background(), srv.URL); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := p.Requests(); len(got) != 1 {
+		t.Fatalf("requests through the proxy: %v", got)
 	}
 }

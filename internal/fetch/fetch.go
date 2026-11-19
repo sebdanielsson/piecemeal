@@ -29,15 +29,21 @@ import (
 
 // Fetcher downloads torrent files and feeds.
 type Fetcher struct {
-	torrents, feeds *http.Client
-	jar             *jar
-	maxSize         int64
-	allowed         []netip.Prefix
-	dialer          *net.Dialer
-	proxy           atomic.Pointer[Proxy]
+	clients atomic.Pointer[clients]
+	jar     *jar
+	maxSize int64
+	allowed []netip.Prefix
+	dialer  *net.Dialer
 	// public reports whether an address is public, rather than allowed
 	// only by the allowed networks; tests replace it.
 	public func(netip.Addr) bool
+}
+
+// clients are the HTTP clients for one proxy setting. Torrent files and
+// feeds have their own, since they may take different routes. Each one's
+// route is fixed, so a pooled connection never outlives it.
+type clients struct {
+	torrents, feeds *http.Client
 }
 
 // Proxy is the proxy the fetcher uses, and for what.
@@ -48,12 +54,21 @@ type Proxy struct {
 	TorrentFiles, Feeds bool
 }
 
-// SetProxy changes the proxy. Connections already open are closed once
-// idle, so later requests take the new route.
+// SetProxy changes the proxy. Later requests use new connections on the
+// new route; requests already running finish on the old one, whose
+// connections are then closed.
 func (f *Fetcher) SetProxy(p Proxy) {
-	f.proxy.Store(&p)
-	f.torrents.CloseIdleConnections()
-	f.feeds.CloseIdleConnections()
+	route := func(through bool) *proxy.Server {
+		if through {
+			return p.Server
+		}
+		return nil
+	}
+	old := f.clients.Swap(&clients{torrents: f.newClient(route(p.TorrentFiles)), feeds: f.newClient(route(p.Feeds))})
+	if old != nil {
+		old.torrents.CloseIdleConnections()
+		old.feeds.CloseIdleConnections()
+	}
 }
 
 // ErrForbidden is returned for URLs that resolve to a blocked address.
@@ -89,18 +104,17 @@ func New(allowed []netip.Prefix) *Fetcher {
 			return nil
 		},
 	}
-	// Torrent files and feeds have their own connections, since they may
-	// take different routes.
-	f.torrents = f.newClient(func(p *Proxy) bool { return p.TorrentFiles })
-	f.feeds = f.newClient(func(p *Proxy) bool { return p.Feeds })
+	f.SetProxy(Proxy{})
 	return f
 }
 
-func (f *Fetcher) newClient(proxied func(*Proxy) bool) *http.Client {
+// newClient returns a client that connects through srv, or directly when
+// it is nil.
+func (f *Fetcher) newClient(srv *proxy.Server) *http.Client {
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			if p := f.proxy.Load(); p != nil && p.Server != nil && proxied(p) {
-				return f.dialProxied(ctx, p.Server, network, addr)
+			if srv != nil {
+				return f.dialProxied(ctx, srv, network, addr)
 			}
 			return f.dialer.DialContext(ctx, network, addr)
 		},
@@ -245,12 +259,12 @@ var fetchableURL = regexp.MustCompile(`(?i)^https?://[^/?#\s]+([/?#]\S*)?$`)
 
 // Get downloads a torrent file, or finds the magnet URI rawURL leads to.
 func (f *Fetcher) Get(ctx context.Context, rawURL string) (Result, error) {
-	return f.get(ctx, f.torrents, rawURL)
+	return f.get(ctx, f.clients.Load().torrents, rawURL)
 }
 
 // GetFeed downloads an RSS feed.
 func (f *Fetcher) GetFeed(ctx context.Context, rawURL string) (Result, error) {
-	return f.get(ctx, f.feeds, rawURL)
+	return f.get(ctx, f.clients.Load().feeds, rawURL)
 }
 
 func (f *Fetcher) get(ctx context.Context, client *http.Client, rawURL string) (Result, error) {

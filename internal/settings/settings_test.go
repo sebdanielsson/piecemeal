@@ -16,6 +16,9 @@ func TestEnvName(t *testing.T) {
 		"downloadLimit":            "PIECEMEAL_DOWNLOAD_LIMIT",
 		"dht":                      "PIECEMEAL_DHT",
 		"maxConnectionsPerTorrent": "PIECEMEAL_MAX_CONNECTIONS_PER_TORRENT",
+		"proxyRSS":                 "PIECEMEAL_PROXY_RSS",
+		"bannedIPs":                "PIECEMEAL_BANNED_IPS",
+		"ipFilterPath":             "PIECEMEAL_IP_FILTER_PATH",
 	} {
 		if got := EnvName(in); got != want {
 			t.Errorf("EnvName(%q) = %q, want %q", in, got, want)
@@ -220,5 +223,36 @@ func TestPublicClearsWriteOnly(t *testing.T) {
 		if string(pub[name]) != `""` {
 			t.Errorf("Public leaves %s: %s", name, pub[name])
 		}
+	}
+}
+
+// TestPinnedProxyPassword checks that a password set by the environment
+// survives until a username is entered, which it can't be without.
+func TestPinnedProxyPassword(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	m, err := Load(ctx, st, Defaults("/downloads"), []string{"PIECEMEAL_PROXY_PASSWORD=pinned"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := m.Update(ctx, json.RawMessage(`{"proxyType": "socks5", "proxyHost": "proxy", "proxyUsername": "user"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := s.ProxyServer(); p.Username != "user" || p.Password != "pinned" {
+		t.Fatalf("proxy %+v", p)
+	}
+	// Clearing and setting the username again keeps it too.
+	for _, patch := range []string{`{"proxyUsername": ""}`, `{"proxyUsername": "user"}`} {
+		if s, err = m.Update(ctx, json.RawMessage(patch)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if s.ProxyPassword != "pinned" {
+		t.Fatalf("password %q", s.ProxyPassword)
 	}
 }

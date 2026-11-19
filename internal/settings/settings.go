@@ -316,9 +316,10 @@ func RedactPatch(patch []byte) string {
 }
 
 // normalize clears values that mean nothing without another: the proxy
-// password without a username.
-func (s *Settings) normalize() {
-	if s.ProxyUsername == "" {
+// password without a username, unless an environment variable sets it
+// (locked maps pinned settings), since it can't be entered again.
+func (s *Settings) normalize(locked map[string]string) {
+	if _, pinned := locked["proxyPassword"]; s.ProxyUsername == "" && !pinned {
 		s.ProxyPassword = ""
 	}
 }
@@ -384,7 +385,7 @@ func Load(ctx context.Context, st *store.Store, defaults Settings, environ []str
 		}
 		locked[name] = envName
 	}
-	cur.normalize()
+	cur.normalize(locked)
 	if err := cur.Validate(); err != nil {
 		return nil, fmt.Errorf("settings: %w", err)
 	}
@@ -486,7 +487,7 @@ func (m *Manager) apply(ctx context.Context, fields map[string]json.RawMessage) 
 		m.mu.Unlock()
 		return Settings{}, &ValidationError{err}
 	}
-	next.normalize()
+	next.normalize(m.locked)
 	if err := next.Validate(); err != nil {
 		m.mu.Unlock()
 		return Settings{}, &ValidationError{err}
@@ -531,14 +532,18 @@ func (m *Manager) apply(ctx context.Context, fields map[string]json.RawMessage) 
 }
 
 // EnvName is the environment variable for a setting's JSON name.
+// An acronym is one word: proxyRSS is PIECEMEAL_PROXY_RSS and bannedIPs
+// PIECEMEAL_BANNED_IPS.
 func EnvName(jsonName string) string {
 	var b strings.Builder
 	b.WriteString("PIECEMEAL_")
-	for i, r := range jsonName {
-		if unicode.IsUpper(r) && i > 0 {
+	prev := rune(0)
+	for _, r := range jsonName {
+		if unicode.IsUpper(r) && (unicode.IsLower(prev) || unicode.IsDigit(prev)) {
 			b.WriteByte('_')
 		}
 		b.WriteRune(unicode.ToUpper(r))
+		prev = r
 	}
 	return b.String()
 }
