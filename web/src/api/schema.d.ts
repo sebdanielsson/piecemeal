@@ -1046,9 +1046,9 @@ export interface components {
       deleteData?: boolean;
       /** @description Infohashes, or ["all"]. */
       hashes: string[] | null;
-      /** @description With setIncompletePath: the incomplete folder, empty for none. */
+      /** @description With setIncompletePath: the incomplete folder, empty for none. With move: also change the incomplete folder, in the same move. */
       incompletePath?: string;
-      /** @description With move: where to move the data. */
+      /** @description With move: where to move the data; empty keeps the save path when incompletePath is given. */
       savePath?: string;
       /** @description With addTags and removeTags; removeTags without tags removes all. */
       tags?: string[] | null;

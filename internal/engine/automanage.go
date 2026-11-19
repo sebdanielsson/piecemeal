@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 
@@ -108,7 +109,7 @@ func (e *Engine) followCategoryLocked(m *managed, s settings.Settings) {
 	if save == m.rec.SavePath && incomplete == m.rec.IncompletePath {
 		return
 	}
-	if err := e.placeLocked(m, m.placeFor(save, incomplete)); err != nil {
+	if err := e.placeLocked(m, m.placeFor(save, incomplete)); err != nil && !errors.Is(err, ErrClosed) {
 		m.setError(err)
 	}
 }

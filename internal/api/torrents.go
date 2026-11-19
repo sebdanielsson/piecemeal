@@ -130,12 +130,12 @@ type BulkAction struct {
 	Hashes     []string `json:"hashes" minItems:"1" doc:"Infohashes, or [\"all\"]."`
 	Action     string   `json:"action" enum:"start,stop,forceStart,recheck,reannounce,remove,setCategory,addTags,removeTags,move,setIncompletePath,setAutoManaged,queueTop,queueBottom,queueUp,queueDown"`
 	DeleteData bool     `json:"deleteData,omitempty" doc:"With remove: also delete the files."`
-	SavePath   string   `json:"savePath,omitempty" doc:"With move: where to move the data."`
+	SavePath   string   `json:"savePath,omitempty" doc:"With move: where to move the data; empty keeps the save path when incompletePath is given."`
 	Category   string   `json:"category,omitempty" doc:"With setCategory; empty removes the category."`
 	Tags       []string `json:"tags,omitempty" doc:"With addTags and removeTags; removeTags without tags removes all."`
 
-	IncompletePath string `json:"incompletePath,omitempty" doc:"With setIncompletePath: the incomplete folder, empty for none."`
-	AutoManaged    bool   `json:"autoManaged,omitempty" doc:"With setAutoManaged: on or off."`
+	IncompletePath *string `json:"incompletePath,omitempty" doc:"With setIncompletePath: the incomplete folder, empty for none. With move: also change the incomplete folder, in the same move."`
+	AutoManaged    bool    `json:"autoManaged,omitempty" doc:"With setAutoManaged: on or off."`
 }
 
 type bulkInput struct{ Body BulkAction }
@@ -523,14 +523,21 @@ func (a *API) updateTorrent(ctx context.Context, hash string, u UpdateTorrentReq
 	if u.AutoManaged != nil && !*u.AutoManaged {
 		errs = append(errs, e.SetAutoManaged(ctx, false, hash))
 	}
-	if u.SavePath != nil {
-		if st, _ := e.Get(hash); st.SavePath != *u.SavePath {
-			errs = append(errs, e.Move(ctx, hash, *u.SavePath))
+	// Both paths change in one move: a second one would find the torrent
+	// still moving.
+	if st, ok := e.Get(hash); ok {
+		save, incomplete := "", (*string)(nil)
+		if u.SavePath != nil && *u.SavePath != st.SavePath {
+			if *u.SavePath == "" {
+				errs = append(errs, fmt.Errorf("%w: the save path is empty", engine.ErrInvalid))
+			}
+			save = *u.SavePath
 		}
-	}
-	if u.IncompletePath != nil {
-		if st, _ := e.Get(hash); st.IncompletePath != *u.IncompletePath {
-			errs = append(errs, e.SetIncompletePath(ctx, *u.IncompletePath, hash))
+		if u.IncompletePath != nil && *u.IncompletePath != st.IncompletePath {
+			incomplete = u.IncompletePath
+		}
+		if save != "" || incomplete != nil {
+			errs = append(errs, e.Relocate(ctx, save, incomplete, hash))
 		}
 	}
 	if u.AutoManaged != nil && *u.AutoManaged {
@@ -569,19 +576,16 @@ func (a *API) bulk(ctx context.Context, b BulkAction) error {
 	case "removeTags":
 		return e.RemoveTags(ctx, b.Tags, h...)
 	case "move":
-		if len(h) == 1 && h[0] == "all" {
-			h = nil
-			for _, t := range e.List() {
-				h = append(h, t.Hash)
-			}
+		if b.SavePath == "" && b.IncompletePath == nil {
+			return fmt.Errorf("%w: move needs savePath or incompletePath", engine.ErrInvalid)
 		}
-		var errs []error
-		for _, hash := range h {
-			errs = append(errs, e.Move(ctx, hash, b.SavePath))
-		}
-		return errors.Join(errs...)
+		return e.Relocate(ctx, b.SavePath, b.IncompletePath, h...)
 	case "setIncompletePath":
-		return e.SetIncompletePath(ctx, b.IncompletePath, h...)
+		path := ""
+		if b.IncompletePath != nil {
+			path = *b.IncompletePath
+		}
+		return e.SetIncompletePath(ctx, path, h...)
 	case "setAutoManaged":
 		return e.SetAutoManaged(ctx, b.AutoManaged, h...)
 	case "queueTop", "queueBottom", "queueUp", "queueDown":

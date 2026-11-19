@@ -469,11 +469,11 @@
             ]
           },
           "incompletePath": {
-            "description": "With setIncompletePath: the incomplete folder, empty for none.",
+            "description": "With setIncompletePath: the incomplete folder, empty for none. With move: also change the incomplete folder, in the same move.",
             "type": "string"
           },
           "savePath": {
-            "description": "With move: where to move the data.",
+            "description": "With move: where to move the data; empty keeps the save path when incompletePath is given.",
             "type": "string"
           },
           "tags": {

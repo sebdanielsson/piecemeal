@@ -49,21 +49,22 @@ export function MoveDialog({
     onOpenChange(next);
   };
   const saveChanged = value.trim() !== "" && value.trim() !== sharedSave;
-  const incompleteChanged = incomplete !== null && incompleteValue.trim() !== sharedIncomplete;
+  // Compared with each torrent's own folder, so that clearing the field
+  // removes differing folders too.
+  const incompleteChanged =
+    incomplete !== null && torrents.some((t) => t.incompletePath !== incomplete.trim());
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    const hashes = torrents.map((t) => t.hash);
-    const actions: TorrentActionInput[] = [];
+    // One action for both paths: the data moves once.
+    const input: TorrentActionInput = { action: "move", hashes: torrents.map((t) => t.hash) };
     if (saveChanged) {
-      actions.push({ action: "move", hashes, savePath: value.trim() });
+      input.savePath = value.trim();
     }
     if (incompleteChanged) {
-      actions.push({ action: "setIncompletePath", hashes, incompletePath: incompleteValue.trim() });
+      input.incompletePath = incompleteValue.trim();
     }
     try {
-      for (const a of actions) {
-        await action.mutateAsync(a);
-      }
+      await action.mutateAsync(input);
       close(false);
     } catch {
       // The mutation shows the error; the dialog stays open.

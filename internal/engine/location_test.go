@@ -210,6 +210,55 @@ func TestSetIncompletePath(t *testing.T) {
 	}
 }
 
+// TestRelocate moves a torrent that never completed but is in its save
+// path to a new save path, not into its incomplete folder, and changes a
+// complete torrent's save path and incomplete folder in one move.
+func TestRelocate(t *testing.T) {
+	ctx := context.Background()
+	s := enginetest.NewSeeder(t, "payload", map[string]int{"data.bin": 256 << 10})
+	h := newHarness(t)
+	inc := filepath.Join(h.saveDir, "inc")
+	// Partial data in the save path and none in the incomplete folder: the
+	// torrent stays in its save path.
+	writeContent(t, s, h.saveDir, true)
+	hash, err := h.engine.Add(ctx, AddParams{Metainfo: s.Metainfo, IncompletePath: &inc})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.waitFor(hash, "checked in the save path", func(st Torrent) bool {
+		return st.State == StateStalledDownloading && st.Completed > 0 &&
+			st.ContentPath == filepath.Join(h.saveDir, "payload", "data.bin")
+	})
+
+	dest := filepath.Join(h.saveDir, "moved")
+	if err := h.engine.Move(ctx, hash, dest); err != nil {
+		t.Fatal(err)
+	}
+	h.waitFor(hash, "moved to the new save path", func(st Torrent) bool {
+		return st.State == StateStalledDownloading && st.SavePath == dest && st.IncompletePath == inc &&
+			st.ContentPath == filepath.Join(dest, "payload", "data.bin")
+	})
+	if exists(filepath.Join(inc, "payload")) {
+		t.Fatal("data moved into the incomplete folder")
+	}
+
+	if err := h.engine.AddPeers(ctx, []string{s.Addr}, hash); err != nil {
+		t.Fatal(err)
+	}
+	h.waitFor(hash, "complete", func(st Torrent) bool { return st.Complete && seeding(st) })
+
+	// Both paths at once, for a complete torrent in its save path.
+	dest2, inc2 := filepath.Join(h.saveDir, "done"), filepath.Join(h.saveDir, "inc2")
+	if err := h.engine.Relocate(ctx, dest2, &inc2, hash); err != nil {
+		t.Fatal(err)
+	}
+	h.waitFor(hash, "both paths changed", func(st Torrent) bool {
+		return seeding(st) && st.SavePath == dest2 && st.IncompletePath == inc2 &&
+			st.ContentPath == filepath.Join(dest2, "payload", "data.bin")
+	})
+	h.checkContentIn(&seeder{s}, dest2)
+}
+
 // TestAutoManaged follows an automatically managed torrent through
 // category changes: its data moves to the new category's path, or, with
 // relocateOnCategoryChange off, it switches to manual management and stays.

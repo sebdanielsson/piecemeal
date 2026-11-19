@@ -465,7 +465,7 @@ func TestPaths(t *testing.T) {
 	if !updated.AutoManaged || updated.IncompletePath != filepath.Join(temp, "tv") {
 		t.Fatalf("automatically managed again: %+v", updated)
 	}
-	s.do(http.MethodPost, "/torrents/actions", BulkAction{Hashes: []string{testHash, other}, Action: "setIncompletePath", IncompletePath: inc},
+	s.do(http.MethodPost, "/torrents/actions", BulkAction{Hashes: []string{testHash, other}, Action: "setIncompletePath", IncompletePath: &inc},
 		http.StatusNoContent, nil, csrf...)
 	s.do(http.MethodPost, "/torrents/actions", BulkAction{Hashes: []string{"all"}, Action: "setAutoManaged", AutoManaged: true},
 		http.StatusNoContent, nil, csrf...)

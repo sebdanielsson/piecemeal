@@ -37,9 +37,7 @@ test("changes only the incomplete folder", async () => {
   await user.clear(incomplete);
   await user.click(button);
   await vi.waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
-  expect(bodies).toEqual([
-    { action: "setIncompletePath", hashes: ["a".repeat(40)], incompletePath: "" },
-  ]);
+  expect(bodies).toEqual([{ action: "move", hashes: ["a".repeat(40)], incompletePath: "" }]);
 });
 
 test("moves the data and changes the incomplete folder", async () => {
@@ -52,7 +50,30 @@ test("moves the data and changes the incomplete folder", async () => {
   await user.click(screen.getByRole("button", { name: "Move" }));
   await vi.waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
   expect(bodies).toEqual([
-    { action: "move", hashes: ["a".repeat(40)], savePath: "/downloads/new" },
-    { action: "setIncompletePath", hashes: ["a".repeat(40)], incompletePath: "/downloads/inc" },
+    {
+      action: "move",
+      hashes: ["a".repeat(40)],
+      savePath: "/downloads/new",
+      incompletePath: "/downloads/inc",
+    },
+  ]);
+});
+
+test("removes differing incomplete folders", async () => {
+  const { bodies, onOpenChange } = setup([
+    torrent({ incompletePath: "/downloads/a" }),
+    torrent({ hash: "b".repeat(40), incompletePath: "/downloads/b" }),
+  ]);
+  const user = userEvent.setup();
+  const incomplete = screen.getByLabelText("Incomplete folder");
+  expect((incomplete as HTMLInputElement).value).toBe("");
+  await user.type(incomplete, "x");
+  await user.clear(incomplete);
+  const button = screen.getByRole("button", { name: "Move" });
+  expect(button.hasAttribute("disabled")).toBe(false);
+  await user.click(button);
+  await vi.waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  expect(bodies).toEqual([
+    { action: "move", hashes: ["a".repeat(40), "b".repeat(40)], incompletePath: "" },
   ]);
 });

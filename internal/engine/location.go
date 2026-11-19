@@ -95,6 +95,11 @@ func (e *Engine) placeLocked(m *managed, p placement) error {
 		e.refreshLocked(m)
 		return nil
 	}
+	if e.closed.Load() {
+		// Close waits for moves before its last tick: one started now would
+		// outlive the client and the store.
+		return ErrClosed
+	}
 	running := m.t != nil
 	m.moving = true
 	e.detachLocked(m)
@@ -145,7 +150,9 @@ func (m *managed) awaitingMove() bool {
 // moveCompletedLocked moves a complete torrent's data from its incomplete
 // folder to its save path.
 func (e *Engine) moveCompletedLocked(m *managed) {
-	if !m.awaitingMove() {
+	// Close's last tick runs once moves are waited for; the next start
+	// moves the data instead.
+	if e.closed.Load() || !m.awaitingMove() {
 		return
 	}
 	e.log.Info("torrent complete, moving it to its save path", "hash", m.rec.InfoHash, "from", m.rec.IncompletePath,
@@ -161,30 +168,10 @@ func (e *Engine) moveCompletedLocked(m *managed) {
 // and resumes if it was running. A torrent still in its incomplete folder
 // keeps its data there and moves to the new save path once complete.
 func (e *Engine) Move(ctx context.Context, hash, savePath string) error {
-	dest, err := e.confine(savePath)
-	if err != nil {
-		return err
+	if savePath == "" {
+		return fmt.Errorf("%w: the save path is empty", ErrInvalid)
 	}
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	m, err := e.get(hash)
-	if err != nil {
-		return err
-	}
-	if m.moving {
-		return fmt.Errorf("%w: already being moved", ErrInvalid)
-	}
-	if m.rec.AutoManaged {
-		m.rec.AutoManaged = false
-		m.dirty = true
-	}
-	if dest == m.rec.SavePath {
-		e.saveLocked(m)
-		e.refreshLocked(m)
-		return nil
-	}
-	_ = ctx
-	return e.placeLocked(m, m.placeFor(dest, m.rec.IncompletePath))
+	return e.Relocate(ctx, savePath, nil, hash)
 }
 
 // SetIncompletePath changes torrents' incomplete folder; "" means none.
@@ -192,22 +179,52 @@ func (e *Engine) Move(ctx context.Context, hash, savePath string) error {
 // without one, and a torrent that never completed moves into the new one.
 // Automatic management turns off, as with Move.
 func (e *Engine) SetIncompletePath(ctx context.Context, path string, hashes ...string) error {
-	if path != "" {
-		p, err := e.confine(path)
+	return e.Relocate(ctx, "", &path, hashes...)
+}
+
+// Relocate changes torrents' save path, incomplete folder, or both, with
+// a single move of their data, and turns automatic management off. An
+// empty savePath keeps the save path; a nil incompletePath keeps the
+// incomplete folder, and "" removes it. The data stays in whichever of the
+// two folders holds it, except that a new incomplete folder takes the data
+// of a torrent that never completed, as SetIncompletePath says.
+func (e *Engine) Relocate(ctx context.Context, savePath string, incompletePath *string, hashes ...string) error {
+	if savePath != "" {
+		p, err := e.confine(savePath)
 		if err != nil {
 			return err
 		}
-		path = p
+		savePath = p
+	}
+	var incomplete string
+	if incompletePath != nil && *incompletePath != "" {
+		p, err := e.confine(*incompletePath)
+		if err != nil {
+			return err
+		}
+		incomplete = p
 	}
 	return e.each(ctx, hashes, func(m *managed) error {
 		if m.moving {
 			return fmt.Errorf("%w: the torrent is being moved", ErrInvalid)
 		}
-		m.rec.AutoManaged = false
-		if path == m.rec.IncompletePath {
+		if m.rec.AutoManaged {
+			m.rec.AutoManaged = false
+			m.dirty = true
+		}
+		p := placement{save: m.rec.SavePath, incomplete: m.rec.IncompletePath, inIncomplete: m.rec.InIncompletePath}
+		if savePath != "" {
+			p.save = savePath
+		}
+		if incompletePath != nil && incomplete != m.rec.IncompletePath {
+			p = m.placeFor(p.save, incomplete)
+		}
+		if p.save == m.rec.SavePath && p.incomplete == m.rec.IncompletePath {
+			e.saveLocked(m)
+			e.refreshLocked(m)
 			return nil
 		}
-		return e.placeLocked(m, m.placeFor(m.rec.SavePath, path))
+		return e.placeLocked(m, p)
 	})
 }
 
