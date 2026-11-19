@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -71,10 +72,19 @@ func newHarness(t *testing.T, opts ...func(*harness)) *harness {
 
 func (h *harness) start() {
 	h.t.Helper()
-	log := h.log
-	if log == nil {
-		log = slog.New(slog.DiscardHandler)
+	// The engine's log, printed if the test fails, along with any handler
+	// the test set.
+	tl := &testLog{}
+	handler := slog.Handler(slog.NewTextHandler(tl, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	if h.log != nil {
+		handler = slog.NewMultiHandler(h.log.Handler(), handler)
 	}
+	log := slog.New(handler)
+	h.t.Cleanup(func() {
+		if h.t.Failed() {
+			h.t.Logf("engine log:\n%s", tl)
+		}
+	})
 	var err error
 	h.engine, err = New(context.Background(), Config{
 		DataDir:            h.dataDir,
@@ -99,10 +109,39 @@ func (h *harness) waitFor(hash string, what string, cond func(Torrent) bool) Tor
 			return st
 		}
 		if time.Now().After(deadline) {
-			h.t.Fatalf("timed out waiting for %s; last status: %+v", what, st)
+			h.t.Fatalf("timed out waiting for %s; last status: %+v\nclient status:\n%s", what, st, h.clientStatus())
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
+}
+
+// clientStatus is anacrolix's description of the client: torrents, peers
+// and their requests.
+func (h *harness) clientStatus() string {
+	h.engine.mu.Lock()
+	c := h.engine.client
+	h.engine.mu.Unlock()
+	var b bytes.Buffer
+	c.WriteStatus(&b)
+	return b.String()
+}
+
+// testLog collects a test engine's log.
+type testLog struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (l *testLog) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.Write(p)
+}
+
+func (l *testLog) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.String()
 }
 
 func (h *harness) checkContent(s *seeder, root string) {
