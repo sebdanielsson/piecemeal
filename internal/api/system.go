@@ -39,8 +39,14 @@ type transferOutput struct{ Body engine.TransferStatus }
 
 // SettingsResponse is the current settings and which are pinned.
 type SettingsResponse struct {
-	Settings settings.Settings `json:"settings"`
-	Locked   map[string]string `json:"locked" doc:"Settings set by environment variables, which can't be changed here, mapped to the variable."`
+	Settings         settings.Settings `json:"settings"`
+	Locked           map[string]string `json:"locked" doc:"Settings set by environment variables, which can't be changed here, mapped to the variable."`
+	ProxyPasswordSet bool              `json:"proxyPasswordSet" doc:"Whether a proxy password is stored. The password itself is never returned."`
+}
+
+// settingsResponse is s without its write-only values.
+func (a *API) settingsResponse(s settings.Settings) SettingsResponse {
+	return SettingsResponse{Settings: s.Public(), Locked: a.Settings.Locked(), ProxyPasswordSet: s.ProxyPassword != ""}
 }
 
 type settingsOutput struct{ Body SettingsResponse }
@@ -135,7 +141,7 @@ func (a *API) registerSystem() {
 
 	huma.Register(a.huma, a.operation(http.MethodGet, "/settings", "getSettings", "Get settings", tag, accessUser),
 		func(context.Context, *struct{}) (*settingsOutput, error) {
-			return &settingsOutput{Body: SettingsResponse{Settings: a.Settings.Get(), Locked: a.Settings.Locked()}}, nil
+			return &settingsOutput{Body: a.settingsResponse(a.Settings.Get())}, nil
 		})
 
 	op = a.operation(http.MethodPatch, "/settings", "updateSettings", "Change settings", tag, accessAdmin)
@@ -145,8 +151,8 @@ func (a *API) registerSystem() {
 		if err != nil {
 			return nil, apiError(err)
 		}
-		a.Auth.Audit(ctx, actor(ctx), "settings.update", string(in.RawBody))
-		return &settingsOutput{Body: SettingsResponse{Settings: s, Locked: a.Settings.Locked()}}, nil
+		a.Auth.Audit(ctx, actor(ctx), "settings.update", settings.RedactPatch(in.RawBody))
+		return &settingsOutput{Body: a.settingsResponse(s)}, nil
 	})
 
 	huma.Register(a.huma, a.operation(http.MethodGet, "/log", "getLog", "Get recent log entries", tag, accessAdmin),

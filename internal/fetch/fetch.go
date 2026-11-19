@@ -1,7 +1,12 @@
 // Package fetch downloads .torrent files from URLs given to the add
-// endpoints. It is the one place piecemeal fetches arbitrary URLs, so it
-// refuses private, loopback and link-local addresses unless allowed, and
-// limits size, redirects and time.
+// endpoints, and RSS feeds. It is the one place piecemeal fetches arbitrary
+// URLs, so it refuses private, loopback and link-local addresses unless
+// allowed, and limits size, redirects and time.
+//
+// Through a proxy, piecemeal still looks hostnames up itself and checks
+// the addresses, then asks the proxy for the address it checked. Addresses
+// that are only allowed by the allowed networks are private, so they are
+// reached directly: a proxy elsewhere couldn't reach them.
 package fetch
 
 import (
@@ -15,15 +20,55 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/sebdanielsson/piecemeal/internal/proxy"
 )
 
-// Fetcher downloads torrent files.
+// Fetcher downloads torrent files and feeds.
 type Fetcher struct {
-	client  *http.Client
+	clients atomic.Pointer[clients]
 	jar     *jar
 	maxSize int64
+	allowed []netip.Prefix
+	dialer  *net.Dialer
+	// public reports whether an address is public, rather than allowed
+	// only by the allowed networks; tests replace it.
+	public func(netip.Addr) bool
+}
+
+// clients are the HTTP clients for one proxy setting. Torrent files and
+// feeds have their own, since they may take different routes. Each one's
+// route is fixed, so a pooled connection never outlives it.
+type clients struct {
+	torrents, feeds *http.Client
+}
+
+// Proxy is the proxy the fetcher uses, and for what.
+type Proxy struct {
+	// Server is the proxy; nil for none.
+	Server *proxy.Server
+	// TorrentFiles and Feeds choose what goes through it.
+	TorrentFiles, Feeds bool
+}
+
+// SetProxy changes the proxy. Later requests use new connections on the
+// new route; requests already running finish on the old one, whose
+// connections are then closed.
+func (f *Fetcher) SetProxy(p Proxy) {
+	route := func(through bool) *proxy.Server {
+		if through {
+			return p.Server
+		}
+		return nil
+	}
+	old := f.clients.Swap(&clients{torrents: f.newClient(route(p.TorrentFiles)), feeds: f.newClient(route(p.Feeds))})
+	if old != nil {
+		old.torrents.CloseIdleConnections()
+		old.feeds.CloseIdleConnections()
+	}
 }
 
 // ErrForbidden is returned for URLs that resolve to a blocked address.
@@ -32,7 +77,13 @@ var ErrForbidden = errors.New("address not allowed")
 // New returns a fetcher that may also reach the allowed networks, which
 // are otherwise blocked as private.
 func New(allowed []netip.Prefix) *Fetcher {
-	dialer := &net.Dialer{
+	f := &Fetcher{
+		maxSize: 16 << 20,
+		jar:     &jar{now: time.Now},
+		allowed: allowed,
+		public:  func(ip netip.Addr) bool { return Allowed(ip, nil) },
+	}
+	f.dialer = &net.Dialer{
 		Timeout: 10 * time.Second,
 		// Control sees the address after DNS resolution, so a hostname that
 		// resolves to a private address is caught too.
@@ -53,17 +104,29 @@ func New(allowed []netip.Prefix) *Fetcher {
 			return nil
 		},
 	}
+	f.SetProxy(Proxy{})
+	return f
+}
+
+// newClient returns a client that connects through srv, or directly when
+// it is nil.
+func (f *Fetcher) newClient(srv *proxy.Server) *http.Client {
 	transport := &http.Transport{
-		DialContext:           dialer.DialContext,
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			if srv != nil {
+				return f.dialProxied(ctx, srv, network, addr)
+			}
+			return f.dialer.DialContext(ctx, network, addr)
+		},
 		TLSHandshakeTimeout:   10 * time.Second,
 		ResponseHeaderTimeout: 20 * time.Second,
 		MaxIdleConns:          4,
 		IdleConnTimeout:       30 * time.Second,
-		// Proxies would make the address check meaningless.
+		// Never the environment's proxy: DialContext checks addresses and
+		// uses the configured proxy itself.
 		Proxy: nil,
 	}
-	f := &Fetcher{maxSize: 16 << 20, jar: &jar{now: time.Now}}
-	f.client = &http.Client{
+	return &http.Client{
 		Transport: transport,
 		Jar:       f.jar,
 		Timeout:   30 * time.Second,
@@ -77,7 +140,45 @@ func New(allowed []netip.Prefix) *Fetcher {
 			return nil
 		},
 	}
-	return f
+}
+
+// dialProxied looks addr up, checks its addresses as a direct dial would,
+// and connects to the first that works: through the proxy, or directly to
+// a private address that the allowed networks let through.
+func (f *Fetcher) dialProxied(ctx context.Context, srv *proxy.Server, network, addr string) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, err
+	}
+	var ips []netip.Addr
+	if ip, err := netip.ParseAddr(host); err == nil {
+		ips = []netip.Addr{ip}
+	} else if ips, err = net.DefaultResolver.LookupNetIP(ctx, "ip", host); err != nil {
+		return nil, err
+	}
+	var errs []error
+	for _, ip := range ips {
+		ip = ip.Unmap()
+		if !Allowed(ip, f.allowed) {
+			errs = append(errs, ErrForbidden)
+			continue
+		}
+		target := net.JoinHostPort(ip.String(), port)
+		var c net.Conn
+		if f.public(ip) {
+			c, err = srv.DialContext(ctx, "tcp", target)
+		} else {
+			c, err = f.dialer.DialContext(ctx, network, target)
+		}
+		if err == nil {
+			return c, nil
+		}
+		errs = append(errs, err)
+		if ctx.Err() != nil || errors.Is(err, proxy.ErrUnreachable) {
+			break
+		}
+	}
+	return nil, errors.Join(errs...)
 }
 
 // Allowed reports whether ip may be fetched from.
@@ -156,8 +257,17 @@ type Result struct {
 // may resolve to is checked when dialing.
 var fetchableURL = regexp.MustCompile(`(?i)^https?://[^/?#\s]+([/?#]\S*)?$`)
 
-// Get downloads rawURL.
+// Get downloads a torrent file, or finds the magnet URI rawURL leads to.
 func (f *Fetcher) Get(ctx context.Context, rawURL string) (Result, error) {
+	return f.get(ctx, f.clients.Load().torrents, rawURL)
+}
+
+// GetFeed downloads an RSS feed.
+func (f *Fetcher) GetFeed(ctx context.Context, rawURL string) (Result, error) {
+	return f.get(ctx, f.clients.Load().feeds, rawURL)
+}
+
+func (f *Fetcher) get(ctx context.Context, client *http.Client, rawURL string) (Result, error) {
 	if strings.HasPrefix(strings.ToLower(rawURL), "magnet:") {
 		return Result{Magnet: rawURL}, nil
 	}
@@ -173,7 +283,7 @@ func (f *Fetcher) Get(ctx context.Context, rawURL string) (Result, error) {
 		return Result{}, err
 	}
 	req.Header.Set("User-Agent", "piecemeal")
-	resp, err := f.client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		// The dial error names the blocked address the host resolved to.
 		if errors.Is(err, ErrForbidden) {

@@ -18,13 +18,15 @@ import { PageSection } from "../shell/page";
 
 type Key = keyof Settings;
 
-export type FieldDef =
+export type FieldDef = (
   | {
       key: Key;
       label: string;
       description?: string;
       kind: "text" | "path" | "bool" | "limit" | "time" | "lines";
     }
+  // A write-only setting: it reads back empty, and empty leaves it as it is.
+  | { key: Key; label: string; description?: string; kind: "password" }
   | { key: Key; label: string; description?: string; kind: "int"; min?: number; max?: number }
   | { key: Key; label: string; description?: string; kind: "ratio" | "minutes" }
   | {
@@ -33,7 +35,11 @@ export type FieldDef =
       description?: string;
       kind: "select";
       options: { value: string; label: string }[];
-    };
+    }
+) & {
+  /** Shows the field only when it matters for the settings being edited. */
+  shownWhen?: (s: Settings) => boolean;
+};
 
 export interface FieldGroupDef {
   title: string;
@@ -156,16 +162,19 @@ export function SettingsForm({ groups, footer }: { groups: FieldGroupDef[]; foot
       {groups.map((g) => (
         <PageSection key={g.title} title={g.title} description={g.description}>
           <div className="flex flex-col gap-6">
-            {g.fields.map((f) => (
-              <SettingField
-                key={f.key}
-                def={f}
-                value={draft[f.key]}
-                lockedBy={data.locked[f.key]}
-                disabled={!editable(f.key)}
-                onChange={(v) => setEdits((e) => ({ ...e, [f.key]: v }))}
-              />
-            ))}
+            {g.fields
+              .filter((f) => !f.shownWhen || f.shownWhen(draft))
+              .map((f) => (
+                <SettingField
+                  key={f.key}
+                  def={f}
+                  value={draft[f.key]}
+                  lockedBy={data.locked[f.key]}
+                  disabled={!editable(f.key)}
+                  passwordSet={data.proxyPasswordSet}
+                  onChange={(v) => setEdits((e) => ({ ...e, [f.key]: v }))}
+                />
+              ))}
           </div>
         </PageSection>
       ))}
@@ -201,12 +210,15 @@ function SettingField({
   value,
   lockedBy,
   disabled,
+  passwordSet,
   onChange,
 }: {
   def: FieldDef;
   value: Settings[Key];
   lockedBy: string | undefined;
   disabled: boolean;
+  /** Whether a password is stored, for a password field. */
+  passwordSet?: boolean;
   onChange: (value: Settings[Key]) => void;
 }) {
   const id = `setting-${def.key}`;
@@ -299,6 +311,21 @@ function SettingField({
           onChange={(e) => onChange(e.target.value)}
           rows={4}
           className="max-w-xl font-mono text-xs"
+        />
+      );
+      break;
+    case "password":
+      control = (
+        <Input
+          id={id}
+          type="password"
+          // Not the browser's saved password for piecemeal itself.
+          autoComplete="new-password"
+          value={String(value)}
+          disabled={off}
+          placeholder={passwordSet ? "Saved; type a new one to replace it" : undefined}
+          onChange={(e) => onChange(e.target.value)}
+          className="max-w-xl"
         />
       );
       break;

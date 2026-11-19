@@ -6,6 +6,8 @@ description: Run piecemeal inside a WireGuard container's network namespace and 
 
 piecemeal can run in a VPN container's network namespace, so all its traffic goes through the tunnel, and forward its peer port with NAT-PMP, as ProtonVPN and some other providers offer. Peers can then reach it from the internet without exposing your own address.
 
+When piecemeal can't run inside the VPN, send its traffic through the provider's [proxy](proxy.md) instead, with less coverage.
+
 ```yaml
 services:
   wireguard:

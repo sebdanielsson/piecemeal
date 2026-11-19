@@ -220,6 +220,8 @@ func preferencesToSettings(in map[string]any, cur settings.Settings) (map[string
 		}
 	}
 
+	proxyPreferences(in, out, bad, &errs)
+
 	// Seeding goals come in flag and value pairs; either may come alone.
 	// Off stores -1; a value of 0 or more turns the goal on.
 	goal := func(flag, value, setting string, curValue float64, ratio bool) {
@@ -360,6 +362,79 @@ func preferencesToSettings(in map[string]any, cur settings.Settings) (map[string
 		}
 	}
 	return out, errors.Join(errs...)
+}
+
+// proxyPreferences maps the proxy preferences. proxy_type is a name since
+// qBittorrent 4.6 and a number before: -1 none, 1 HTTP, 2 SOCKS5, 3 HTTP
+// and 4 SOCKS5 with authentication, 5 SOCKS4. piecemeal has no SOCKS4.
+// Authentication is on when there is a username; proxy_password reads
+// back empty, so an empty one leaves it as it is.
+func proxyPreferences(in, out map[string]any, bad func(string), errs *[]error) {
+	if v, ok := in["proxy_type"]; ok {
+		types := map[string]string{"None": "none", "HTTP": "http", "SOCKS5": "socks5"}
+		legacy := map[int64]string{-1: "none", 0: "none", 1: "http", 2: "socks5", 3: "http", 4: "socks5"}
+		var t string
+		switch v := v.(type) {
+		case string:
+			t = types[v]
+		case float64:
+			if n, ok := prefInt(v); ok {
+				t = legacy[n]
+			}
+		}
+		switch {
+		case v == "SOCKS4" || v == float64(5):
+			*errs = append(*errs, errors.New("proxy_type: SOCKS4 isn't supported; use SOCKS5"))
+		case t == "":
+			bad("proxy_type")
+		default:
+			out["proxyType"] = t
+		}
+	}
+	if v, ok := in["proxy_ip"]; ok {
+		if s, ok := v.(string); ok {
+			out["proxyHost"] = s
+		} else {
+			bad("proxy_ip")
+		}
+	}
+	if v, ok := in["proxy_port"]; ok {
+		if n, ok := prefInt(v); ok {
+			out["proxyPort"] = n
+		} else {
+			bad("proxy_port")
+		}
+	}
+	authOff := in["proxy_auth_enabled"] == false
+	switch {
+	case authOff:
+		out["proxyUsername"] = ""
+	case in["proxy_username"] != nil:
+		if s, ok := in["proxy_username"].(string); ok {
+			out["proxyUsername"] = s
+		} else {
+			bad("proxy_username")
+		}
+	}
+	if v, ok := in["proxy_password"]; ok && !authOff {
+		if s, ok := v.(string); !ok {
+			bad("proxy_password")
+		} else if s != "" {
+			out["proxyPassword"] = s
+		}
+	}
+	for k, setting := range map[string]string{
+		"proxy_hostname_lookup": "proxyHostnameLookup", "proxy_bittorrent": "proxyBitTorrent",
+		"proxy_peer_connections": "proxyPeerConnections", "proxy_rss": "proxyRSS", "proxy_misc": "proxyTorrentFiles",
+	} {
+		if v, ok := in[k]; ok {
+			if b, ok := v.(bool); ok {
+				out[setting] = b
+			} else {
+				bad(k)
+			}
+		}
+	}
 }
 
 // apiKeyName is the name of the key rotateAPIKey manages for a user.

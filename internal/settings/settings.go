@@ -19,6 +19,8 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net"
+	"net/netip"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -28,6 +30,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/sebdanielsson/piecemeal/internal/proxy"
 	"github.com/sebdanielsson/piecemeal/internal/store"
 )
 
@@ -65,6 +68,18 @@ type Settings struct {
 	DHT        bool   `json:"dht" doc:"Use the DHT to find peers."`
 	PEX        bool   `json:"pex" doc:"Exchange peers with other peers."`
 	Encryption string `json:"encryption" enum:"prefer,require,disable" doc:"Peer connection encryption: prefer, require or disable."`
+
+	// Proxy
+	ProxyType            string `json:"proxyType" enum:"none,socks5,http" doc:"The proxy server's type: none, socks5, or http (an HTTP proxy that allows CONNECT to any port)."`
+	ProxyHost            string `json:"proxyHost" doc:"The proxy server's hostname or IP address."`
+	ProxyPort            int    `json:"proxyPort" minimum:"0" maximum:"65535" doc:"The proxy server's port."`
+	ProxyUsername        string `json:"proxyUsername" maxLength:"255" doc:"The username for the proxy, empty for none."`
+	ProxyPassword        string `json:"proxyPassword" maxLength:"255" writeOnly:"true" doc:"The password for the proxy. Write-only: reads return an empty string, and an empty value leaves the password as it is. Clearing proxyUsername clears it."`
+	ProxyBitTorrent      bool   `json:"proxyBitTorrent" doc:"Announce to trackers and download from web seeds through the proxy. UDP trackers need a SOCKS5 proxy that relays UDP, and aren't used otherwise."`
+	ProxyPeerConnections bool   `json:"proxyPeerConnections" doc:"With proxyBitTorrent, connect to peers through the proxy too. The DHT, uTP and WebRTC peers can't go through it, so they are off meanwhile."`
+	ProxyHostnameLookup  bool   `json:"proxyHostnameLookup" doc:"Let the proxy look up the hostnames of trackers and web seeds, so they aren't looked up locally. UDP trackers are always looked up locally."`
+	ProxyRSS             bool   `json:"proxyRSS" doc:"Fetch RSS feeds through the proxy."`
+	ProxyTorrentFiles    bool   `json:"proxyTorrentFiles" doc:"Download torrent files from URLs through the proxy, whether added by URL or by an RSS rule. Addresses on PIECEMEAL_FETCH_ALLOWED_NETWORKS are reached directly."`
 
 	// Seeding goals. A torrent's own goals override these, then its
 	// category's.
@@ -128,6 +143,13 @@ func Defaults(defaultSavePath string) Settings {
 		DHT:                      true,
 		PEX:                      true,
 		Encryption:               "prefer",
+		ProxyType:                "none",
+		ProxyPort:                1080,
+		ProxyBitTorrent:          true,
+		ProxyPeerConnections:     true,
+		ProxyHostnameLookup:      true,
+		ProxyRSS:                 true,
+		ProxyTorrentFiles:        true,
 		RatioLimit:               -1,
 		SeedingTimeLimit:         -1,
 		InactiveSeedingTimeLimit: -1,
@@ -182,6 +204,7 @@ func (s Settings) Validate() error {
 	if !slices.Contains([]string{"prefer", "require", "disable"}, s.Encryption) {
 		errs = append(errs, errors.New("encryption: must be prefer, require or disable"))
 	}
+	errs = append(errs, s.validateProxy()...)
 	if s.RatioLimit < 0 && s.RatioLimit != -1 {
 		errs = append(errs, errors.New("ratioLimit: must be -1 or at least 0"))
 	}
@@ -222,6 +245,83 @@ func (s Settings) Validate() error {
 		errs = append(errs, errors.New("rssFetchDelay and rssMaxArticles: must not be negative"))
 	}
 	return errors.Join(errs...)
+}
+
+func (s Settings) validateProxy() []error {
+	var errs []error
+	if !slices.Contains([]string{"none", proxy.SOCKS5, proxy.HTTP}, s.ProxyType) {
+		errs = append(errs, errors.New("proxyType: must be none, socks5 or http"))
+	}
+	if s.ProxyPort < 0 || s.ProxyPort > 65535 {
+		errs = append(errs, errors.New("proxyPort: must be between 0 and 65535"))
+	}
+	host := s.ProxyHost
+	if _, err := netip.ParseAddr(host); err != nil &&
+		(strings.ContainsAny(host, ":/@?# \t\r\n[]") || len(host) > 253) {
+		errs = append(errs, errors.New("proxyHost: must be a hostname or IP address, without a scheme or port"))
+	}
+	if s.ProxyType != "none" {
+		if host == "" {
+			errs = append(errs, errors.New("proxyHost: must not be empty while a proxy type is set"))
+		}
+		if s.ProxyPort == 0 {
+			errs = append(errs, errors.New("proxyPort: must be set while a proxy type is set"))
+		}
+	}
+	// SOCKS5 sends each in a length byte.
+	if len(s.ProxyUsername) > 255 || len(s.ProxyPassword) > 255 {
+		errs = append(errs, errors.New("proxyUsername and proxyPassword: must be at most 255 bytes each"))
+	}
+	if s.ProxyType == proxy.HTTP && strings.Contains(s.ProxyUsername, ":") {
+		errs = append(errs, errors.New("proxyUsername: an HTTP proxy's username can't contain a colon"))
+	}
+	return errs
+}
+
+// ProxyServer returns the proxy server, or nil when proxyType is none.
+func (s Settings) ProxyServer() *proxy.Server {
+	if s.ProxyType == "none" || s.ProxyType == "" {
+		return nil
+	}
+	p := &proxy.Server{
+		Type: s.ProxyType,
+		Addr: net.JoinHostPort(s.ProxyHost, strconv.Itoa(s.ProxyPort)),
+	}
+	if s.ProxyUsername != "" {
+		p.Username, p.Password = s.ProxyUsername, s.ProxyPassword
+	}
+	return p
+}
+
+// Public returns the settings without write-only values, for responses.
+func (s Settings) Public() Settings {
+	s.ProxyPassword = ""
+	return s
+}
+
+// RedactPatch returns a settings patch for logs and the audit trail, with
+// the values of write-only settings replaced.
+func RedactPatch(patch []byte) string {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(patch, &fields); err != nil {
+		return "(not a JSON object)"
+	}
+	for name := range fields {
+		if writeOnly[name] {
+			fields[name] = json.RawMessage(`"(hidden)"`)
+		}
+	}
+	b, _ := json.Marshal(fields)
+	return string(b)
+}
+
+// normalize clears values that mean nothing without another: the proxy
+// password without a username, unless an environment variable sets it
+// (locked maps pinned settings), since it can't be entered again.
+func (s *Settings) normalize(locked map[string]string) {
+	if _, pinned := locked["proxyPassword"]; s.ProxyUsername == "" && !pinned {
+		s.ProxyPassword = ""
+	}
 }
 
 // Manager holds the current settings and persists changes.
@@ -285,6 +385,7 @@ func Load(ctx context.Context, st *store.Store, defaults Settings, environ []str
 		}
 		locked[name] = envName
 	}
+	cur.normalize(locked)
 	if err := cur.Validate(); err != nil {
 		return nil, fmt.Errorf("settings: %w", err)
 	}
@@ -357,6 +458,13 @@ func (m *Manager) Set(ctx context.Context, values map[string]any) (Settings, err
 func (m *Manager) apply(ctx context.Context, fields map[string]json.RawMessage) (Settings, error) {
 	m.update.Lock()
 	defer m.update.Unlock()
+	// A write-only setting reads back empty, so a client that sends back
+	// what it read sends it empty: that leaves it as it is.
+	for name := range writeOnly {
+		if v, ok := fields[name]; ok && string(bytes.TrimSpace(v)) == `""` {
+			delete(fields, name)
+		}
+	}
 	m.mu.Lock()
 	old := m.cur
 	next := m.cur
@@ -379,6 +487,7 @@ func (m *Manager) apply(ctx context.Context, fields map[string]json.RawMessage) 
 		m.mu.Unlock()
 		return Settings{}, &ValidationError{err}
 	}
+	next.normalize(m.locked)
 	if err := next.Validate(); err != nil {
 		m.mu.Unlock()
 		return Settings{}, &ValidationError{err}
@@ -390,9 +499,16 @@ func (m *Manager) apply(ctx context.Context, fields map[string]json.RawMessage) 
 		}
 	}
 
-	nextJSON := toFields(next)
+	// The settings in the patch are stored, and any that normalize changed
+	// with them, unless an environment variable sets those.
+	oldJSON, nextJSON := toFields(old), toFields(next)
 	err := m.store.Tx(ctx, func(q *store.Queries) error {
-		for name := range fields {
+		for name := range fieldsByName {
+			_, inPatch := fields[name]
+			_, pinned := m.locked[name]
+			if !inPatch && (pinned || bytes.Equal(oldJSON[name], nextJSON[name])) {
+				continue
+			}
 			if err := q.UpsertSetting(ctx, store.UpsertSettingParams{Key: name, Value: string(nextJSON[name])}); err != nil {
 				return err
 			}
@@ -416,14 +532,18 @@ func (m *Manager) apply(ctx context.Context, fields map[string]json.RawMessage) 
 }
 
 // EnvName is the environment variable for a setting's JSON name.
+// An acronym is one word: proxyRSS is PIECEMEAL_PROXY_RSS and bannedIPs
+// PIECEMEAL_BANNED_IPS.
 func EnvName(jsonName string) string {
 	var b strings.Builder
 	b.WriteString("PIECEMEAL_")
-	for i, r := range jsonName {
-		if unicode.IsUpper(r) && i > 0 {
+	prev := rune(0)
+	for _, r := range jsonName {
+		if unicode.IsUpper(r) && (unicode.IsLower(prev) || unicode.IsDigit(prev)) {
 			b.WriteByte('_')
 		}
 		b.WriteRune(unicode.ToUpper(r))
+		prev = r
 	}
 	return b.String()
 }
@@ -440,6 +560,17 @@ var fieldsByName = func() map[string]reflect.StructField {
 		f := t.Field(i)
 		name, _, _ := strings.Cut(f.Tag.Get("json"), ",")
 		m[name] = f
+	}
+	return m
+}()
+
+// writeOnly are the settings that responses leave out (see Public).
+var writeOnly = func() map[string]bool {
+	m := map[string]bool{}
+	for name, f := range fieldsByName {
+		if f.Tag.Get("writeOnly") == "true" {
+			m[name] = true
+		}
 	}
 	return m
 }()

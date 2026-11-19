@@ -44,6 +44,8 @@ type harness struct {
 	// log and wrapStorage, when set, go to the engine's Config.
 	log         *slog.Logger
 	wrapStorage func(storage.ClientImplCloser) storage.ClientImplCloser
+	// clientConfig replaces offline as the engine's ClientConfig.
+	clientConfig func(*torrent.ClientConfig)
 }
 
 // newHarness starts an engine; opts adjust the harness before it starts.
@@ -85,13 +87,17 @@ func (h *harness) start() {
 			h.t.Logf("engine log:\n%s", tl)
 		}
 	})
+	clientConfig := offline
+	if h.clientConfig != nil {
+		clientConfig = h.clientConfig
+	}
 	var err error
 	h.engine, err = New(context.Background(), Config{
 		DataDir:            h.dataDir,
 		AllowedRoots:       []string{h.saveDir},
 		TickInterval:       50 * time.Millisecond,
 		CheckpointInterval: time.Second,
-		ClientConfig:       offline,
+		ClientConfig:       clientConfig,
 		wrapStorage:        h.wrapStorage,
 	}, h.store, h.settings, log)
 	if err != nil {

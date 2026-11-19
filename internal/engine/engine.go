@@ -23,11 +23,13 @@ import (
 
 	g "github.com/anacrolix/generics"
 	"github.com/anacrolix/torrent"
+	"github.com/anacrolix/torrent/dialer"
 	"github.com/anacrolix/torrent/metainfo"
 	"github.com/anacrolix/torrent/mse"
 	"github.com/anacrolix/torrent/storage"
 	"golang.org/x/time/rate"
 
+	"github.com/sebdanielsson/piecemeal/internal/proxy"
 	"github.com/sebdanielsson/piecemeal/internal/settings"
 	"github.com/sebdanielsson/piecemeal/internal/store"
 )
@@ -311,7 +313,8 @@ func (e *Engine) onSettingsChanged(old, cur settings.Settings) {
 	e.onPathSettingsChangedLocked(old, cur)
 	needsRestart := cur.DHT != old.DHT || cur.PEX != old.PEX || cur.UTP != old.UTP ||
 		cur.Encryption != old.Encryption || cur.MaxHalfOpenConnections != old.MaxHalfOpenConnections ||
-		(!e.cfg.PortForwarded && cur.PeerPort != old.PeerPort)
+		(!e.cfg.PortForwarded && cur.PeerPort != old.PeerPort) ||
+		btProxyOf(cur) != btProxyOf(old)
 	if needsRestart {
 		// Keep the port in use unless the port setting changed, also when
 		// it is 0 (random).
@@ -393,7 +396,62 @@ func (e *Engine) clientConfig(port int, s settings.Settings) *torrent.ClientConf
 	if e.cfg.ClientConfig != nil {
 		e.cfg.ClientConfig(tc)
 	}
+	// Last, so tests can't undo it by accident: nothing that can't go
+	// through the proxy may bypass it.
+	if p := btProxyOf(s); p != (btProxy{}) {
+		p.configure(tc)
+	}
 	return tc
+}
+
+// btProxy is how BitTorrent traffic uses the proxy; the zero value is not
+// at all.
+type btProxy struct {
+	server    proxy.Server
+	peers     bool
+	remoteDNS bool
+}
+
+func btProxyOf(s settings.Settings) btProxy {
+	srv := s.ProxyServer()
+	if srv == nil || !s.ProxyBitTorrent {
+		return btProxy{}
+	}
+	return btProxy{server: *srv, peers: s.ProxyPeerConnections, remoteDNS: s.ProxyHostnameLookup}
+}
+
+// configure sends trackers and web seeds through the proxy, and peers if
+// set. The proxy's own addresses aren't checked against the IP filter:
+// it filters peers, and the proxy is the admin's choice.
+func (p btProxy) configure(tc *torrent.ClientConfig) {
+	srv := p.server
+	dial := srv.DialResolved
+	if p.remoteDNS {
+		dial = srv.DialContext
+	}
+	// HTTP and WebSocket trackers, web seeds and metainfo sources.
+	tc.TrackerDialContext = dial
+	tc.HTTPDialContext = dial
+	tc.HTTPProxy = nil
+	tc.WebTransport = nil
+	// UDP trackers, through a SOCKS5 proxy's UDP relay; an HTTP proxy
+	// can't carry them, so they fail rather than go direct.
+	tc.TrackerListenPacket = func(string, string) (net.PacketConn, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		return srv.ListenPacket(ctx)
+	}
+	if p.peers {
+		// Outgoing peer connections only through the dialer startClient
+		// adds. Incoming ones still work: peers that reach the listen port
+		// know the address already.
+		tc.DialForPeerConns = false
+		// UDP to peers and DHT nodes would go direct.
+		tc.NoDHT = true
+		tc.DisableUTP = true
+		tc.DisableWebtorrent = true
+		tc.LocalServiceDiscovery = nil
+	}
 }
 
 // startClient creates the anacrolix client. The caller holds mu or is New.
@@ -401,6 +459,13 @@ func (e *Engine) startClient(port int, s settings.Settings) error {
 	cl, err := torrent.NewClient(e.clientConfig(port, s))
 	if err != nil {
 		return fmt.Errorf("torrent client on port %d: %w", port, err)
+	}
+	if p := btProxyOf(s); p != (btProxy{}) {
+		if p.peers {
+			cl.AddDialer(dialer.WithNetwork{Network: "tcp", Dialer: &p.server})
+		}
+		e.log.Info("BitTorrent goes through the proxy", "type", p.server.Type, "proxy", p.server.Addr,
+			"peerConnections", p.peers)
 	}
 	e.client = cl
 	e.port = cl.LocalPort()

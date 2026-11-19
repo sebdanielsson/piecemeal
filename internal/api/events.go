@@ -8,7 +8,6 @@ import (
 	"github.com/danielgtaylor/huma/v2/sse"
 
 	"github.com/sebdanielsson/piecemeal/internal/engine"
-	"github.com/sebdanielsson/piecemeal/internal/settings"
 )
 
 // SnapshotEvent is the first event on a stream: the full state the
@@ -40,11 +39,8 @@ type TagsEvent struct {
 	Items []string `json:"items"`
 }
 
-// SettingsEvent is the new settings.
-type SettingsEvent struct {
-	Settings settings.Settings `json:"settings"`
-	Locked   map[string]string `json:"locked" doc:"Settings set by environment variables, mapped to the variable."`
-}
+// SettingsEvent is the new settings, as GET /settings returns them.
+type SettingsEvent SettingsResponse
 
 func (a *API) registerEvents() {
 	op := a.operation(http.MethodGet, "/events", "streamEvents", "Stream live changes", "Events", accessUser)
@@ -112,7 +108,7 @@ func (a *API) stream(ctx context.Context, send sse.Sender) {
 					return
 				}
 			case engine.EventSettings:
-				if send.Data(SettingsEvent{Settings: a.Settings.Get(), Locked: a.Settings.Locked()}) != nil {
+				if send.Data(SettingsEvent(a.settingsResponse(a.Settings.Get()))) != nil {
 					return
 				}
 			}

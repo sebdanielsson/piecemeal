@@ -1742,6 +1742,57 @@
             "description": "Exchange peers with other peers.",
             "type": "boolean"
           },
+          "proxyBitTorrent": {
+            "description": "Announce to trackers and download from web seeds through the proxy. UDP trackers need a SOCKS5 proxy that relays UDP, and aren't used otherwise.",
+            "type": "boolean"
+          },
+          "proxyHost": {
+            "description": "The proxy server's hostname or IP address.",
+            "type": "string"
+          },
+          "proxyHostnameLookup": {
+            "description": "Let the proxy look up the hostnames of trackers and web seeds, so they aren't looked up locally. UDP trackers are always looked up locally.",
+            "type": "boolean"
+          },
+          "proxyPassword": {
+            "description": "The password for the proxy. Write-only: reads return an empty string, and an empty value leaves the password as it is. Clearing proxyUsername clears it.",
+            "maxLength": 255,
+            "type": "string",
+            "writeOnly": true
+          },
+          "proxyPeerConnections": {
+            "description": "With proxyBitTorrent, connect to peers through the proxy too. The DHT, uTP and WebRTC peers can't go through it, so they are off meanwhile.",
+            "type": "boolean"
+          },
+          "proxyPort": {
+            "description": "The proxy server's port.",
+            "format": "int64",
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "proxyRSS": {
+            "description": "Fetch RSS feeds through the proxy.",
+            "type": "boolean"
+          },
+          "proxyTorrentFiles": {
+            "description": "Download torrent files from URLs through the proxy, whether added by URL or by an RSS rule. Addresses on PIECEMEAL_FETCH_ALLOWED_NETWORKS are reached directly.",
+            "type": "boolean"
+          },
+          "proxyType": {
+            "description": "The proxy server's type: none, socks5, or http (an HTTP proxy that allows CONNECT to any port).",
+            "enum": [
+              "none",
+              "socks5",
+              "http"
+            ],
+            "type": "string"
+          },
+          "proxyUsername": {
+            "description": "The username for the proxy, empty for none.",
+            "maxLength": 255,
+            "type": "string"
+          },
           "queueingEnabled": {
             "description": "Run only a limited number of torrents at a time; the rest wait in the queue.",
             "type": "boolean"
@@ -1869,6 +1920,16 @@
           "dht",
           "pex",
           "encryption",
+          "proxyType",
+          "proxyHost",
+          "proxyPort",
+          "proxyUsername",
+          "proxyPassword",
+          "proxyBitTorrent",
+          "proxyPeerConnections",
+          "proxyHostnameLookup",
+          "proxyRSS",
+          "proxyTorrentFiles",
           "ratioLimit",
           "seedingTimeLimit",
           "inactiveSeedingTimeLimit",
@@ -1907,8 +1968,12 @@
             "additionalProperties": {
               "type": "string"
             },
-            "description": "Settings set by environment variables, mapped to the variable.",
+            "description": "Settings set by environment variables, which can't be changed here, mapped to the variable.",
             "type": "object"
+          },
+          "proxyPasswordSet": {
+            "description": "Whether a proxy password is stored. The password itself is never returned.",
+            "type": "boolean"
           },
           "settings": {
             "$ref": "#/components/schemas/Settings"
@@ -1916,7 +1981,8 @@
         },
         "required": [
           "settings",
-          "locked"
+          "locked",
+          "proxyPasswordSet"
         ],
         "type": "object"
       },
@@ -1930,13 +1996,18 @@
             "description": "Settings set by environment variables, which can't be changed here, mapped to the variable.",
             "type": "object"
           },
+          "proxyPasswordSet": {
+            "description": "Whether a proxy password is stored. The password itself is never returned.",
+            "type": "boolean"
+          },
           "settings": {
             "$ref": "#/components/schemas/Settings"
           }
         },
         "required": [
           "settings",
-          "locked"
+          "locked",
+          "proxyPasswordSet"
         ],
         "type": "object"
       },
@@ -5414,6 +5485,57 @@
                   "pex": {
                     "description": "Exchange peers with other peers.",
                     "type": "boolean"
+                  },
+                  "proxyBitTorrent": {
+                    "description": "Announce to trackers and download from web seeds through the proxy. UDP trackers need a SOCKS5 proxy that relays UDP, and aren't used otherwise.",
+                    "type": "boolean"
+                  },
+                  "proxyHost": {
+                    "description": "The proxy server's hostname or IP address.",
+                    "type": "string"
+                  },
+                  "proxyHostnameLookup": {
+                    "description": "Let the proxy look up the hostnames of trackers and web seeds, so they aren't looked up locally. UDP trackers are always looked up locally.",
+                    "type": "boolean"
+                  },
+                  "proxyPassword": {
+                    "description": "The password for the proxy. Write-only: reads return an empty string, and an empty value leaves the password as it is. Clearing proxyUsername clears it.",
+                    "maxLength": 255,
+                    "type": "string",
+                    "writeOnly": true
+                  },
+                  "proxyPeerConnections": {
+                    "description": "With proxyBitTorrent, connect to peers through the proxy too. The DHT, uTP and WebRTC peers can't go through it, so they are off meanwhile.",
+                    "type": "boolean"
+                  },
+                  "proxyPort": {
+                    "description": "The proxy server's port.",
+                    "format": "int64",
+                    "maximum": 65535,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "proxyRSS": {
+                    "description": "Fetch RSS feeds through the proxy.",
+                    "type": "boolean"
+                  },
+                  "proxyTorrentFiles": {
+                    "description": "Download torrent files from URLs through the proxy, whether added by URL or by an RSS rule. Addresses on PIECEMEAL_FETCH_ALLOWED_NETWORKS are reached directly.",
+                    "type": "boolean"
+                  },
+                  "proxyType": {
+                    "description": "The proxy server's type: none, socks5, or http (an HTTP proxy that allows CONNECT to any port).",
+                    "enum": [
+                      "none",
+                      "socks5",
+                      "http"
+                    ],
+                    "type": "string"
+                  },
+                  "proxyUsername": {
+                    "description": "The username for the proxy, empty for none.",
+                    "maxLength": 255,
+                    "type": "string"
                   },
                   "queueingEnabled": {
                     "description": "Run only a limited number of torrents at a time; the rest wait in the queue.",

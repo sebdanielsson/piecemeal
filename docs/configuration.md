@@ -90,6 +90,13 @@ Change these in **Settings**, with `PATCH /api/piecemeal/v1/settings`, or throug
 | `utp` | `true` | Use uTP as well as TCP. |
 | `dht`, `pex` | `true` | Find peers through the DHT and peer exchange. Private torrents use neither. |
 | `encryption` | `prefer` | Peer connection encryption: `prefer`, `require` or `disable`. |
+| `proxyType` | `none` | Send traffic through a proxy: `none`, `socks5`, or `http` (one that allows CONNECT to any port). See [Proxy](guides/proxy.md). |
+| `proxyHost`, `proxyPort` | none, `1080` | The proxy's hostname or IP address, and port. |
+| `proxyUsername`, `proxyPassword` | none | Credentials for the proxy. The password is write-only: reads return it empty, an empty value leaves it as it is, and clearing the username clears it. |
+| `proxyBitTorrent` | `true` | Announce to trackers and download from web seeds through the proxy. UDP trackers need a SOCKS5 proxy that relays UDP. |
+| `proxyPeerConnections` | `true` | With `proxyBitTorrent`, connect to peers through the proxy too; the DHT, uTP and WebRTC peers are off meanwhile. |
+| `proxyHostnameLookup` | `true` | Let the proxy look up the hostnames of trackers and web seeds. |
+| `proxyTorrentFiles`, `proxyRSS` | `true` | Download torrent files from URLs, and fetch RSS feeds, through the proxy. Addresses on `PIECEMEAL_FETCH_ALLOWED_NETWORKS` are reached directly. |
 | `ratioLimit` | `-1` | Seeding goal: this upload ratio; `-1` is unlimited. |
 | `seedingTimeLimit` | `-1` | Seeding goal: this many minutes seeding. |
 | `inactiveSeedingTimeLimit` | `-1` | Seeding goal: this many minutes without uploading. |

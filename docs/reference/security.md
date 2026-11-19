@@ -36,13 +36,14 @@ Every save path, move, rename and directory listing must be inside `PIECEMEAL_AL
 
 ## Fetching URLs
 
-Adding a torrent by URL, and fetching RSS feeds, refuses loopback, private, link-local, carrier-grade NAT and other special-purpose addresses, including IPv4 addresses inside NAT64, 6to4 and Teredo IPv6 addresses. The check runs on the address actually dialed, after DNS resolution and after every redirect, so a name that resolves to an internal address is refused too. `PIECEMEAL_FETCH_ALLOWED_NETWORKS` allows the private networks you choose. Responses are capped at 16 MiB, and errors and logs show URLs without their query, where indexers and trackers put keys.
+Adding a torrent by URL, and fetching RSS feeds, refuses loopback, private, link-local, carrier-grade NAT and other special-purpose addresses, including IPv4 addresses inside NAT64, 6to4 and Teredo IPv6 addresses. The check runs on the address actually dialed, after DNS resolution and after every redirect, so a name that resolves to an internal address is refused too. `PIECEMEAL_FETCH_ALLOWED_NETWORKS` allows the private networks you choose. Responses are capped at 16 MiB, and errors and logs show URLs without their query, where indexers and trackers put keys. Through a [proxy](../guides/proxy.md), piecemeal still looks the hostname up and checks the address, then asks the proxy for that address, so the proxy can't be used to reach a name that resolves differently there.
 
 ## Secrets in the open
 
 - People other than admins see RSS feed URLs with the query hidden.
 - Article links and torrent URLs are shown as the feed gives them, so a tracker that puts a passkey in them shares it with everyone who can read RSS.
 - RSS article HTML is sanitized before it reaches qBittorrent clients.
+- The proxy password is stored in the database, and so in backups, but never returned by the web UI or the APIs, and the audit log hides it. `PIECEMEAL_PROXY_PASSWORD` keeps it out of the database.
 
 ## Audit log
 

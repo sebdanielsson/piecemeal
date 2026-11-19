@@ -154,6 +154,19 @@ func (s *Server) mappedPreferences() map[string]any {
 		"max_uploads":             -1,
 		"max_uploads_per_torrent": -1,
 
+		// Proxy. The password is write-only, as in piecemeal's own API.
+		"proxy_type":             proxyType(st.ProxyType),
+		"proxy_ip":               st.ProxyHost,
+		"proxy_port":             st.ProxyPort,
+		"proxy_auth_enabled":     st.ProxyUsername != "",
+		"proxy_username":         st.ProxyUsername,
+		"proxy_password":         "",
+		"proxy_hostname_lookup":  st.ProxyHostnameLookup,
+		"proxy_bittorrent":       st.ProxyBitTorrent,
+		"proxy_peer_connections": st.ProxyPeerConnections,
+		"proxy_rss":              st.ProxyRSS,
+		"proxy_misc":             st.ProxyTorrentFiles,
+
 		// BitTorrent
 		"dht":                            st.DHT,
 		"pex":                            st.PEX,
@@ -219,6 +232,17 @@ func (s *Server) mappedPreferences() map[string]any {
 		"use_https":                           false,
 	}
 	return p
+}
+
+// proxyType is qBittorrent's proxy_type for a piecemeal proxy type.
+func proxyType(t string) string {
+	switch t {
+	case "socks5":
+		return "SOCKS5"
+	case "http":
+		return "HTTP"
+	}
+	return "None"
 }
 
 // btProtocol is qBittorrent's bittorrent_protocol: 0 TCP and uTP, 1 TCP.

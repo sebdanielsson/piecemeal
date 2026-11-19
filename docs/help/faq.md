@@ -42,4 +42,4 @@ Downloads are wherever their save paths point. piecemeal's own state, the databa
 
 ## What's missing?
 
-Per-torrent speed limits, proxies, super seeding, I2P, SSL torrents and tracker status, each tracked in an issue. See the [introduction](../index.md#what-it-doesnt-do).
+Per-torrent speed limits, super seeding, I2P, SSL torrents and tracker status, each tracked in an issue. See the [introduction](../index.md#what-it-doesnt-do).

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -15,6 +16,9 @@ func TestEnvName(t *testing.T) {
 		"downloadLimit":            "PIECEMEAL_DOWNLOAD_LIMIT",
 		"dht":                      "PIECEMEAL_DHT",
 		"maxConnectionsPerTorrent": "PIECEMEAL_MAX_CONNECTIONS_PER_TORRENT",
+		"proxyRSS":                 "PIECEMEAL_PROXY_RSS",
+		"bannedIPs":                "PIECEMEAL_BANNED_IPS",
+		"ipFilterPath":             "PIECEMEAL_IP_FILTER_PATH",
 	} {
 		if got := EnvName(in); got != want {
 			t.Errorf("EnvName(%q) = %q, want %q", in, got, want)
@@ -133,5 +137,122 @@ func TestAltSpeedWindow(t *testing.T) {
 		if got := s.InAltSpeedWindow(tc.now); got != tc.want {
 			t.Errorf("%s-%s %s at %s: %v, want %v", tc.from, tc.to, tc.days, tc.now.Format("Mon 15:04"), got, tc.want)
 		}
+	}
+}
+
+func TestProxySettings(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	m, err := Load(ctx, st, Defaults("/downloads"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Get().ProxyServer() != nil {
+		t.Fatal("a proxy by default")
+	}
+
+	for _, patch := range []string{
+		`{"proxyType": "socks4"}`,
+		`{"proxyType": "socks5"}`, // no host
+		`{"proxyType": "socks5", "proxyHost": "proxy", "proxyPort": 0}`,
+		`{"proxyHost": "socks5://proxy"}`,
+		`{"proxyHost": "proxy:1080"}`,
+		`{"proxyHost": "pro xy"}`,
+		`{"proxyType": "http", "proxyHost": "proxy", "proxyUsername": "a:b"}`,
+	} {
+		var ve *ValidationError
+		if _, err := m.Update(ctx, json.RawMessage(patch)); !errors.As(err, &ve) {
+			t.Errorf("%s: got %v, want a validation error", patch, err)
+		}
+	}
+
+	s, err := m.Update(ctx, json.RawMessage(`{"proxyType": "socks5", "proxyHost": "::1", "proxyPort": 1081,
+		"proxyUsername": "user", "proxyPassword": "secret"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := s.ProxyServer()
+	if p == nil || p.Addr != "[::1]:1081" || p.Username != "user" || p.Password != "secret" {
+		t.Fatalf("proxy %+v", p)
+	}
+	if s.Public().ProxyPassword != "" || s.Public().ProxyUsername != "user" {
+		t.Fatalf("public %+v", s.Public())
+	}
+
+	// An empty password, as a client sends back what it read, leaves it.
+	if s, err = m.Update(ctx, json.RawMessage(`{"proxyPassword": "", "proxyPort": 1082}`)); err != nil {
+		t.Fatal(err)
+	}
+	if s.ProxyPassword != "secret" || s.ProxyPort != 1082 {
+		t.Fatalf("after an empty password: %+v", s)
+	}
+
+	// Clearing the username clears the password, in the store too.
+	if s, err = m.Update(ctx, json.RawMessage(`{"proxyUsername": ""}`)); err != nil {
+		t.Fatal(err)
+	}
+	if s.ProxyPassword != "" || s.ProxyServer().Username != "" {
+		t.Fatalf("after clearing the username: %+v", s)
+	}
+	m2, err := Load(ctx, st, Defaults("/downloads"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := m2.Get(); got.ProxyPassword != "" || got.ProxyPort != 1082 || got.ProxyHost != "::1" {
+		t.Fatalf("reloaded %+v", got)
+	}
+}
+
+// TestPublicClearsWriteOnly checks that Public clears every write-only
+// setting, so a new one can't be added without it.
+func TestPublicClearsWriteOnly(t *testing.T) {
+	var s Settings
+	rv := reflect.ValueOf(&s).Elem()
+	for name := range writeOnly {
+		rv.FieldByIndex(fieldsByName[name].Index).SetString("secret")
+	}
+	if len(writeOnly) == 0 {
+		t.Fatal("no write-only settings")
+	}
+	pub := toFields(s.Public())
+	for name := range writeOnly {
+		if string(pub[name]) != `""` {
+			t.Errorf("Public leaves %s: %s", name, pub[name])
+		}
+	}
+}
+
+// TestPinnedProxyPassword checks that a password set by the environment
+// survives until a username is entered, which it can't be without.
+func TestPinnedProxyPassword(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.OpenMemory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	m, err := Load(ctx, st, Defaults("/downloads"), []string{"PIECEMEAL_PROXY_PASSWORD=pinned"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := m.Update(ctx, json.RawMessage(`{"proxyType": "socks5", "proxyHost": "proxy", "proxyUsername": "user"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := s.ProxyServer(); p.Username != "user" || p.Password != "pinned" {
+		t.Fatalf("proxy %+v", p)
+	}
+	// Clearing and setting the username again keeps it too.
+	for _, patch := range []string{`{"proxyUsername": ""}`, `{"proxyUsername": "user"}`} {
+		if s, err = m.Update(ctx, json.RawMessage(patch)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if s.ProxyPassword != "pinned" {
+		t.Fatalf("password %q", s.ProxyPassword)
 	}
 }

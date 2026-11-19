@@ -4,7 +4,7 @@ piecemeal is a self-hosted BitTorrent client: a single Go binary built on [anacr
 
 It grows out of the test daemon in [`sebdanielsson/infra` `docker/transmission-wireguard/anacrolix`](https://github.com/sebdanielsson/infra/tree/main/docker/transmission-wireguard/anacrolix), which proved the library on the target host: NAT-PMP port forwarding through a WireGuard VPN, a responsive API under heavy disk load, and 9.7 MiB/s onto a ZFS RAID-Z1 pool once mmap storage was turned off.
 
-Status: all six phases are done, and 1.0 runs on hogsmeade in place of Transmission. Two items from Phase 5 are left: per-torrent speed limits wait for anacrolix/torrent to support them ([#43](https://github.com/sebdanielsson/piecemeal/issues/43)), and proxy support is planned ([#45](https://github.com/sebdanielsson/piecemeal/issues/45)). Release history is in the [changelog](../CHANGELOG.md).
+Status: all six phases are done, and 1.0 runs on hogsmeade in place of Transmission. One item from Phase 5 is left: per-torrent speed limits wait for anacrolix/torrent to support them ([#43](https://github.com/sebdanielsson/piecemeal/issues/43)). Proxy support came in 1.2 ([#45](https://github.com/sebdanielsson/piecemeal/issues/45)). Release history is in the [changelog](../CHANGELOG.md).
 
 ## Goals
 

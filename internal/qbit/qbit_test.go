@@ -28,13 +28,14 @@ import (
 )
 
 type env struct {
-	t      *testing.T
-	srv    *httptest.Server
-	engine *engine.Engine
-	auth   *auth.Service
-	client *http.Client
-	save   string
-	store  *store.Store
+	t        *testing.T
+	srv      *httptest.Server
+	engine   *engine.Engine
+	auth     *auth.Service
+	client   *http.Client
+	save     string
+	store    *store.Store
+	settings *settings.Manager
 }
 
 func newEnv(t *testing.T, environ ...string) *env {
@@ -84,7 +85,7 @@ func newEnv(t *testing.T, environ ...string) *env {
 	srv := httptest.NewServer(New(Deps{Engine: e, Settings: sm, Auth: a, Fetcher: fetcher, Store: st, RSS: feeds, Logs: logs, Log: log, HTTPPort: 8080}))
 	t.Cleanup(srv.Close)
 	jar, _ := cookiejar.New(nil)
-	return &env{t: t, srv: srv, engine: e, auth: a, client: &http.Client{Jar: jar}, save: save, store: st}
+	return &env{t: t, srv: srv, engine: e, auth: a, client: &http.Client{Jar: jar}, save: save, store: st, settings: sm}
 }
 
 type response struct {
@@ -96,7 +97,7 @@ type response struct {
 // newEnvClient is another client of the same server, with its own cookies.
 func newEnvClient(e *env) *env {
 	jar, _ := cookiejar.New(nil)
-	return &env{t: e.t, srv: e.srv, engine: e.engine, auth: e.auth, client: &http.Client{Jar: jar}, save: e.save, store: e.store}
+	return &env{t: e.t, srv: e.srv, engine: e.engine, auth: e.auth, client: &http.Client{Jar: jar}, save: e.save, store: e.store, settings: e.settings}
 }
 
 func (r response) json(t *testing.T, v any) {

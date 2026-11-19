@@ -20,7 +20,7 @@ A self-hosted BitTorrent client: one Go binary built on [anacrolix/torrent](http
 - **Safe by default**: confined save paths, an SSRF filter on fetched URLs, sign-in limits, CSRF checks and an audit log.
 - **Operable**: Prometheus metrics, health checks, online backups, and import from Transmission and qBittorrent.
 
-No per-torrent speed limits, proxies, search, super seeding, I2P or SSL torrents yet. See how it [compares with qBittorrent, Transmission and Deluge](docs/reference/comparison.md).
+No per-torrent speed limits, search, super seeding, I2P or SSL torrents yet. See how it [compares with qBittorrent, Transmission and Deluge](docs/reference/comparison.md).
 
 ## Quick start
 
@@ -41,7 +41,7 @@ The docs are in [`docs/`](docs) and on the [website](https://piecemeal-flax.verc
 
 - [Comparison with qBittorrent, Transmission and Deluge](docs/reference/comparison.md)
 - [Install](docs/install.md), [configuration](docs/configuration.md), [backup and restore](docs/guides/backup.md)
-- [Radarr, Sonarr and Prowlarr](docs/guides/arr.md), [reverse proxy](docs/guides/reverse-proxy.md), [single sign-on](docs/guides/sso.md), [VPN and port forwarding](docs/guides/vpn.md)
+- [Radarr, Sonarr and Prowlarr](docs/guides/arr.md), [reverse proxy](docs/guides/reverse-proxy.md), [single sign-on](docs/guides/sso.md), [VPN and port forwarding](docs/guides/vpn.md), [proxy](docs/guides/proxy.md)
 - [Web UIs](docs/features/web-ui.md), [RSS](docs/features/rss.md), [APIs](docs/reference/api.md), [qBittorrent compatibility](docs/reference/qbittorrent-compat.md)
 - [Security](docs/reference/security.md), [performance](docs/reference/performance.md), [troubleshooting](docs/help/troubleshooting.md), [FAQ](docs/help/faq.md)
 
