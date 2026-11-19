@@ -189,15 +189,17 @@ func (e *Engine) SetIncompletePath(ctx context.Context, path string, hashes ...s
 // two folders holds it, except that a new incomplete folder takes the data
 // of a torrent that never completed, as SetIncompletePath says.
 func (e *Engine) Relocate(ctx context.Context, savePath string, incompletePath *string, hashes ...string) error {
+	// Only the confined paths reach the closure.
+	var dest, incomplete string
 	if savePath != "" {
 		p, err := e.confine(savePath)
 		if err != nil {
 			return err
 		}
-		savePath = p
+		dest = p
 	}
-	var incomplete string
-	if incompletePath != nil && *incompletePath != "" {
+	setIncomplete := incompletePath != nil
+	if setIncomplete && *incompletePath != "" {
 		p, err := e.confine(*incompletePath)
 		if err != nil {
 			return err
@@ -213,10 +215,10 @@ func (e *Engine) Relocate(ctx context.Context, savePath string, incompletePath *
 			m.dirty = true
 		}
 		p := placement{save: m.rec.SavePath, incomplete: m.rec.IncompletePath, inIncomplete: m.rec.InIncompletePath}
-		if savePath != "" {
-			p.save = savePath
+		if dest != "" {
+			p.save = dest
 		}
-		if incompletePath != nil && incomplete != m.rec.IncompletePath {
+		if setIncomplete && incomplete != m.rec.IncompletePath {
 			p = m.placeFor(p.save, incomplete)
 		}
 		if p.save == m.rec.SavePath && p.incomplete == m.rec.IncompletePath {
