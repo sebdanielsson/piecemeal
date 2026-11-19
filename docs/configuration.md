@@ -23,6 +23,7 @@ piecemeal has two kinds of configuration:
 | `PIECEMEAL_QBITTORRENT_WEBUI_DIR` | off | A qBittorrent web UI such as VueTorrent, served at `/qbittorrent/`. See [Web UIs](features/web-ui.md). |
 | `PIECEMEAL_NATPMP_GATEWAY` | off | A NAT-PMP gateway, such as a VPN's, to forward the peer port through. piecemeal listens on whatever port it gets and follows changes. See [VPN and port forwarding](guides/vpn.md). |
 | `PIECEMEAL_LISTEN_HOST` | all addresses | The address peer listeners bind to. |
+| `PIECEMEAL_BIND_INTERFACE` | none | A network interface, such as a VPN's `wg0`, that every BitTorrent connection, and every fetch from a public address, must go through: a kill switch. Linux and macOS. piecemeal doesn't start without it. See [VPN and port forwarding](guides/vpn.md#kill-switch). |
 | `PIECEMEAL_DISABLE_IPV6` | `false` | No IPv6 peers, for IPv4-only tunnels. |
 | `PIECEMEAL_MMAP` | `false` | Memory-mapped file I/O. Off by default: on ZFS it amplifies writes many times over. |
 

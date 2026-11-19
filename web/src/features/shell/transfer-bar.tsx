@@ -33,6 +33,9 @@ export function TransferBar() {
   const alt = transfer?.altSpeedEnabled ?? settings?.settings.altSpeedEnabled ?? false;
   const altLocked = settings?.locked.altSpeedEnabled;
   const canToggle = transfer !== undefined && !altLocked;
+  // The network interface every connection is bound to, if any.
+  const iface = transfer?.interface;
+  const ifaceDown = iface !== undefined && !iface.up;
 
   return (
     <footer
@@ -130,11 +133,20 @@ export function TransferBar() {
                 )}
               />
               <NetworkIcon className="hidden size-3.5 text-muted-foreground sm:block" />
-              <span className="hidden sm:inline">{transfer.port}</span>
+              <span className={cn("hidden sm:inline", ifaceDown && "text-destructive")}>
+                {ifaceDown ? `${iface.name} is down` : transfer.port}
+              </span>
             </TooltipTrigger>
             <TooltipContent>
-              {connectionLabels[transfer.connection]} on port {transfer.port}
-              {transfer.dhtNodes > 0 ? `, ${transfer.dhtNodes.toLocaleString()} DHT nodes` : ""}
+              {ifaceDown ? (
+                `${iface.name} is down: nothing goes out until it's back`
+              ) : (
+                <>
+                  {connectionLabels[transfer.connection]} on port {transfer.port}
+                  {transfer.dhtNodes > 0 ? `, ${transfer.dhtNodes.toLocaleString()} DHT nodes` : ""}
+                  {iface && `, through ${iface.name} only`}
+                </>
+              )}
               <br />
               This session: ↓ {formatBytes(transfer.sessionDownloaded)}, ↑{" "}
               {formatBytes(transfer.sessionUploaded)}

@@ -46,6 +46,7 @@ import (
 	"github.com/sebdanielsson/piecemeal/internal/logbuf"
 	"github.com/sebdanielsson/piecemeal/internal/metrics"
 	"github.com/sebdanielsson/piecemeal/internal/natpmp"
+	"github.com/sebdanielsson/piecemeal/internal/netbind"
 	"github.com/sebdanielsson/piecemeal/internal/qbit"
 	"github.com/sebdanielsson/piecemeal/internal/rss"
 	"github.com/sebdanielsson/piecemeal/internal/settings"
@@ -175,9 +176,23 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, logs *logbuf.
 	// it, then follow the gateway when it moves the mapping.
 	var eng atomic.Pointer[engine.Engine]
 	var mapper *natpmp.Mapper
+	bind, err := netbind.New(cfg.BindInterface)
+	if err != nil {
+		return fmt.Errorf("PIECEMEAL_BIND_INTERFACE: %w", err)
+	}
+	if bind != nil {
+		// Bound sockets can't be made on an interface that doesn't exist;
+		// a restart policy brings piecemeal back once it does.
+		if bind.State().Index == 0 {
+			return fmt.Errorf("PIECEMEAL_BIND_INTERFACE: there is no network interface %q", bind.Name())
+		}
+		// Name lookups for trackers, the DHT and fetches go through it
+		// too.
+		net.DefaultResolver = bind.Resolver()
+	}
 	ecfg := engine.Config{
 		DataDir: cfg.DataDir, AllowedRoots: cfg.AllowedRoots, Mmap: cfg.Mmap, DisableIPv6: cfg.DisableIPv6,
-		ListenHost: cfg.ListenHost,
+		ListenHost: cfg.ListenHost, Bind: bind,
 	}
 	if cfg.NATPMPGateway != nil {
 		mapper = natpmp.New(cfg.NATPMPGateway, log.With("component", "natpmp"))
@@ -250,7 +265,7 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, logs *logbuf.
 
 	// One fetcher for torrent URLs and feeds, so both send the download
 	// cookies.
-	fetcher := fetch.New(cfg.FetchAllowedNetworks)
+	fetcher := fetch.New(cfg.FetchAllowedNetworks, bind)
 	fetcher.SetProxy(fetchProxy(sm.Get()))
 	sm.Subscribe(func(old, cur settings.Settings) {
 		if p := fetchProxy(cur); !reflect.DeepEqual(p, fetchProxy(old)) {
@@ -332,6 +347,10 @@ func routes(d routeDeps) (*http.ServeMux, *api.API) {
 			http.Error(w, "waiting for a NAT-PMP port mapping\n", http.StatusServiceUnavailable)
 			return
 		}
+		if name, up := d.engine.BoundInterface(); !up {
+			http.Error(w, "network interface "+name+" is down: nothing goes out\n", http.StatusServiceUnavailable)
+			return
+		}
 		_, _ = io.WriteString(w, "ok\n")
 	})
 	if d.cfg.Metrics != "off" {
@@ -345,7 +364,7 @@ func routes(d routeDeps) (*http.ServeMux, *api.API) {
 	}
 	fetcher := d.fetcher
 	if fetcher == nil {
-		fetcher = fetch.New(d.cfg.FetchAllowedNetworks)
+		fetcher = fetch.New(d.cfg.FetchAllowedNetworks, nil)
 	}
 	nativeAPI := api.New(mux, api.Deps{
 		Version: version, StartedAt: time.Now(), Engine: d.engine, Settings: d.settings, Auth: d.auth,

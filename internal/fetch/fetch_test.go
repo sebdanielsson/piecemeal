@@ -44,10 +44,10 @@ func TestGetBlocksLoopback(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if _, err := New(nil).Get(context.Background(), srv.URL); !errors.Is(err, ErrForbidden) {
+	if _, err := New(nil, nil).Get(context.Background(), srv.URL); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("loopback fetch: %v, want ErrForbidden", err)
 	}
-	res, err := New([]netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")}).Get(context.Background(), srv.URL)
+	res, err := New([]netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")}, nil).Get(context.Background(), srv.URL)
 	if err != nil || len(res.Body) == 0 {
 		t.Fatalf("allowed fetch: %+v, %v", res, err)
 	}
@@ -58,14 +58,14 @@ func TestGetFollowsMagnetRedirect(t *testing.T) {
 		http.Redirect(w, r, "magnet:?xt=urn:btih:abc", http.StatusFound)
 	}))
 	defer srv.Close()
-	res, err := New([]netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")}).Get(context.Background(), srv.URL)
+	res, err := New([]netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")}, nil).Get(context.Background(), srv.URL)
 	if err != nil || res.Magnet != "magnet:?xt=urn:btih:abc" {
 		t.Fatalf("magnet redirect: %+v, %v", res, err)
 	}
 }
 
 func TestGetRefusesOtherURLs(t *testing.T) {
-	f := New(nil)
+	f := New(nil, nil)
 	for _, u := range []string{"file:///etc/passwd", "http:///path", "ftp://example.com/x", "gopher://x", "http://", "not a url"} {
 		if _, err := f.Get(context.Background(), u); err == nil || errors.Is(err, ErrForbidden) {
 			t.Errorf("%q: %v, want a bad URL error", u, err)
@@ -77,7 +77,7 @@ func TestGetRefusesOtherURLs(t *testing.T) {
 }
 
 func TestErrorsHideSecrets(t *testing.T) {
-	f := New(nil)
+	f := New(nil, nil)
 	for _, u := range []string{
 		"http://127.0.0.1:1/download?apikey=SECRET&link=x",
 		"http://user:SECRET@127.0.0.1:1/x",

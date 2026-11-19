@@ -16,6 +16,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -29,6 +30,7 @@ import (
 	"github.com/anacrolix/torrent/storage"
 	"golang.org/x/time/rate"
 
+	"github.com/sebdanielsson/piecemeal/internal/netbind"
 	"github.com/sebdanielsson/piecemeal/internal/proxy"
 	"github.com/sebdanielsson/piecemeal/internal/settings"
 	"github.com/sebdanielsson/piecemeal/internal/store"
@@ -55,6 +57,9 @@ type Config struct {
 	PortForwarded bool
 	// InitialPort is the forwarded port to start on when PortForwarded.
 	InitialPort int
+	// Bind, when set, keeps every connection the client makes on one
+	// network interface, such as a VPN's.
+	Bind *netbind.Binder
 	// TickInterval is how often the snapshot is refreshed. Default 1s.
 	TickInterval time.Duration
 	// CheckpointInterval is how often counters are written to the store.
@@ -68,6 +73,8 @@ type Config struct {
 	// wrapStorage, when set, wraps the torrent storage; tests slow down
 	// hashing with it.
 	wrapStorage func(storage.ClientImplCloser) storage.ClientImplCloser
+	// interfaceState, when set, replaces Bind's State for tests.
+	interfaceState func() netbind.State
 }
 
 // Engine is the torrent engine.
@@ -108,6 +115,15 @@ type Engine struct {
 	// lastWindow is whether the alternative speed schedule's window was on
 	// at the last check, nil before the first.
 	lastWindow *bool
+
+	// ifState is the bound interface's state at the last check, and
+	// boundIndex the index of the interface the client's sockets are
+	// bound to. Guarded by mu.
+	ifState    netbind.State
+	boundIndex int
+	// interfaceState reports the bound interface's state; tests replace
+	// it.
+	interfaceState func() netbind.State
 
 	creator creator
 
@@ -180,6 +196,10 @@ func New(ctx context.Context, cfg Config, st *store.Store, sm *settings.Manager,
 		up:          rate.NewLimiter(rate.Inf, 1<<20),
 	}
 	e.filter.log = newPeerLog()
+	e.interfaceState = cfg.interfaceState
+	if e.interfaceState == nil && cfg.Bind != nil {
+		e.interfaceState = cfg.Bind.State
+	}
 	opts := storage.NewFileClientOpts{
 		ClientBaseDir:   cfg.DataDir,
 		PieceCompletion: nopClosePieceCompletion{pc},
@@ -214,6 +234,9 @@ func New(ctx context.Context, cfg Config, st *store.Store, sm *settings.Manager,
 	e.reloadFilter(s)
 	if err := e.startClient(port, s); err != nil {
 		return nil, errors.Join(err, e.closeStorage())
+	}
+	if cfg.Bind != nil {
+		e.ifState = e.interfaceState()
 	}
 	if err := e.loadTorrents(ctx); err != nil {
 		return nil, errors.Join(append(e.client.Close(), err, e.closeStorage())...)
@@ -397,11 +420,32 @@ func (e *Engine) clientConfig(port int, s settings.Settings) *torrent.ClientConf
 		e.cfg.ClientConfig(tc)
 	}
 	// Last, so tests can't undo it by accident: nothing that can't go
-	// through the proxy may bypass it.
+	// through the interface or the proxy may bypass them.
+	if b := e.cfg.Bind; b != nil {
+		bindClient(tc, b)
+	}
 	if p := btProxyOf(s); p != (btProxy{}) {
-		p.configure(tc)
+		p.configure(tc, e.cfg.Bind)
 	}
 	return tc
+}
+
+// bindClient keeps every socket the client opens on the interface: uTP
+// and the DHT on a bound socket, trackers and web seeds through bound
+// dialers, and peers through the dialers startClient adds. WebRTC peers
+// and UPnP open sockets of their own, so they are off. The TCP listener
+// isn't bound: it only accepts what reaches it.
+func bindClient(tc *torrent.ClientConfig, b *netbind.Binder) {
+	tc.ListenPacket = b.ListenPacket
+	tc.DialForPeerConns = false
+	tc.TrackerDialContext = b.DialContext
+	tc.HTTPDialContext = b.DialContext
+	tc.TrackerListenPacket = b.ListenPacket
+	tc.HTTPProxy = nil
+	tc.WebTransport = nil
+	tc.DisableWebtorrent = true
+	tc.NoDefaultPortForwarding = true
+	tc.LocalServiceDiscovery = nil
 }
 
 // btProxy is how BitTorrent traffic uses the proxy; the zero value is not
@@ -410,6 +454,15 @@ type btProxy struct {
 	server    proxy.Server
 	peers     bool
 	remoteDNS bool
+}
+
+// withBind is the proxy server with its sockets bound to bind, if set.
+func (p btProxy) withBind(bind *netbind.Binder) proxy.Server {
+	srv := p.server
+	if bind != nil {
+		srv.Bind = bind
+	}
+	return srv
 }
 
 func btProxyOf(s settings.Settings) btProxy {
@@ -422,9 +475,10 @@ func btProxyOf(s settings.Settings) btProxy {
 
 // configure sends trackers and web seeds through the proxy, and peers if
 // set. The proxy's own addresses aren't checked against the IP filter:
-// it filters peers, and the proxy is the admin's choice.
-func (p btProxy) configure(tc *torrent.ClientConfig) {
-	srv := p.server
+// it filters peers, and the proxy is the admin's choice. With bind, the
+// connections to the proxy stay on that interface.
+func (p btProxy) configure(tc *torrent.ClientConfig, bind *netbind.Binder) {
+	srv := p.withBind(bind)
 	dial := srv.DialResolved
 	if p.remoteDNS {
 		dial = srv.DialContext
@@ -460,12 +514,29 @@ func (e *Engine) startClient(port int, s settings.Settings) error {
 	if err != nil {
 		return fmt.Errorf("torrent client on port %d: %w", port, err)
 	}
-	if p := btProxyOf(s); p != (btProxy{}) {
-		if p.peers {
-			cl.AddDialer(dialer.WithNetwork{Network: "tcp", Dialer: &p.server})
-		}
+	p := btProxyOf(s)
+	proxiedPeers := p != (btProxy{}) && p.peers
+	if proxiedPeers {
+		srv := p.withBind(e.cfg.Bind)
+		cl.AddDialer(dialer.WithNetwork{Network: "tcp", Dialer: &srv})
+	}
+	if p != (btProxy{}) {
 		e.log.Info("BitTorrent goes through the proxy", "type", p.server.Type, "proxy", p.server.Addr,
 			"peerConnections", p.peers)
+	}
+	if b := e.cfg.Bind; b != nil {
+		if !proxiedPeers {
+			cl.AddDialer(dialer.WithNetwork{Network: "tcp", Dialer: b})
+			// uTP dials go out of the client's own uTP sockets, which are
+			// bound; turning DialForPeerConns off left them out.
+			for _, l := range cl.Listeners() {
+				if d, ok := l.(torrent.Dialer); ok && strings.HasPrefix(d.DialerNetwork(), "udp") {
+					cl.AddDialer(d)
+				}
+			}
+		}
+		e.boundIndex = e.interfaceState().Index
+		e.log.Info("connections stay on a network interface", "interface", b.Name())
 	}
 	e.client = cl
 	e.port = cl.LocalPort()
@@ -539,10 +610,18 @@ func (e *Engine) loop() {
 	defer tick.Stop()
 	checkpoint := time.NewTicker(e.cfg.CheckpointInterval)
 	defer checkpoint.Stop()
+	var ifaceTick <-chan time.Time
+	if e.cfg.Bind != nil {
+		t := time.NewTicker(interfaceCheckInterval)
+		defer t.Stop()
+		ifaceTick = t.C
+	}
 	for {
 		select {
 		case <-e.ctx.Done():
 			return
+		case <-ifaceTick:
+			e.checkInterface()
 		case now := <-tick.C:
 			e.mu.Lock()
 			e.normalizeQueueLocked()
@@ -600,4 +679,43 @@ func (e *Engine) ListenAddrs() []net.Addr {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.client.ListenAddrs()
+}
+
+// interfaceCheckInterval is how often the bound interface is checked.
+const interfaceCheckInterval = 2 * time.Second
+
+// checkInterface follows the bound interface. While it is down or gone,
+// connections fail, and the connection status says so. When it comes back
+// as a new interface (a new index), the client restarts, since its sockets
+// are bound to the old one.
+func (e *Engine) checkInterface() {
+	b := e.cfg.Bind
+	st := e.interfaceState()
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	prev := e.ifState
+	e.ifState = st
+	switch {
+	case prev.Up && !st.Up:
+		e.log.Warn("the network interface is down or gone; nothing goes out until it's back", "interface", b.Name())
+	case st.Up && !prev.Up:
+		e.log.Info("the network interface is up", "interface", b.Name())
+	}
+	if st.Up && st.Index != e.boundIndex {
+		if err := e.restartClientLocked(e.port, e.settings.Get()); err != nil {
+			// The next check tries again.
+			e.log.Error("restarting the torrent client on the new interface", "interface", b.Name(), "error", err)
+		}
+	}
+}
+
+// BoundInterface returns the interface connections are bound to, "" for
+// none, and whether it is up.
+func (e *Engine) BoundInterface() (name string, up bool) {
+	if e.cfg.Bind == nil {
+		return "", true
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.cfg.Bind.Name(), e.ifState.Up
 }

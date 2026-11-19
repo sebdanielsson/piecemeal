@@ -21,6 +21,7 @@ import (
 	"github.com/anacrolix/torrent/storage"
 
 	"github.com/sebdanielsson/piecemeal/internal/engine/enginetest"
+	"github.com/sebdanielsson/piecemeal/internal/netbind"
 	"github.com/sebdanielsson/piecemeal/internal/settings"
 	"github.com/sebdanielsson/piecemeal/internal/store"
 )
@@ -46,6 +47,9 @@ type harness struct {
 	wrapStorage func(storage.ClientImplCloser) storage.ClientImplCloser
 	// clientConfig replaces offline as the engine's ClientConfig.
 	clientConfig func(*torrent.ClientConfig)
+	// bind and interfaceState go to the engine's Config.
+	bind           *netbind.Binder
+	interfaceState func() netbind.State
 }
 
 // newHarness starts an engine; opts adjust the harness before it starts.
@@ -98,6 +102,8 @@ func (h *harness) start() {
 		TickInterval:       50 * time.Millisecond,
 		CheckpointInterval: time.Second,
 		ClientConfig:       clientConfig,
+		Bind:               h.bind,
+		interfaceState:     h.interfaceState,
 		wrapStorage:        h.wrapStorage,
 	}, h.store, h.settings, log)
 	if err != nil {

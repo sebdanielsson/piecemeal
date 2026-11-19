@@ -73,7 +73,7 @@ func newEnv(t *testing.T, environ ...string) *env {
 	}
 	logs := logbuf.New(100)
 	// Loopback is allowed, for the RSS tests' feed server.
-	fetcher := fetch.New([]netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")})
+	fetcher := fetch.New([]netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")}, nil)
 	feeds, err := rss.New(ctx, rss.Deps{Store: st, Settings: sm, Fetcher: fetcher, Engine: e, Log: log})
 	if err != nil {
 		t.Fatal(err)

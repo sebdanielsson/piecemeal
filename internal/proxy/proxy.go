@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"syscall"
 	"time"
 )
 
@@ -31,6 +32,22 @@ type Server struct {
 	Addr     string
 	Username string
 	Password string
+	// Bind, when set, adjusts the sockets to the proxy before they
+	// connect, such as binding them to a network interface.
+	Bind Controller
+}
+
+// Controller adjusts a socket before it connects, as net.Dialer's Control.
+type Controller interface {
+	Control(network, address string, c syscall.RawConn) error
+}
+
+// control is the Control function for sockets to the proxy.
+func (s *Server) control() func(network, address string, c syscall.RawConn) error {
+	if s.Bind == nil {
+		return nil
+	}
+	return s.Bind.Control
 }
 
 // ErrNoUDP is returned for UDP through an HTTP proxy, which only carries
@@ -118,7 +135,7 @@ func ipNetwork(network string) string {
 
 // connect opens a TCP connection to the proxy.
 func (s *Server) connect(ctx context.Context) (net.Conn, error) {
-	d := net.Dialer{Timeout: handshakeTimeout}
+	d := net.Dialer{Timeout: handshakeTimeout, Control: s.control()}
 	conn, err := d.DialContext(ctx, "tcp", s.Addr)
 	if err != nil {
 		return nil, fmt.Errorf("%w %s: %w", ErrUnreachable, s.Addr, err)

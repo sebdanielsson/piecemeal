@@ -73,7 +73,7 @@ func newTestServer(t *testing.T) *testServer {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fetcher := fetch.New(nil)
+	fetcher := fetch.New(nil, nil)
 	feeds, err := rss.New(ctx, rss.Deps{Store: st, Settings: sm, Fetcher: fetcher, Engine: e, Log: log})
 	if err != nil {
 		t.Fatal(err)

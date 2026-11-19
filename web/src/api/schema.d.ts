@@ -1210,6 +1210,10 @@ export interface components {
     FilesOutputBody: {
       items: components["schemas"]["File"][] | null;
     };
+    InterfaceStatus: {
+      name: string;
+      up: boolean;
+    };
     LogEntry: {
       attrs: string;
       /** Format: int64 */
@@ -1932,6 +1936,7 @@ export interface components {
        * @description Free bytes on the default save path's filesystem, -1 if unknown.
        */
       freeSpace: number;
+      interface?: components["schemas"]["InterfaceStatus"];
       /**
        * Format: int64
        * @description Connected peers across all torrents.
@@ -1997,6 +2002,7 @@ export interface components {
        * @description Free bytes on the default save path's filesystem, -1 if unknown.
        */
       freeSpace: number;
+      interface?: components["schemas"]["InterfaceStatus"];
       /**
        * Format: int64
        * @description Connected peers across all torrents.

@@ -238,3 +238,24 @@ test("anyone signed in can switch the alternative speed limits, unless they are 
   const pinned = await screen.findByRole("button", { name: "Alternative speed limits" });
   await vi.waitFor(() => expect(pinned.hasAttribute("disabled")).toBe(true));
 });
+
+test("the transfer bar says when the bound network interface is down", async () => {
+  mockApi({
+    "GET /auth/me": () => json(admin),
+    "GET /settings": () => json({ settings: { altSpeedEnabled: false }, locked: {} }),
+    "GET /categories": () => json({ items: [] }),
+    "GET /tags": () => json({ items: [] }),
+  });
+  render(<App />);
+  await screen.findByText("Loading torrents…");
+  act(() => {
+    FakeEventSource.latest().emit("snapshot", {
+      torrents: [],
+      transfer: transfer({ connection: "disconnected", interface: { name: "wg0", up: false } }),
+      categories: [],
+      tags: [],
+    });
+  });
+  expect(await screen.findByText("wg0 is down")).toBeTruthy();
+  expect(screen.queryByText("6881")).toBeNull();
+});

@@ -882,6 +882,22 @@
         ],
         "type": "object"
       },
+      "InterfaceStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "up": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "up"
+        ],
+        "type": "object"
+      },
       "LogEntry": {
         "additionalProperties": false,
         "properties": {
@@ -2602,6 +2618,9 @@
             "format": "int64",
             "type": "integer"
           },
+          "interface": {
+            "$ref": "#/components/schemas/InterfaceStatus"
+          },
           "peers": {
             "description": "Connected peers across all torrents.",
             "format": "int64",
@@ -2715,6 +2734,9 @@
             "description": "Free bytes on the default save path's filesystem, -1 if unknown.",
             "format": "int64",
             "type": "integer"
+          },
+          "interface": {
+            "$ref": "#/components/schemas/InterfaceStatus"
           },
           "peers": {
             "description": "Connected peers across all torrents.",

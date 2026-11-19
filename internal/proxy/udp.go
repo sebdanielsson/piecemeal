@@ -45,10 +45,17 @@ func (s *Server) ListenPacket(ctx context.Context) (net.PacketConn, error) {
 			relay = netip.AddrPortFrom(ap.Addr().Unmap(), relay.Port())
 		}
 	}
-	pc, err := net.ListenUDP("udp", nil)
+	lc := net.ListenConfig{Control: s.control()}
+	conn, err := lc.ListenPacket(ctx, "udp", ":0")
 	if err != nil {
 		_ = ctrl.Close()
 		return nil, s.errorf("opening a UDP socket for its relay: %w", err)
+	}
+	pc, ok := conn.(*net.UDPConn)
+	if !ok {
+		_ = conn.Close()
+		_ = ctrl.Close()
+		return nil, s.errorf("opening a UDP socket for its relay: got %T", conn)
 	}
 	c := &udpConn{ctrl: ctrl, pc: pc, relay: relay}
 	// The relay ends when the proxy closes the control connection: close

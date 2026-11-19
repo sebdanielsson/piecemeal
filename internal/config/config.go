@@ -31,9 +31,12 @@ type Config struct {
 	// NATPMPGateway, when set, forwards the peer port through NAT-PMP.
 	NATPMPGateway net.IP
 	// ListenHost binds the peer listeners to one address.
-	ListenHost  string
-	DisableIPv6 bool
-	Mmap        bool
+	ListenHost string
+	// BindInterface keeps BitTorrent traffic and fetches on one network
+	// interface, such as a VPN's wg0.
+	BindInterface string
+	DisableIPv6   bool
+	Mmap          bool
 
 	AdminUsername     string
 	AdminPasswordHash string
@@ -127,6 +130,7 @@ func FromEnv(getenv func(string) string) (Config, error) {
 		WatchDir:             get("WATCH_DIR", ""),
 		QBittorrentWebUIDir:  get("QBITTORRENT_WEBUI_DIR", ""),
 		ListenHost:           get("LISTEN_HOST", ""),
+		BindInterface:        get("BIND_INTERFACE", ""),
 		DisableIPv6:          boolean("DISABLE_IPV6", false),
 		Mmap:                 boolean("MMAP", false),
 		AdminUsername:        get("ADMIN_USERNAME", "admin"),

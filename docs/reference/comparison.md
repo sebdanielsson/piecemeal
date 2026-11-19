@@ -79,6 +79,7 @@ If something here is wrong or out of date, [open an issue](https://github.com/se
 | Local service discovery | No ([#57](https://github.com/sebdanielsson/piecemeal/issues/57)) | Yes | Yes | Yes |
 | UPnP and NAT-PMP | UPnP; NAT-PMP to a gateway you set | Yes | Yes | Yes |
 | Port forwarding through a VPN's NAT-PMP gateway, such as ProtonVPN's | Built in; follows the port when it changes | With an external script or tool | With an external script or tool | With an external script or tool |
+| Bind to a VPN's network interface, so traffic stops when it goes down | Yes, every BitTorrent connection, with the interface's state in the status bar and `/readyz` | Yes, to an interface or an address | To an address only | Yes, an outgoing interface |
 | Peer proxy | HTTP, SOCKS5; the DHT and uTP are off while peers go through it ([Proxy](../guides/proxy.md)) | HTTP, SOCKS4, SOCKS5 | No; an HTTP proxy for trackers and web seeds only | HTTP, SOCKS4, SOCKS5, I2P |
 | I2P | No ([#47](https://github.com/sebdanielsson/piecemeal/issues/47)) | Yes (experimental) | No | As a proxy |
 | IP filter | A filter file and banned addresses | A filter file and banned addresses | A blocklist URL, updated automatically | Blocklist plugin, from a URL, updated automatically |
