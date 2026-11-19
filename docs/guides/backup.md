@@ -7,7 +7,7 @@ description: Back up piecemeal's database while it runs, and restore it, keeping
 The database in `PIECEMEAL_DATA_DIR` holds settings, users, API keys, torrents, categories, tags and RSS. Back it up while piecemeal runs, either from **Settings > Backup** in the web UI (admins), with `GET /api/piecemeal/v1/admin/backup`, or from the command line:
 
 ```sh
-docker exec piecemeal piecemeal backup /data/piecemeal-backup.db
+docker exec piecemeal /piecemeal backup /data/piecemeal-backup.db
 ```
 
 A backup is a consistent copy of the SQLite database, taken without stopping piecemeal. Treat it as a secret: it holds the hashes of sessions and API keys, and cookies for trackers.
