@@ -1,4 +1,4 @@
 export default {
   title: "Reference",
-  pages: ["api", "qbittorrent-compat", "security", "performance"],
+  pages: ["comparison", "api", "qbittorrent-compat", "security", "performance"],
 };
