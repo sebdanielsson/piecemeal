@@ -8,6 +8,8 @@ Admins see piecemeal's recent log under **Log**, and failed sign-ins and changes
 
 | Symptom | Cause and fix |
 | --- | --- |
+| piecemeal stops at start with "there is no network interface" | `PIECEMEAL_BIND_INTERFACE` names an interface that doesn't exist yet, such as `wg0` before the tunnel is up. Start piecemeal after the VPN, with `depends_on` and a healthcheck, and a restart policy. |
+| The status bar says `wg0 is down` | The interface piecemeal is bound to is down or gone, so nothing goes out: check the VPN. piecemeal carries on when it's back. |
 | An \*arr's download client test fails with 403 | The API key is wrong, read-only or revoked, or the address is locked out after 5 failed sign-ins; wait 15 minutes. With a username and password, check them, and that `PIECEMEAL_LOCAL_LOGIN` is on. |
 | Grabs fail with "address not allowed" | The download link is on a private address, such as Prowlarr's proxy. Set `PIECEMEAL_FETCH_ALLOWED_NETWORKS`; see [Radarr, Sonarr and Prowlarr](../guides/arr.md#download-links-on-private-networks). |
 | The \*arr can't find finished downloads | piecemeal and the \*arr see the downloads under different paths. Mount them at the same path, or add a remote path mapping in the \*arr. |

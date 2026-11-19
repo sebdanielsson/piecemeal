@@ -36,6 +36,10 @@ Private torrents work: they use neither DHT nor peer exchange, as the flag requi
 
 It prefers encrypted connections and accepts plain ones, by default. Set `encryption` to `require` to refuse plain ones, or `disable`.
 
+## Does it have a kill switch?
+
+Yes. With `PIECEMEAL_BIND_INTERFACE=wg0`, every BitTorrent connection is bound to the VPN's interface, so when the tunnel goes away, connections fail instead of using your own connection, and the status bar says the interface is down. Pair it with a firewall in the VPN container; see [VPN and port forwarding](../guides/vpn.md#kill-switch).
+
 ## Where is my data?
 
 Downloads are wherever their save paths point. piecemeal's own state, the database and piece completion, is in `PIECEMEAL_DATA_DIR`. Nothing leaves your server: piecemeal has no telemetry and makes no connections other than to trackers, peers, the DHT, URLs you add, RSS feeds, your SSO provider, and your router or VPN gateway for port forwarding.

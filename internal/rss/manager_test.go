@@ -57,7 +57,7 @@ func newEnv(t *testing.T) *env {
 	t.Cleanup(func() { _ = e.Close() })
 	env := &env{
 		t: t, ctx: ctx, store: st, settings: sm, engine: e,
-		fetcher: fetch.New([]netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")}),
+		fetcher: fetch.New([]netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")}, nil),
 	}
 	torrents := map[string][]byte{}
 	for _, name := range []string{"e01", "e02", "e02r", "e03"} {

@@ -31,7 +31,7 @@ func TestGetThroughProxy(t *testing.T) {
 	for _, typ := range []string{proxy.SOCKS5, proxy.HTTP} {
 		t.Run(typ, func(t *testing.T) {
 			p := proxytest.Start(t, typ)
-			f := New(loopback)
+			f := New(loopback, nil)
 			// Loopback stands in for a public address.
 			f.public = func(netip.Addr) bool { return true }
 			f.SetProxy(Proxy{Server: &proxy.Server{Type: typ, Addr: p.Addr}, TorrentFiles: true})
@@ -83,13 +83,13 @@ func TestProxyKeepsAddressCheck(t *testing.T) {
 	p := proxytest.Start(t, proxy.SOCKS5)
 	px := Proxy{Server: &proxy.Server{Type: proxy.SOCKS5, Addr: p.Addr}, TorrentFiles: true, Feeds: true}
 
-	f := New(nil)
+	f := New(nil, nil)
 	f.SetProxy(px)
 	if _, err := f.Get(context.Background(), srv.URL); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("loopback through the proxy: %v, want ErrForbidden", err)
 	}
 
-	f = New(loopback)
+	f = New(loopback, nil)
 	f.SetProxy(px)
 	if _, err := f.GetFeed(context.Background(), srv.URL); err != nil {
 		t.Fatal(err)
@@ -102,7 +102,7 @@ func TestProxyKeepsAddressCheck(t *testing.T) {
 func TestProxyDown(t *testing.T) {
 	p := proxytest.Start(t, proxy.SOCKS5)
 	p.Close()
-	f := New(append(loopback, netip.MustParsePrefix("::1/128")))
+	f := New(append(loopback, netip.MustParsePrefix("::1/128")), nil)
 	f.public = func(netip.Addr) bool { return true }
 	// localhost has two addresses; the second isn't tried once the proxy
 	// turns out to be unreachable.
@@ -124,7 +124,7 @@ func TestSetProxyNewConnections(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 	p := proxytest.Start(t, proxy.SOCKS5)
-	f := New(loopback)
+	f := New(loopback, nil)
 	f.public = func(netip.Addr) bool { return true }
 
 	// A request in flight on a direct connection while the proxy is set.

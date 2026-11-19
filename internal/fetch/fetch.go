@@ -3,6 +3,9 @@
 // URLs, so it refuses private, loopback and link-local addresses unless
 // allowed, and limits size, redirects and time.
 //
+// With a network interface to bind to, connections to public addresses
+// stay on it, and so do connections to a proxy.
+//
 // Through a proxy, piecemeal still looks hostnames up itself and checks
 // the addresses, then asks the proxy for the address it checked. Addresses
 // that are only allowed by the allowed networks are private, so they are
@@ -24,6 +27,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/sebdanielsson/piecemeal/internal/netbind"
 	"github.com/sebdanielsson/piecemeal/internal/proxy"
 )
 
@@ -34,6 +38,7 @@ type Fetcher struct {
 	maxSize int64
 	allowed []netip.Prefix
 	dialer  *net.Dialer
+	bind    *netbind.Binder
 	// public reports whether an address is public, rather than allowed
 	// only by the allowed networks; tests replace it.
 	public func(netip.Addr) bool
@@ -75,19 +80,21 @@ func (f *Fetcher) SetProxy(p Proxy) {
 var ErrForbidden = errors.New("address not allowed")
 
 // New returns a fetcher that may also reach the allowed networks, which
-// are otherwise blocked as private.
-func New(allowed []netip.Prefix) *Fetcher {
+// are otherwise blocked as private. With bind, connections to public
+// addresses stay on that interface.
+func New(allowed []netip.Prefix, bind *netbind.Binder) *Fetcher {
 	f := &Fetcher{
 		maxSize: 16 << 20,
 		jar:     &jar{now: time.Now},
 		allowed: allowed,
+		bind:    bind,
 		public:  func(ip netip.Addr) bool { return Allowed(ip, nil) },
 	}
 	f.dialer = &net.Dialer{
 		Timeout: 10 * time.Second,
 		// Control sees the address after DNS resolution, so a hostname that
 		// resolves to a private address is caught too.
-		Control: func(_, address string, _ syscall.RawConn) error {
+		Control: func(network, address string, c syscall.RawConn) error {
 			host, _, err := net.SplitHostPort(address)
 			if err != nil {
 				return err
@@ -101,6 +108,11 @@ func New(allowed []netip.Prefix) *Fetcher {
 				// names resolve to.
 				return ErrForbidden
 			}
+			// Private addresses on the allowed networks are local, so
+			// they aren't reached through the interface.
+			if bind != nil && f.public(ip) {
+				return bind.Control(network, address, c)
+			}
 			return nil
 		},
 	}
@@ -111,6 +123,11 @@ func New(allowed []netip.Prefix) *Fetcher {
 // newClient returns a client that connects through srv, or directly when
 // it is nil.
 func (f *Fetcher) newClient(srv *proxy.Server) *http.Client {
+	if srv != nil && f.bind != nil {
+		bound := *srv
+		bound.Bind = f.bind
+		srv = &bound
+	}
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			if srv != nil {

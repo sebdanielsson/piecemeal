@@ -112,6 +112,9 @@ type TransferStatus struct {
 	FreeSpace         int64  `json:"freeSpace" doc:"Free bytes on the default save path's filesystem, -1 if unknown."`
 	Torrents          int    `json:"torrents"`
 	Connection        string `json:"connection" enum:"connected,firewalled,disconnected"`
+	// Interface is a value, not a pointer, so tick's comparison of two
+	// statuses sees whether it changed.
+	Interface InterfaceStatus `json:"interface,omitzero" doc:"The network interface connections are bound to (PIECEMEAL_BIND_INTERFACE), when set."`
 }
 
 type snapshot struct {
@@ -483,7 +486,19 @@ func (e *Engine) transferLocked(down, up float64, n int) TransferStatus {
 	if len(e.client.ListenAddrs()) == 0 {
 		t.Connection = "disconnected"
 	}
+	if b := e.cfg.Bind; b != nil {
+		t.Interface = InterfaceStatus{Name: b.Name(), Up: e.ifState.Up}
+		if !e.ifState.Up {
+			t.Connection = "disconnected"
+		}
+	}
 	return t
+}
+
+// InterfaceStatus is the network interface connections are bound to.
+type InterfaceStatus struct {
+	Name string `json:"name" doc:"The interface's name, such as wg0."`
+	Up   bool   `json:"up" doc:"False while the interface is down or gone: nothing goes out until it's back."`
 }
 
 // refreshLocked recomputes one torrent's status right after a change, so

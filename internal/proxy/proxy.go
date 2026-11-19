@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"syscall"
 	"time"
 )
 
@@ -31,6 +32,22 @@ type Server struct {
 	Addr     string
 	Username string
 	Password string
+	// Bind, when set, adjusts the sockets to the proxy before they
+	// connect, such as binding them to a network interface.
+	Bind Controller
+}
+
+// Controller adjusts a socket before it connects, as net.Dialer's Control.
+type Controller interface {
+	Control(network, address string, c syscall.RawConn) error
+}
+
+// control is the Control function for sockets to the proxy.
+func (s *Server) control() func(network, address string, c syscall.RawConn) error {
+	if s.Bind == nil {
+		return nil
+	}
+	return s.Bind.Control
 }
 
 // ErrNoUDP is returned for UDP through an HTTP proxy, which only carries
@@ -53,6 +70,11 @@ func (s *Server) DialContext(ctx context.Context, network, addr string) (net.Con
 	case "tcp", "tcp4", "tcp6":
 	default:
 		return nil, fmt.Errorf("proxy: can't dial %s", network)
+	}
+	// As net.Dialer does, an address of the other family fails tcp4 and
+	// tcp6: callers such as anacrolix keep a family out that way.
+	if err := checkFamily(network, addr); err != nil {
+		return nil, err
 	}
 	conn, err := s.connect(ctx)
 	if err != nil {
@@ -106,6 +128,22 @@ func (s *Server) DialResolved(ctx context.Context, network, addr string) (net.Co
 	return nil, errors.Join(errs...)
 }
 
+// checkFamily fails an IP address that network's family excludes.
+func checkFamily(network, addr string) error {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return err
+	}
+	ip, err := netip.ParseAddr(host)
+	if err != nil {
+		return nil // a hostname, which the proxy looks up
+	}
+	if (network == "tcp4" && !ip.Unmap().Is4()) || (network == "tcp6" && ip.Unmap().Is4()) {
+		return fmt.Errorf("proxy: %s isn't a %s address", host, network)
+	}
+	return nil
+}
+
 func ipNetwork(network string) string {
 	switch network {
 	case "tcp4", "udp4":
@@ -118,7 +156,7 @@ func ipNetwork(network string) string {
 
 // connect opens a TCP connection to the proxy.
 func (s *Server) connect(ctx context.Context) (net.Conn, error) {
-	d := net.Dialer{Timeout: handshakeTimeout}
+	d := net.Dialer{Timeout: handshakeTimeout, Control: s.control()}
 	conn, err := d.DialContext(ctx, "tcp", s.Addr)
 	if err != nil {
 		return nil, fmt.Errorf("%w %s: %w", ErrUnreachable, s.Addr, err)

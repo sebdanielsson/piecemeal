@@ -297,3 +297,19 @@ func TestServerWithOtherClients(t *testing.T) {
 		t.Fatalf("requests: %v", got)
 	}
 }
+
+func TestDialFamily(t *testing.T) {
+	p := proxytest.Start(t, proxy.SOCKS5)
+	srv := proxy.Server{Type: proxy.SOCKS5, Addr: p.Addr}
+	for _, tc := range []struct{ network, addr string }{
+		{"tcp4", "[::1]:80"},
+		{"tcp6", "127.0.0.1:80"},
+	} {
+		if _, err := srv.DialContext(context.Background(), tc.network, tc.addr); err == nil {
+			t.Fatalf("%s to %s", tc.network, tc.addr)
+		}
+	}
+	if got := p.Requests(); len(got) != 0 {
+		t.Fatalf("requests: %v", got)
+	}
+}

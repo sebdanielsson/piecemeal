@@ -7,7 +7,7 @@ import (
 )
 
 func TestCookieMatching(t *testing.T) {
-	f := New(nil)
+	f := New(nil, nil)
 	now := time.Unix(1_000_000, 0)
 	f.jar.now = func() time.Time { return now }
 	f.SetCookies([]Cookie{
