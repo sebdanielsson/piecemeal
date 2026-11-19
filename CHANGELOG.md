@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/sebdanielsson/piecemeal/compare/v1.1.0...v1.1.1) (2026-11-19)
+
+
+### Bug Fixes
+
+* **engine:** open a magnet's storage when its metadata arrives during the add ([#63](https://github.com/sebdanielsson/piecemeal/issues/63)) ([0946dee](https://github.com/sebdanielsson/piecemeal/commit/0946dee40bd96000fa0bf9b3d12db2fc3255c8c4))
+
 ## [1.1.0](https://github.com/sebdanielsson/piecemeal/compare/v1.0.0...v1.1.0) (2026-11-19)
 
 
