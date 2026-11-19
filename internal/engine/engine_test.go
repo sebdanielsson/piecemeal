@@ -16,6 +16,7 @@ import (
 	"github.com/anacrolix/torrent/types"
 
 	"github.com/anacrolix/torrent"
+	"github.com/anacrolix/torrent/metainfo"
 	"github.com/anacrolix/torrent/storage"
 
 	"github.com/sebdanielsson/piecemeal/internal/engine/enginetest"
@@ -494,4 +495,35 @@ func TestCheckRoots(t *testing.T) {
 			t.Errorf("%s: %v", c.name, err)
 		}
 	}
+}
+
+// TestMagnetInfoBeforeAttach adds a magnet whose metadata anacrolix already
+// has when the engine attaches it, as when a fast peer sends it before
+// attachLocked looks: the storage still opens, the torrent file is saved,
+// and the data downloads.
+func TestMagnetInfoBeforeAttach(t *testing.T) {
+	ctx := context.Background()
+	s := newSeeder(t, map[string]int{"single.bin": 200 << 10})
+	h := newHarness(t)
+	mi, err := metainfo.Load(bytes.NewReader(s.Metainfo))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.engine.mu.Lock()
+	h.engine.client.AddTorrentOpt(torrent.AddTorrentOpts{
+		InfoHash: mi.HashInfoBytes(), InfoBytes: mi.InfoBytes, Storage: h.engine.storage, DeferStorageOpen: true,
+	})
+	h.engine.mu.Unlock()
+
+	magnet := fmt.Sprintf("magnet:?xt=urn:btih:%s&dn=single&x.pe=%s", s.Hash, url.QueryEscape(s.Addr))
+	hash, err := h.engine.Add(ctx, AddParams{Magnet: magnet})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.waitFor(hash, "download", func(st Torrent) bool { return st.Complete })
+	h.checkContent(s, "payload")
+	h.waitFor(hash, "the torrent file saved", func(Torrent) bool {
+		rows, _ := h.store.ListTorrents(ctx)
+		return len(rows) == 1 && rows[0].Metainfo != nil
+	})
 }
