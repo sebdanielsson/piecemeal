@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.1.0](https://github.com/sebdanielsson/piecemeal/compare/v1.0.0...v1.1.0) (2026-11-19)
+
+
+### Features
+
+* check one torrent's data at a time ([#54](https://github.com/sebdanielsson/piecemeal/issues/54)) ([783ab3a](https://github.com/sebdanielsson/piecemeal/commit/783ab3a4fb9f465b6c80e54ec409e2e2bad7137b)), closes [#41](https://github.com/sebdanielsson/piecemeal/issues/41)
+* fetch, parse and save metadata before adding a torrent ([#55](https://github.com/sebdanielsson/piecemeal/issues/55)) ([fba9f3d](https://github.com/sebdanielsson/piecemeal/commit/fba9f3d0b1da271cb6ceed33d642ded98a97b04c))
+* fill the remaining gaps in the qBittorrent API ([#52](https://github.com/sebdanielsson/piecemeal/issues/52)) ([0148fd7](https://github.com/sebdanielsson/piecemeal/commit/0148fd7369ab116aee6d1349ae5d159bba9d6893))
+* incomplete folder and automatic torrent management ([#59](https://github.com/sebdanielsson/piecemeal/issues/59)) ([c78bba1](https://github.com/sebdanielsson/piecemeal/commit/c78bba131d0b404059f3cf2c8c58465156ce7b90))
+* share limit actions and modes per torrent and category ([#56](https://github.com/sebdanielsson/piecemeal/issues/56)) ([e8308ae](https://github.com/sebdanielsson/piecemeal/commit/e8308aeedde276729bb0b45f4707a6999cd12ac5))
+
+
+### Bug Fixes
+
+* **deps:** update module github.com/danielgtaylor/huma/v2 to v2.41.0 ([#60](https://github.com/sebdanielsson/piecemeal/issues/60)) ([aa7b60d](https://github.com/sebdanielsson/piecemeal/commit/aa7b60de60c4bbabab39692ced08bf607619d277))
+* drop per-torrent speed limits, which were never applied ([#49](https://github.com/sebdanielsson/piecemeal/issues/49)) ([6412135](https://github.com/sebdanielsson/piecemeal/commit/64121351adf7fdd6eabf4afa4582234558a1e462))
+* **engine:** dial peers added while the download limit is used up ([#51](https://github.com/sebdanielsson/piecemeal/issues/51)) ([f81f70c](https://github.com/sebdanielsson/piecemeal/commit/f81f70c7d964aded406922393eb161ccdc734f02)), closes [#37](https://github.com/sebdanielsson/piecemeal/issues/37)
+* refuse magnet URIs without an info hash instead of panicking ([#53](https://github.com/sebdanielsson/piecemeal/issues/53)) ([684e9ba](https://github.com/sebdanielsson/piecemeal/commit/684e9ba783d8ff661d32103898ae26c304407140))
+
 ## [1.0.0](https://github.com/sebdanielsson/piecemeal/compare/v0.6.0...v1.0.0) (2026-11-18)
 
 
