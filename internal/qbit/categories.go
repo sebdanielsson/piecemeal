@@ -3,6 +3,7 @@ package qbit
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/sebdanielsson/piecemeal/internal/engine"
@@ -50,10 +51,24 @@ func (s *Server) putCategory(w http.ResponseWriter, r *http.Request, create bool
 			}
 		}
 	}
+	// qBittorrent keeps a relative path as it is, and resolves it against
+	// the default save path when it's used; the download path's against the
+	// global one.
 	if r.Form.Has("savePath") {
-		c.SavePath = ""
-		if p := r.FormValue("savePath"); p != "" {
-			c.SavePath = s.absolute(p)
+		c.SavePath = strings.TrimSpace(r.FormValue("savePath"))
+	}
+	// downloadPathEnabled: true for the category's own download path,
+	// false for none, empty to follow the global setting; absent leaves it
+	// as it is, and so does a downloadPath alone.
+	if r.Form.Has("downloadPathEnabled") {
+		on, err := strconv.ParseBool(r.FormValue("downloadPathEnabled"))
+		switch {
+		case err != nil:
+			c.IncompletePathMode, c.IncompletePath = engine.IncompleteDefault, ""
+		case on:
+			c.IncompletePathMode, c.IncompletePath = engine.IncompleteOn, strings.TrimSpace(r.FormValue("downloadPath"))
+		default:
+			c.IncompletePathMode, c.IncompletePath = engine.IncompleteOff, ""
 		}
 	}
 	if !categoryShareLimits(w, r, &c) {

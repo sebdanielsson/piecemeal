@@ -493,37 +493,123 @@ func (s *Server) addPeers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, out)
 }
 
-func (s *Server) setLocation(param string) func(http.ResponseWriter, *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if err := parseForm(w, r); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		loc := strings.TrimSpace(r.FormValue(param))
-		if loc == "" {
-			http.Error(w, "Save path is empty", http.StatusBadRequest)
-			return
-		}
-		loc = s.absolute(loc)
-		if !s.engine.PathAllowed(loc) {
-			http.Error(w, "Cannot write to directory", http.StatusForbidden)
-			return
-		}
-		hashParam := "hashes"
-		if param == "path" {
-			hashParam = "id" // setSavePath
-		}
-		hs := s.known(hashes(r, hashParam))
-		var errs []error
-		for _, h := range resolveAll(s, hs) {
-			errs = append(errs, s.engine.Move(r.Context(), h, loc))
-		}
-		if err := errors.Join(errs...); err != nil {
-			http.Error(w, err.Error(), http.StatusConflict)
-			return
-		}
-		done(w)
+// setLocation moves torrents' data and turns automatic management off,
+// as in qBittorrent 5.3.0. A relative location is refused.
+func (s *Server) setLocation(w http.ResponseWriter, r *http.Request) {
+	loc := strings.TrimSpace(r.FormValue("location"))
+	switch {
+	case loc == "":
+		http.Error(w, "Save path cannot be empty", http.StatusBadRequest)
+		return
+	case !filepath.IsAbs(loc):
+		http.Error(w, "Cannot make save path", http.StatusConflict)
+		return
+	case !s.engine.PathAllowed(loc):
+		http.Error(w, "Cannot write to directory", http.StatusForbidden)
+		return
 	}
+	var errs []error
+	for _, h := range resolveAll(s, s.known(hashes(r, "hashes"))) {
+		errs = append(errs, s.engine.Move(r.Context(), h, filepath.Clean(loc)))
+	}
+	if err := errors.Join(errs...); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	done(w)
+}
+
+// manualTorrents are the known torrents in the id parameter that aren't
+// automatically managed: setSavePath and setDownloadPath leave those alone,
+// as qBittorrent 5.3.0 does.
+func (s *Server) manualTorrents(r *http.Request) []engine.Torrent {
+	var out []engine.Torrent
+	for _, h := range resolveAll(s, s.known(hashes(r, "id"))) {
+		if t, ok := s.engine.Get(h); ok && !t.AutoManaged {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// pathParam checks setSavePath's and setDownloadPath's path: absolute,
+// inside the allowed roots. It answers and returns false otherwise.
+func (s *Server) pathParam(w http.ResponseWriter, p string) bool {
+	switch {
+	case !filepath.IsAbs(p):
+		http.Error(w, "Cannot create target directory", http.StatusConflict)
+		return false
+	case !s.engine.PathAllowed(p):
+		http.Error(w, "Cannot write to directory", http.StatusForbidden)
+		return false
+	}
+	return true
+}
+
+// setSavePath changes the save path of torrents that aren't automatically
+// managed; data in the save path moves with it.
+func (s *Server) setSavePath(w http.ResponseWriter, r *http.Request) {
+	if !required(w, r, "id", "path") {
+		return
+	}
+	p := strings.TrimSpace(r.FormValue("path"))
+	if p == "" {
+		http.Error(w, "Save path cannot be empty", http.StatusBadRequest)
+		return
+	}
+	if !s.pathParam(w, p) {
+		return
+	}
+	var errs []error
+	for _, t := range s.manualTorrents(r) {
+		errs = append(errs, s.engine.Move(r.Context(), t.Hash, filepath.Clean(p)))
+	}
+	if err := errors.Join(errs...); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	done(w)
+}
+
+// setDownloadPath changes the incomplete folder of torrents that aren't
+// automatically managed; data still in the old one moves. An empty path
+// sets each torrent's save path, as qBittorrent 5.3.0 does.
+func (s *Server) setDownloadPath(w http.ResponseWriter, r *http.Request) {
+	if !required(w, r, "id", "path") {
+		return
+	}
+	p := strings.TrimSpace(r.FormValue("path"))
+	if p != "" && !s.pathParam(w, p) {
+		return
+	}
+	var errs []error
+	for _, t := range s.manualTorrents(r) {
+		dest := filepath.Clean(p)
+		if p == "" {
+			dest = t.SavePath
+		}
+		errs = append(errs, s.engine.SetIncompletePath(r.Context(), dest, t.Hash))
+	}
+	if err := errors.Join(errs...); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	done(w)
+}
+
+// setAutoManagement turns automatic torrent management on, moving the
+// torrents to their category's paths, or off. An enable that isn't a
+// boolean changes nothing.
+func (s *Server) setAutoManagement(w http.ResponseWriter, r *http.Request) {
+	if !required(w, r, "hashes", "enable") {
+		return
+	}
+	on, err := strconv.ParseBool(r.FormValue("enable"))
+	if err != nil {
+		done(w)
+		return
+	}
+	s.withHashes(w, r, func(hs []string) error { return s.engine.SetAutoManaged(r.Context(), on, hs...) })
 }
 
 func (s *Server) renamePath(w http.ResponseWriter, r *http.Request) {
@@ -699,13 +785,6 @@ func (s *Server) setTags(w http.ResponseWriter, r *http.Request) {
 		}
 		return errors.Join(errs...)
 	})
-}
-
-func (s *Server) acceptIgnored(w http.ResponseWriter, r *http.Request) {
-	// Settings piecemeal doesn't have, such as automatic torrent management:
-	// accepted and ignored so clients that set them keep working.
-	_ = parseForm(w, r)
-	done(w)
 }
 
 // torrentcreator/*

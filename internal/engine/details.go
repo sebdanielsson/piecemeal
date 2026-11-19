@@ -276,9 +276,9 @@ func (e *Engine) SavePathOf(hash string) (string, error) {
 		return "", err
 	}
 	if m.info == nil {
-		return m.rec.SavePath, nil
+		return m.dataDir(), nil
 	}
-	return filepath.Join(m.rec.SavePath, m.info.BestName()), nil
+	return filepath.Join(m.dataDir(), m.info.BestName()), nil
 }
 
 // TorrentFile returns a torrent's .torrent file, once its metadata is
@@ -356,5 +356,15 @@ func (e *Engine) CompleteFile(hash string, index int) (string, error) {
 	case t.State == StateMoving:
 		return "", fmt.Errorf("%w: torrent is moving", ErrInvalid)
 	}
-	return e.confine(filepath.Join(t.SavePath, filepath.FromSlash(files[index].Path)))
+	e.mu.Lock()
+	m, err := e.get(hash)
+	dir := ""
+	if err == nil {
+		dir = m.dataDir()
+	}
+	e.mu.Unlock()
+	if err != nil {
+		return "", err
+	}
+	return e.confine(filepath.Join(dir, filepath.FromSlash(files[index].Path)))
 }

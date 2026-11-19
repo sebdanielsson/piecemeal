@@ -23,6 +23,13 @@ type Imported struct {
 	Source   string
 	Metainfo []byte
 	SavePath string
+	// IncompletePath is the torrent's incomplete folder, "" for none, and
+	// InIncompletePath is set when its data is there rather than in
+	// SavePath.
+	IncompletePath   string
+	InIncompletePath bool
+	// AutoManaged is automatic torrent management.
+	AutoManaged bool
 	// Name replaces the torrent's own name; "" keeps it.
 	Name     string
 	Category string
@@ -149,6 +156,12 @@ func (e *Engine) importRecord(it Imported) (store.UpsertTorrentParams, []string,
 	if err != nil {
 		return rec, nil, nil, fmt.Errorf("save path %s: %w (map it into the allowed roots with --map)", it.SavePath, err)
 	}
+	var incomplete string
+	if it.IncompletePath != "" {
+		if incomplete, err = e.confine(filepath.Clean(it.IncompletePath)); err != nil {
+			return rec, nil, nil, fmt.Errorf("incomplete folder %s: %w (map it into the allowed roots with --map)", it.IncompletePath, err)
+		}
+	}
 	for _, tag := range it.Tags {
 		if err := validName("tag", tag); err != nil {
 			return rec, nil, nil, err
@@ -205,6 +218,8 @@ func (e *Engine) importRecord(it Imported) (store.UpsertTorrentParams, []string,
 		Uploaded: it.Uploaded, Downloaded: it.Downloaded, SeedingSeconds: it.SeedingSeconds,
 		ActiveSeconds: it.ActiveSeconds, RatioLimit: it.RatioLimit, SeedingTimeLimit: it.SeedingTimeLimit,
 		InactiveSeedingTimeLimit: it.InactiveSeedingTimeLimit, ContentLayout: LayoutOriginal,
+		IncompletePath: incomplete, InIncompletePath: incomplete != "" && it.InIncompletePath,
+		AutoManaged: it.AutoManaged,
 	}
 	return m.params(), tags, &info, nil
 }

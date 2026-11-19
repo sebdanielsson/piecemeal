@@ -12,9 +12,18 @@ import {
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { plural } from "@/lib/format";
-import { useTorrentAction } from "@/lib/mutations";
+import { useTorrentAction, type TorrentActionInput } from "@/lib/mutations";
 
-/** Moves the selected torrents' data to another folder. */
+/** The value every torrent shares, or "" when they differ. */
+function sharedValue(torrents: Torrent[], get: (t: Torrent) => string): string {
+  const first = torrents[0];
+  return first && torrents.every((t) => get(t) === get(first)) ? get(first) : "";
+}
+
+/**
+ * Moves the selected torrents' data to another save path, or changes their
+ * incomplete folder. Either turns automatic management off.
+ */
 export function MoveDialog({
   torrents,
   open,
@@ -24,34 +33,53 @@ export function MoveDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const shared = torrents.every((t) => t.savePath === torrents[0]?.savePath)
-    ? (torrents[0]?.savePath ?? "")
-    : "";
+  const sharedSave = sharedValue(torrents, (t) => t.savePath);
+  const sharedIncomplete = sharedValue(torrents, (t) => t.incompletePath);
   const [path, setPath] = useState<string | null>(null);
-  const value = path ?? shared;
+  const [incomplete, setIncomplete] = useState<string | null>(null);
+  const value = path ?? sharedSave;
+  const incompleteValue = incomplete ?? sharedIncomplete;
+  const auto = torrents.some((t) => t.autoManaged);
   const action = useTorrentAction();
   const close = (next: boolean) => {
     if (!next) {
       setPath(null);
+      setIncomplete(null);
     }
     onOpenChange(next);
   };
-  const submit = (e: FormEvent) => {
+  const saveChanged = value.trim() !== "" && value.trim() !== sharedSave;
+  // Compared with each torrent's own folder, so that clearing the field
+  // removes differing folders too.
+  const incompleteChanged =
+    incomplete !== null && torrents.some((t) => t.incompletePath !== incomplete.trim());
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
-    action.mutate(
-      { action: "move", hashes: torrents.map((t) => t.hash), savePath: value.trim() },
-      { onSuccess: () => close(false) },
-    );
+    // One action for both paths: the data moves once.
+    const input: TorrentActionInput = { action: "move", hashes: torrents.map((t) => t.hash) };
+    if (saveChanged) {
+      input.savePath = value.trim();
+    }
+    if (incompleteChanged) {
+      input.incompletePath = incompleteValue.trim();
+    }
+    try {
+      await action.mutateAsync(input);
+      close(false);
+    } catch {
+      // The mutation shows the error; the dialog stays open.
+    }
   };
   return (
     <Dialog open={open} onOpenChange={close}>
       <DialogContent>
-        <form onSubmit={submit} className="grid gap-6">
+        <form onSubmit={(e) => void submit(e)} className="grid gap-6">
           <DialogHeader>
             <DialogTitle>Move data</DialogTitle>
             <DialogDescription>
               Moves the files of {plural(torrents.length, "torrent")}. They keep running from the
               new folder once the move is done.
+              {auto && " Automatic management turns off."}
             </DialogDescription>
           </DialogHeader>
           <Field>
@@ -63,13 +91,30 @@ export function MoveDialog({
               className="font-mono"
               autoFocus
             />
-            <FieldDescription>An absolute path inside the allowed folders.</FieldDescription>
+            <FieldDescription>
+              An absolute path inside the allowed folders. Incomplete torrents in their incomplete
+              folder move there once complete.
+            </FieldDescription>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="move-incomplete">Incomplete folder</FieldLabel>
+            <Input
+              id="move-incomplete"
+              value={incompleteValue}
+              onChange={(e) => setIncomplete(e.target.value)}
+              placeholder="None"
+              className="font-mono"
+            />
+            <FieldDescription>
+              Where incomplete torrents are kept until they complete. Empty keeps them in their save
+              path.
+            </FieldDescription>
           </Field>
           <DialogFooter>
             <Button
               type="submit"
               size="sm"
-              disabled={!value.trim() || value.trim() === shared || action.isPending}
+              disabled={(!saveChanged && !incompleteChanged) || action.isPending}
             >
               Move
             </Button>

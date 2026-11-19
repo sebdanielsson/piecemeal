@@ -72,6 +72,18 @@ function makeCategoryColumns(
       sort: (c) => c.savePath,
     },
     {
+      id: "incomplete",
+      header: "Incomplete folder",
+      cell: (c) =>
+        c.incompletePathMode === "on" ? (
+          <span className="font-mono text-xs">{c.incompletePath || "Global, in a subfolder"}</span>
+        ) : (
+          <span className="text-muted-foreground">
+            {c.incompletePathMode === "off" ? "None" : "Global"}
+          </span>
+        ),
+    },
+    {
       id: "goals",
       header: "Seeding goals",
       cell: (c) => {
@@ -256,6 +268,14 @@ export function CategoriesPage() {
   );
 }
 
+type IncompleteMode = Category["incompletePathMode"];
+
+const incompleteModes: { value: IncompleteMode; label: string }[] = [
+  { value: "default", label: "Global setting" },
+  { value: "off", label: "None: download into the save path" },
+  { value: "on", label: "This folder" },
+];
+
 type Goals = Pick<
   Category,
   "ratioLimit" | "seedingTimeLimit" | "inactiveSeedingTimeLimit" | "seedGoalAction" | "seedGoalMode"
@@ -270,6 +290,10 @@ export function CategoryDialog({
 }) {
   const [name, setName] = useState(category?.name ?? "");
   const [savePath, setSavePath] = useState(category?.savePath ?? "");
+  const [incompleteMode, setIncompleteMode] = useState<IncompleteMode>(
+    category?.incompletePathMode ?? "default",
+  );
+  const [incompletePath, setIncompletePath] = useState(category?.incompletePath ?? "");
   const [goals, setGoals] = useState<Goals>({
     ratioLimit: category?.ratioLimit ?? -2,
     seedingTimeLimit: category?.seedingTimeLimit ?? -2,
@@ -285,7 +309,12 @@ export function CategoryDialog({
       unwrap(
         api.PUT("/categories/{name}", {
           params: { path: { name: name.trim() } },
-          body: { savePath: savePath.trim(), ...goals },
+          body: {
+            savePath: savePath.trim(),
+            incompletePathMode: incompleteMode,
+            incompletePath: incompleteMode === "on" ? incompletePath.trim() : "",
+            ...goals,
+          },
         }),
       ),
     onSuccess: (c) => {
@@ -313,7 +342,7 @@ export function CategoryDialog({
             <DialogTitle>{category ? "Edit category" : "New category"}</DialogTitle>
             <DialogDescription>
               Torrents in the category are saved under its path, and seed to its goals unless they
-              set their own.
+              set their own. Automatically managed torrents follow its paths when they change.
             </DialogDescription>
           </DialogHeader>
           <FieldGroup>
@@ -337,7 +366,34 @@ export function CategoryDialog({
                 className="font-mono text-xs"
                 autoFocus={category !== undefined}
               />
-              <FieldDescription>Empty uses the default save path.</FieldDescription>
+              <FieldDescription>
+                Empty uses the default save path, or for automatically managed torrents a folder
+                named after the category in it. A relative path is inside the default save path.
+              </FieldDescription>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="category-incomplete-mode">Incomplete folder</FieldLabel>
+              <OptionSelect
+                id="category-incomplete-mode"
+                value={incompleteMode}
+                options={incompleteModes}
+                onChange={setIncompleteMode}
+                className="max-w-64"
+              />
+              {incompleteMode === "on" && (
+                <Input
+                  id="category-incomplete-path"
+                  aria-label="Incomplete folder path"
+                  value={incompletePath}
+                  onChange={(e) => setIncompletePath(e.target.value)}
+                  placeholder={settings?.settings.incompletePath}
+                  className="font-mono text-xs"
+                />
+              )}
+              <FieldDescription>
+                Where the category's torrents stay until they complete. A relative path is inside
+                the global incomplete folder.
+              </FieldDescription>
             </Field>
             <Field>
               <FieldLabel htmlFor="category-ratio">Ratio goal</FieldLabel>

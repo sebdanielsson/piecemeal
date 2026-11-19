@@ -5,17 +5,23 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"path/filepath"
 	"slices"
 	"strings"
 
+	"github.com/sebdanielsson/piecemeal/internal/settings"
 	"github.com/sebdanielsson/piecemeal/internal/store"
 )
 
-// Category groups torrents and can give them a save path and seeding
-// goals.
+// Category groups torrents and can give them a save path, an incomplete
+// folder and seeding goals.
 type Category struct {
 	Name     string `json:"name"`
-	SavePath string `json:"savePath" doc:"Where torrents in this category are saved; empty uses the default save path."`
+	SavePath string `json:"savePath" doc:"Where torrents in this category are saved. Empty uses the default save path, or for automatically managed torrents a folder named after the category in it."`
+	// IncompletePathMode and IncompletePath are the category's incomplete
+	// folder.
+	IncompletePathMode string `json:"incompletePathMode" enum:"default,off,on" doc:"The category's incomplete folder: default follows the global setting, off keeps its torrents in their save path, on uses incompletePath."`
+	IncompletePath     string `json:"incompletePath" doc:"With incompletePathMode on: where the category's incomplete torrents are kept."`
 	// Seeding goals for the category's torrents that follow the default.
 	RatioLimit               float64 `json:"ratioLimit" doc:"-2 follows the global setting, -1 is unlimited."`
 	SeedingTimeLimit         int64   `json:"seedingTimeLimit" doc:"Minutes. -2 follows the global setting, -1 is unlimited."`
@@ -29,7 +35,7 @@ type Category struct {
 func NewCategory(name string) Category {
 	return Category{
 		Name: name, RatioLimit: -2, SeedingTimeLimit: -2, InactiveSeedingTimeLimit: -2,
-		SeedGoalAction: ActionDefault, SeedGoalMode: ModeDefault,
+		SeedGoalAction: ActionDefault, SeedGoalMode: ModeDefault, IncompletePathMode: IncompleteDefault,
 	}
 }
 
@@ -43,6 +49,7 @@ func (e *Engine) loadCategoriesAndTags(ctx context.Context) error {
 			Name: c.Name, SavePath: c.SavePath, RatioLimit: c.RatioLimit, SeedingTimeLimit: c.SeedingTimeLimit,
 			InactiveSeedingTimeLimit: c.InactiveSeedingTimeLimit,
 			SeedGoalAction:           cmp.Or(c.SeedGoalAction, ActionDefault), SeedGoalMode: cmp.Or(c.SeedGoalMode, ModeDefault),
+			IncompletePathMode: cmp.Or(c.IncompletePathMode, IncompleteDefault), IncompletePath: c.IncompletePath,
 		}
 	}
 	tags, err := e.store.ListTags(ctx)
@@ -84,10 +91,12 @@ func validName(kind, name string) error {
 	return nil
 }
 
-// PutCategory creates a category or changes its save path and seeding
-// goals. Torrents already in it stay where they are. Start from
-// NewCategory: zero limits are goals of 0. An empty action or mode is the
-// default.
+// PutCategory creates a category or changes its paths and seeding goals.
+// Manually managed torrents in it stay where they are; automatically
+// managed ones follow a change of its paths, or switch to manual
+// management, as relocateOnCategoryPathChange says. Start from
+// NewCategory: zero limits are goals of 0. An empty action, mode or
+// incomplete folder mode is the default.
 func (e *Engine) PutCategory(ctx context.Context, c Category, create bool) error {
 	if err := validName("category", c.Name); err != nil {
 		return err
@@ -96,32 +105,68 @@ func (e *Engine) PutCategory(ctx context.Context, c Category, create bool) error
 	if err := validGoals(c.RatioLimit, c.SeedingTimeLimit, c.InactiveSeedingTimeLimit, c.SeedGoalAction, c.SeedGoalMode); err != nil {
 		return err
 	}
-	if c.SavePath != "" {
-		p, err := e.confine(c.SavePath)
-		if err != nil {
-			return err
-		}
-		c.SavePath = p
+	c.IncompletePathMode = cmp.Or(c.IncompletePathMode, IncompleteDefault)
+	if !validIncompleteMode(c.IncompletePathMode) {
+		return fmt.Errorf("%w: incomplete folder mode %q", ErrInvalid, c.IncompletePathMode)
+	}
+	if c.IncompletePathMode != IncompleteOn {
+		c.IncompletePath = ""
+	}
+	var err error
+	if c.SavePath, err = e.categoryPath(c.SavePath); err != nil {
+		return fmt.Errorf("save path: %w", err)
+	}
+	if c.IncompletePath, err = e.categoryPath(c.IncompletePath); err != nil {
+		return fmt.Errorf("incomplete folder: %w", err)
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	_, exists := e.cats[c.Name]
+	old, exists := e.cats[c.Name]
 	if create && exists {
 		return fmt.Errorf("%w: category %q", ErrExists, c.Name)
 	}
 	if !create && !exists {
 		return fmt.Errorf("%w: category %q", ErrNotFound, c.Name)
 	}
-	err := e.store.UpsertCategory(ctx, store.UpsertCategoryParams{
+	err = e.store.UpsertCategory(ctx, store.UpsertCategoryParams{
 		Name: c.Name, SavePath: c.SavePath, RatioLimit: c.RatioLimit, SeedingTimeLimit: c.SeedingTimeLimit,
 		InactiveSeedingTimeLimit: c.InactiveSeedingTimeLimit, SeedGoalAction: c.SeedGoalAction, SeedGoalMode: c.SeedGoalMode,
+		IncompletePathMode: c.IncompletePathMode, IncompletePath: c.IncompletePath,
 	})
 	if err != nil {
 		return fmt.Errorf("save category: %w", err)
 	}
 	e.cats[c.Name] = c
+	if exists && (old.SavePath != c.SavePath || old.IncompletePathMode != c.IncompletePathMode ||
+		old.IncompletePath != c.IncompletePath) {
+		s := e.settings.Get()
+		changed := e.pathsChangedLocked(s, s.RelocateOnCategoryPathChange, func(m *managed) bool { return m.rec.Category == c.Name })
+		for _, m := range changed {
+			e.saveLocked(m)
+		}
+		e.refreshLocked(changed...)
+	}
 	e.bus.publish(Event{Type: EventCategories})
 	return nil
+}
+
+// categoryPath checks a category's save path or incomplete folder: an
+// absolute path inside the allowed roots, or a relative one, which is
+// resolved against the default save path or the global incomplete folder
+// when used.
+func (e *Engine) categoryPath(p string) (string, error) {
+	switch {
+	case p == "":
+		return "", nil
+	case filepath.IsAbs(p):
+		return e.confine(p)
+	default:
+		c := filepath.Clean(filepath.FromSlash(p))
+		if !filepath.IsLocal(c) {
+			return "", fmt.Errorf("%w: %q leads outside the folder it's relative to", ErrInvalid, p)
+		}
+		return c, nil
+	}
 }
 
 // DeleteCategories deletes categories; their torrents are left without one.
@@ -142,11 +187,14 @@ func (e *Engine) DeleteCategories(ctx context.Context, names ...string) error {
 	if err != nil {
 		return fmt.Errorf("delete categories: %w", err)
 	}
+	s := e.settings.Get()
 	for _, n := range names {
 		delete(e.cats, n)
 		for _, m := range e.torrents {
 			if m.rec.Category == n {
 				m.rec.Category = ""
+				e.categoryChangedLocked(m, s)
+				e.saveLocked(m)
 				e.refreshLocked(m)
 			}
 		}
@@ -156,6 +204,8 @@ func (e *Engine) DeleteCategories(ctx context.Context, names ...string) error {
 }
 
 // SetCategory moves torrents into a category, or out of any with "".
+// Automatically managed torrents follow the category's paths, or switch to
+// manual management, as relocateOnCategoryChange says.
 func (e *Engine) SetCategory(ctx context.Context, category string, hashes ...string) error {
 	e.mu.Lock()
 	_, ok := e.cats[category]
@@ -163,10 +213,29 @@ func (e *Engine) SetCategory(ctx context.Context, category string, hashes ...str
 	if category != "" && !ok {
 		return fmt.Errorf("%w: category %q", ErrNotFound, category)
 	}
+	s := e.settings.Get()
 	return e.each(ctx, hashes, func(m *managed) error {
+		if m.rec.Category == category {
+			return nil
+		}
 		m.rec.Category = category
+		e.categoryChangedLocked(m, s)
 		return nil
 	})
+}
+
+// categoryChangedLocked applies a torrent's new category to its paths if
+// it's automatically managed.
+func (e *Engine) categoryChangedLocked(m *managed, s settings.Settings) {
+	if !m.rec.AutoManaged {
+		return
+	}
+	if s.RelocateOnCategoryChange {
+		e.followCategoryLocked(m, s)
+		return
+	}
+	m.rec.AutoManaged = false
+	m.dirty = true
 }
 
 // CreateTags creates tags.

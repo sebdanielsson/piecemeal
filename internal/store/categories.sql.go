@@ -52,7 +52,7 @@ func (q *Queries) DeleteTag(ctx context.Context, name string) (int64, error) {
 }
 
 const listCategories = `-- name: ListCategories :many
-SELECT name, save_path, ratio_limit, seeding_time_limit, inactive_seeding_time_limit, seed_goal_action, seed_goal_mode FROM categories ORDER BY name
+SELECT name, save_path, ratio_limit, seeding_time_limit, inactive_seeding_time_limit, seed_goal_action, seed_goal_mode, incomplete_path_mode, incomplete_path FROM categories ORDER BY name
 `
 
 func (q *Queries) ListCategories(ctx context.Context) ([]Category, error) {
@@ -72,6 +72,8 @@ func (q *Queries) ListCategories(ctx context.Context) ([]Category, error) {
 			&i.InactiveSeedingTimeLimit,
 			&i.SeedGoalAction,
 			&i.SeedGoalMode,
+			&i.IncompletePathMode,
+			&i.IncompletePath,
 		); err != nil {
 			return nil, err
 		}
@@ -115,10 +117,12 @@ func (q *Queries) ListTags(ctx context.Context) ([]string, error) {
 
 const upsertCategory = `-- name: UpsertCategory :exec
 INSERT INTO categories (
-    name, save_path, ratio_limit, seeding_time_limit, inactive_seeding_time_limit, seed_goal_action, seed_goal_mode
+    name, save_path, ratio_limit, seeding_time_limit, inactive_seeding_time_limit, seed_goal_action, seed_goal_mode,
+    incomplete_path_mode, incomplete_path
 ) VALUES (
     ?1, ?2, ?3, ?4,
-    ?5, ?6, ?7
+    ?5, ?6, ?7,
+    ?8, ?9
 )
 ON CONFLICT (name) DO UPDATE SET
     save_path = excluded.save_path,
@@ -126,7 +130,9 @@ ON CONFLICT (name) DO UPDATE SET
     seeding_time_limit = excluded.seeding_time_limit,
     inactive_seeding_time_limit = excluded.inactive_seeding_time_limit,
     seed_goal_action = excluded.seed_goal_action,
-    seed_goal_mode = excluded.seed_goal_mode
+    seed_goal_mode = excluded.seed_goal_mode,
+    incomplete_path_mode = excluded.incomplete_path_mode,
+    incomplete_path = excluded.incomplete_path
 `
 
 type UpsertCategoryParams struct {
@@ -137,6 +143,8 @@ type UpsertCategoryParams struct {
 	InactiveSeedingTimeLimit int64
 	SeedGoalAction           string
 	SeedGoalMode             string
+	IncompletePathMode       string
+	IncompletePath           string
 }
 
 func (q *Queries) UpsertCategory(ctx context.Context, arg UpsertCategoryParams) error {
@@ -148,6 +156,8 @@ func (q *Queries) UpsertCategory(ctx context.Context, arg UpsertCategoryParams) 
 		arg.InactiveSeedingTimeLimit,
 		arg.SeedGoalAction,
 		arg.SeedGoalMode,
+		arg.IncompletePathMode,
+		arg.IncompletePath,
 	)
 	return err
 }

@@ -122,9 +122,9 @@ func (s *Server) mappedPreferences() map[string]any {
 	p := map[string]any{
 		// Downloads
 		"save_path":                     st.DefaultSavePath,
-		"temp_path_enabled":             false,
-		"temp_path":                     "",
-		"auto_tmm_enabled":              false,
+		"temp_path_enabled":             st.IncompletePathEnabled,
+		"temp_path":                     st.IncompletePath,
+		"auto_tmm_enabled":              st.AutoManagement,
 		"torrent_content_layout":        "Original",
 		"add_stopped_enabled":           st.AddStopped,
 		"add_to_top_of_queue":           false,
@@ -133,9 +133,9 @@ func (s *Server) mappedPreferences() map[string]any {
 		"use_unwanted_folder":           false,
 		"excluded_file_names_enabled":   false,
 		"excluded_file_names":           "",
-		"torrent_changed_tmm_enabled":   true,
-		"save_path_changed_tmm_enabled": false,
-		"category_changed_tmm_enabled":  false,
+		"torrent_changed_tmm_enabled":   st.RelocateOnCategoryChange,
+		"save_path_changed_tmm_enabled": st.RelocateOnDefaultPathChange,
+		"category_changed_tmm_enabled":  st.RelocateOnCategoryPathChange,
 
 		// Speed
 		"dl_limit":                limit(st.DownloadLimit),

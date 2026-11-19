@@ -177,6 +177,10 @@
       "AddTorrentRequest": {
         "additionalProperties": false,
         "properties": {
+          "autoManaged": {
+            "description": "Automatic management: the save path and incomplete folder follow the category. Absent follows the autoManagement setting.",
+            "type": "boolean"
+          },
           "category": {
             "type": "string"
           },
@@ -204,6 +208,10 @@
             "format": "int64",
             "type": "integer"
           },
+          "incompletePath": {
+            "description": "Where the data stays until the torrent completes; empty for none. Absent follows the category, then the global setting. Ignored when automatically managed.",
+            "type": "string"
+          },
           "magnet": {
             "description": "A magnet URI.",
             "type": "string"
@@ -217,6 +225,7 @@
             "type": "number"
           },
           "savePath": {
+            "description": "Where the data goes; absent uses the category's save path, then the default. Ignored when automatically managed.",
             "type": "string"
           },
           "seedGoalAction": {
@@ -427,12 +436,18 @@
               "addTags",
               "removeTags",
               "move",
+              "setIncompletePath",
+              "setAutoManaged",
               "queueTop",
               "queueBottom",
               "queueUp",
               "queueDown"
             ],
             "type": "string"
+          },
+          "autoManaged": {
+            "description": "With setAutoManaged: on or off.",
+            "type": "boolean"
           },
           "category": {
             "description": "With setCategory; empty removes the category.",
@@ -453,8 +468,12 @@
               "null"
             ]
           },
+          "incompletePath": {
+            "description": "With setIncompletePath: the incomplete folder, empty for none. With move: also change the incomplete folder, in the same move.",
+            "type": "string"
+          },
           "savePath": {
-            "description": "With move: where to move the data.",
+            "description": "With move: where to move the data; empty keeps the save path when incompletePath is given.",
             "type": "string"
           },
           "tags": {
@@ -518,6 +537,19 @@
             "format": "int64",
             "type": "integer"
           },
+          "incompletePath": {
+            "description": "With incompletePathMode on: where the category's incomplete torrents are kept.",
+            "type": "string"
+          },
+          "incompletePathMode": {
+            "description": "The category's incomplete folder: default follows the global setting, off keeps its torrents in their save path, on uses incompletePath.",
+            "enum": [
+              "default",
+              "off",
+              "on"
+            ],
+            "type": "string"
+          },
           "name": {
             "type": "string"
           },
@@ -527,7 +559,7 @@
             "type": "number"
           },
           "savePath": {
-            "description": "Where torrents in this category are saved; empty uses the default save path.",
+            "description": "Where torrents in this category are saved. Empty uses the default save path, or for automatically managed torrents a folder named after the category in it.",
             "type": "string"
           },
           "seedGoalAction": {
@@ -558,6 +590,8 @@
         "required": [
           "name",
           "savePath",
+          "incompletePathMode",
+          "incompletePath",
           "ratioLimit",
           "seedingTimeLimit",
           "inactiveSeedingTimeLimit",
@@ -1143,13 +1177,26 @@
             "format": "int64",
             "type": "integer"
           },
+          "incompletePath": {
+            "description": "With incompletePathMode on: where the category's incomplete torrents are kept.",
+            "type": "string"
+          },
+          "incompletePathMode": {
+            "description": "default follows the global setting, off keeps the category's torrents in their save path, on uses incompletePath.",
+            "enum": [
+              "default",
+              "off",
+              "on"
+            ],
+            "type": "string"
+          },
           "ratioLimit": {
             "description": "-2 follows the global setting, -1 is unlimited.",
             "format": "double",
             "type": "number"
           },
           "savePath": {
-            "description": "Where torrents in this category are saved; empty uses the default save path.",
+            "description": "Where torrents in this category are saved. Empty uses the default save path, or for automatically managed torrents a folder named after the category in it.",
             "type": "string"
           },
           "seedGoalAction": {
@@ -1592,6 +1639,10 @@
             "minimum": 0,
             "type": "integer"
           },
+          "autoManagement": {
+            "description": "New torrents use automatic management, unless the request says otherwise: their save path and incomplete folder follow their category.",
+            "type": "boolean"
+          },
           "bannedIPs": {
             "description": "Peers to refuse: IP addresses or CIDR ranges, one per line.",
             "type": "string"
@@ -1627,6 +1678,14 @@
             "description": "Stop seeding after this many minutes without upload, -1 for unlimited.",
             "format": "int64",
             "type": "integer"
+          },
+          "incompletePath": {
+            "description": "Where incomplete torrents are kept while incompletePathEnabled is on.",
+            "type": "string"
+          },
+          "incompletePathEnabled": {
+            "description": "Keep incomplete torrents in incompletePath; each moves to its save path once complete. A category or a torrent can choose otherwise.",
+            "type": "boolean"
           },
           "ipFilterEnabled": {
             "description": "Refuse peers in the ranges of the IP filter file.",
@@ -1691,6 +1750,18 @@
             "description": "Stop seeding at this upload ratio, -1 for unlimited.",
             "format": "double",
             "type": "number"
+          },
+          "relocateOnCategoryChange": {
+            "description": "When an automatically managed torrent's category changes, move its data to the new category's paths. Off switches the torrent to manual management instead.",
+            "type": "boolean"
+          },
+          "relocateOnCategoryPathChange": {
+            "description": "When a category's save path or incomplete folder changes, move the data of its automatically managed torrents. Off switches them to manual management instead.",
+            "type": "boolean"
+          },
+          "relocateOnDefaultPathChange": {
+            "description": "When the default save path or the incomplete folder changes, move the data of automatically managed torrents that use it. Off switches them to manual management instead.",
+            "type": "boolean"
           },
           "rssAutoDownload": {
             "description": "Add torrents from new articles that RSS rules match.",
@@ -1780,6 +1851,12 @@
         "required": [
           "defaultSavePath",
           "addStopped",
+          "incompletePathEnabled",
+          "incompletePath",
+          "autoManagement",
+          "relocateOnCategoryChange",
+          "relocateOnDefaultPathChange",
+          "relocateOnCategoryPathChange",
           "downloadLimit",
           "uploadLimit",
           "altDownloadLimit",
@@ -2012,6 +2089,10 @@
             "format": "int64",
             "type": "integer"
           },
+          "autoManaged": {
+            "description": "Automatic management: the save path and incomplete folder follow the category.",
+            "type": "boolean"
+          },
           "category": {
             "type": "string"
           },
@@ -2088,6 +2169,10 @@
             "format": "int64",
             "type": "integer"
           },
+          "incompletePath": {
+            "description": "Where the data stays until the torrent completes, then it moves to savePath; empty for none.",
+            "type": "string"
+          },
           "lastActivityAt": {
             "description": "Unix time of the last payload transfer, 0 if none.",
             "format": "int64",
@@ -2146,6 +2231,7 @@
             "type": "string"
           },
           "savePath": {
+            "description": "Where the torrent's data goes; while it's incomplete, it may be in incompletePath instead.",
             "type": "string"
           },
           "seedGoalAction": {
@@ -2315,7 +2401,9 @@
           "seedGoalAction",
           "seedGoalMode",
           "seedGoals",
-          "queuePosition"
+          "queuePosition",
+          "incompletePath",
+          "autoManaged"
         ],
         "type": "object"
       },
@@ -2630,6 +2718,10 @@
       "UpdateTorrentRequest": {
         "additionalProperties": false,
         "properties": {
+          "autoManaged": {
+            "description": "On moves the torrent to its category's paths; off keeps it where it is.",
+            "type": "boolean"
+          },
           "category": {
             "description": "Empty removes the category.",
             "type": "string"
@@ -2656,6 +2748,10 @@
             "format": "int64",
             "type": "integer"
           },
+          "incompletePath": {
+            "description": "Where the data stays until the torrent completes; empty for none. Data still in the old folder moves. Turns automatic management off.",
+            "type": "string"
+          },
           "name": {
             "type": "string"
           },
@@ -2665,7 +2761,7 @@
             "type": "number"
           },
           "savePath": {
-            "description": "Moves the data there in the background; the state is moving until it's done.",
+            "description": "Moves the data there in the background; the state is moving until it's done. A torrent still in its incomplete folder moves there once complete. Turns automatic management off.",
             "type": "string"
           },
           "seedGoalAction": {
@@ -5216,6 +5312,10 @@
                     "minimum": 0,
                     "type": "integer"
                   },
+                  "autoManagement": {
+                    "description": "New torrents use automatic management, unless the request says otherwise: their save path and incomplete folder follow their category.",
+                    "type": "boolean"
+                  },
                   "bannedIPs": {
                     "description": "Peers to refuse: IP addresses or CIDR ranges, one per line.",
                     "type": "string"
@@ -5251,6 +5351,14 @@
                     "description": "Stop seeding after this many minutes without upload, -1 for unlimited.",
                     "format": "int64",
                     "type": "integer"
+                  },
+                  "incompletePath": {
+                    "description": "Where incomplete torrents are kept while incompletePathEnabled is on.",
+                    "type": "string"
+                  },
+                  "incompletePathEnabled": {
+                    "description": "Keep incomplete torrents in incompletePath; each moves to its save path once complete. A category or a torrent can choose otherwise.",
+                    "type": "boolean"
                   },
                   "ipFilterEnabled": {
                     "description": "Refuse peers in the ranges of the IP filter file.",
@@ -5315,6 +5423,18 @@
                     "description": "Stop seeding at this upload ratio, -1 for unlimited.",
                     "format": "double",
                     "type": "number"
+                  },
+                  "relocateOnCategoryChange": {
+                    "description": "When an automatically managed torrent's category changes, move its data to the new category's paths. Off switches the torrent to manual management instead.",
+                    "type": "boolean"
+                  },
+                  "relocateOnCategoryPathChange": {
+                    "description": "When a category's save path or incomplete folder changes, move the data of its automatically managed torrents. Off switches them to manual management instead.",
+                    "type": "boolean"
+                  },
+                  "relocateOnDefaultPathChange": {
+                    "description": "When the default save path or the incomplete folder changes, move the data of automatically managed torrents that use it. Off switches them to manual management instead.",
+                    "type": "boolean"
                   },
                   "rssAutoDownload": {
                     "description": "Add torrents from new articles that RSS rules match.",

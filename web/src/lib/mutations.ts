@@ -23,6 +23,8 @@ export interface TorrentActionInput {
   tags?: string[];
   deleteData?: boolean;
   savePath?: string;
+  incompletePath?: string;
+  autoManaged?: boolean;
 }
 
 const actionVerbs: Record<BulkActionName, string> = {
@@ -36,6 +38,8 @@ const actionVerbs: Record<BulkActionName, string> = {
   addTags: "Tagged",
   removeTags: "Untagged",
   move: "Moving",
+  setIncompletePath: "Set the incomplete folder of",
+  setAutoManaged: "Changed the management of",
   queueTop: "Moved to the top of the queue:",
   queueBottom: "Moved to the bottom of the queue:",
   queueUp: "Moved up the queue:",
@@ -59,6 +63,8 @@ export function useTorrentAction() {
             tags: input.tags,
             deleteData: input.deleteData,
             savePath: input.savePath,
+            incompletePath: input.incompletePath,
+            autoManaged: input.autoManaged,
           },
         }),
       );

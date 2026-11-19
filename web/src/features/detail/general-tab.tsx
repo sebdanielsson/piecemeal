@@ -104,6 +104,11 @@ export function GeneralTab({ torrent: t }: { torrent: Torrent }) {
         <Item label="Save path">
           <Copyable text={t.savePath} label="Copy save path" mono />
         </Item>
+        {t.incompletePath && (
+          <Item label="Incomplete folder">
+            <Copyable text={t.incompletePath} label="Copy incomplete folder" mono />
+          </Item>
+        )}
         <Item label="Content path">
           <Copyable text={t.contentPath} label="Copy content path" mono />
         </Item>
@@ -126,6 +131,12 @@ export function GeneralTab({ torrent: t }: { torrent: Torrent }) {
             onChange={(tags) => patch({ tags })}
           />
         </Item>
+        <SwitchItem
+          label="Automatic management"
+          description="The save path and incomplete folder follow the category."
+          checked={t.autoManaged}
+          onChange={(autoManaged) => patch({ autoManaged })}
+        />
         <SwitchItem
           label="Download in order"
           checked={t.sequential}
@@ -301,16 +312,20 @@ function Item({
 
 function SwitchItem({
   label,
+  description,
   checked,
   onChange,
 }: {
   label: string;
+  description?: string;
   checked: boolean;
   onChange: (checked: boolean) => void;
 }) {
   return (
     <>
-      <dt className="text-muted-foreground">{label}</dt>
+      <dt className="text-muted-foreground" title={description}>
+        {label}
+      </dt>
       <dd>
         <Label className="font-normal normal-case">
           <Switch checked={checked} onCheckedChange={onChange} aria-label={label} />

@@ -100,6 +100,18 @@ export const settingsGroups: FieldGroupDef[] = [
         kind: "path",
       },
       {
+        key: "incompletePathEnabled",
+        label: "Keep incomplete torrents apart",
+        description:
+          "Torrents download into the incomplete folder and move to their save path once complete. A category or a torrent can choose otherwise.",
+        kind: "bool",
+      },
+      {
+        key: "incompletePath",
+        label: "Incomplete folder",
+        kind: "path",
+      },
+      {
         key: "addStopped",
         label: "Add torrents stopped",
         description: "New torrents wait until you start them.",
@@ -112,6 +124,37 @@ export const settingsGroups: FieldGroupDef[] = [
           "Checking data reads all of it. Others wait, queued for checking; on hard drives, one at a time keeps the disks from seeking between torrents.",
         kind: "int",
         min: 1,
+      },
+    ],
+  },
+  {
+    title: "Automatic management",
+    description:
+      "An automatically managed torrent's save path and incomplete folder follow its category: the category's paths, or a folder named after the category in the default save path. When those paths change, its data moves, or it switches to manual management, as set below.",
+    fields: [
+      {
+        key: "autoManagement",
+        label: "Manage new torrents automatically",
+        description: "Unless they're added with a save path of their own.",
+        kind: "bool",
+      },
+      {
+        key: "relocateOnCategoryChange",
+        label: "Move when the category changes",
+        description: "Off switches the torrent to manual management instead.",
+        kind: "bool",
+      },
+      {
+        key: "relocateOnCategoryPathChange",
+        label: "Move when the category's paths change",
+        description: "Off switches its torrents to manual management instead.",
+        kind: "bool",
+      },
+      {
+        key: "relocateOnDefaultPathChange",
+        label: "Move when the default save path or incomplete folder changes",
+        description: "Off switches the torrents that use them to manual management instead.",
+        kind: "bool",
       },
     ],
   },

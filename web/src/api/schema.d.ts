@@ -918,6 +918,8 @@ export interface components {
       url: string;
     };
     AddTorrentRequest: {
+      /** @description Automatic management: the save path and incomplete folder follow the category. Absent follows the autoManagement setting. */
+      autoManaged?: boolean;
       category?: string;
       /**
        * @description Original keeps the torrent's own layout, Subfolder puts a single file in a folder, NoSubfolder drops the top folder.
@@ -936,12 +938,15 @@ export interface components {
        * @description Minutes.
        */
       inactiveSeedingTimeLimit?: number;
+      /** @description Where the data stays until the torrent completes; empty for none. Absent follows the category, then the global setting. Ignored when automatically managed. */
+      incompletePath?: string;
       /** @description A magnet URI. */
       magnet?: string;
       /** @description Display name instead of the torrent's own. */
       name?: string;
       /** Format: double */
       ratioLimit?: number;
+      /** @description Where the data goes; absent uses the category's save path, then the default. Ignored when automatically managed. */
       savePath?: string;
       /**
        * @description What happens when the torrent reaches its seeding goals; default follows the category, then the global setting.
@@ -1027,17 +1032,23 @@ export interface components {
         | "addTags"
         | "removeTags"
         | "move"
+        | "setIncompletePath"
+        | "setAutoManaged"
         | "queueTop"
         | "queueBottom"
         | "queueUp"
         | "queueDown";
+      /** @description With setAutoManaged: on or off. */
+      autoManaged?: boolean;
       /** @description With setCategory; empty removes the category. */
       category?: string;
       /** @description With remove: also delete the files. */
       deleteData?: boolean;
       /** @description Infohashes, or ["all"]. */
       hashes: string[] | null;
-      /** @description With move: where to move the data. */
+      /** @description With setIncompletePath: the incomplete folder, empty for none. With move: also change the incomplete folder, in the same move. */
+      incompletePath?: string;
+      /** @description With move: where to move the data; empty keeps the save path when incompletePath is given. */
       savePath?: string;
       /** @description With addTags and removeTags; removeTags without tags removes all. */
       tags?: string[] | null;
@@ -1054,13 +1065,20 @@ export interface components {
        * @description Minutes. -2 follows the global setting, -1 is unlimited.
        */
       inactiveSeedingTimeLimit: number;
+      /** @description With incompletePathMode on: where the category's incomplete torrents are kept. */
+      incompletePath: string;
+      /**
+       * @description The category's incomplete folder: default follows the global setting, off keeps its torrents in their save path, on uses incompletePath.
+       * @enum {string}
+       */
+      incompletePathMode: "default" | "off" | "on";
       name: string;
       /**
        * Format: double
        * @description -2 follows the global setting, -1 is unlimited.
        */
       ratioLimit: number;
-      /** @description Where torrents in this category are saved; empty uses the default save path. */
+      /** @description Where torrents in this category are saved. Empty uses the default save path, or for automatically managed torrents a folder named after the category in it. */
       savePath: string;
       /**
        * @description What happens when a torrent reaches its seeding goals; default follows the global setting.
@@ -1300,12 +1318,19 @@ export interface components {
        * @description Minutes. -2 follows the global setting, -1 is unlimited.
        */
       inactiveSeedingTimeLimit?: number;
+      /** @description With incompletePathMode on: where the category's incomplete torrents are kept. */
+      incompletePath?: string;
+      /**
+       * @description default follows the global setting, off keeps the category's torrents in their save path, on uses incompletePath.
+       * @enum {string}
+       */
+      incompletePathMode?: "default" | "off" | "on";
       /**
        * Format: double
        * @description -2 follows the global setting, -1 is unlimited.
        */
       ratioLimit?: number;
-      /** @description Where torrents in this category are saved; empty uses the default save path. */
+      /** @description Where torrents in this category are saved. Empty uses the default save path, or for automatically managed torrents a folder named after the category in it. */
       savePath: string;
       /**
        * @description What happens when a torrent reaches its seeding goals; default follows the global setting.
@@ -1457,6 +1482,8 @@ export interface components {
        * @description Alternative upload limit, used while altSpeedEnabled is on.
        */
       altUploadLimit: number;
+      /** @description New torrents use automatic management, unless the request says otherwise: their save path and incomplete folder follow their category. */
+      autoManagement: boolean;
       /** @description Peers to refuse: IP addresses or CIDR ranges, one per line. */
       bannedIPs: string;
       /** @description Where torrents are saved when neither the request nor its category names a path. */
@@ -1480,6 +1507,10 @@ export interface components {
        * @description Stop seeding after this many minutes without upload, -1 for unlimited.
        */
       inactiveSeedingTimeLimit: number;
+      /** @description Where incomplete torrents are kept while incompletePathEnabled is on. */
+      incompletePath: string;
+      /** @description Keep incomplete torrents in incompletePath; each moves to its save path once complete. A category or a torrent can choose otherwise. */
+      incompletePathEnabled: boolean;
       /** @description Refuse peers in the ranges of the IP filter file. */
       ipFilterEnabled: boolean;
       /** @description An IP filter file: eMule .dat, PeerGuardian .p2p, or one IP address or CIDR range per line. */
@@ -1528,6 +1559,12 @@ export interface components {
        * @description Stop seeding at this upload ratio, -1 for unlimited.
        */
       ratioLimit: number;
+      /** @description When an automatically managed torrent's category changes, move its data to the new category's paths. Off switches the torrent to manual management instead. */
+      relocateOnCategoryChange: boolean;
+      /** @description When a category's save path or incomplete folder changes, move the data of its automatically managed torrents. Off switches them to manual management instead. */
+      relocateOnCategoryPathChange: boolean;
+      /** @description When the default save path or the incomplete folder changes, move the data of automatically managed torrents that use it. Off switches them to manual management instead. */
+      relocateOnDefaultPathChange: boolean;
       /** @description Add torrents from new articles that RSS rules match. */
       rssAutoDownload: boolean;
       /** @description With the smart episode filter, also take a REPACK or PROPER of an episode already downloaded. */
@@ -1643,6 +1680,8 @@ export interface components {
        * @description Unix time.
        */
       addedAt: number;
+      /** @description Automatic management: the save path and incomplete folder follow the category. */
+      autoManaged: boolean;
       category: string;
       comment: string;
       /** @description Every wanted file is downloaded. */
@@ -1693,6 +1732,8 @@ export interface components {
        * @description Minutes. -2 follows the category, then the global setting; -1 is unlimited.
        */
       inactiveSeedingTimeLimit: number;
+      /** @description Where the data stays until the torrent completes, then it moves to savePath; empty for none. */
+      incompletePath: string;
       /**
        * Format: int64
        * @description Unix time of the last payload transfer, 0 if none.
@@ -1730,6 +1771,7 @@ export interface components {
       ratioLimit: number;
       /** @description The torrent's top folder, empty when it has none. */
       rootPath: string;
+      /** @description Where the torrent's data goes; while it's incomplete, it may be in incompletePath instead. */
       savePath: string;
       /**
        * @description What happens when the torrent reaches its seeding goals; default follows the category, then the global setting.
@@ -1966,6 +2008,8 @@ export interface components {
       url?: string;
     };
     UpdateTorrentRequest: {
+      /** @description On moves the torrent to its category's paths; off keeps it where it is. */
+      autoManaged?: boolean;
       /** @description Empty removes the category. */
       category?: string;
       /** @description Replaces the comment shown for the torrent; the torrent file is unchanged. */
@@ -1983,13 +2027,15 @@ export interface components {
        * @description Minutes. -2 follows the category, then the global setting; -1 is unlimited.
        */
       inactiveSeedingTimeLimit?: number;
+      /** @description Where the data stays until the torrent completes; empty for none. Data still in the old folder moves. Turns automatic management off. */
+      incompletePath?: string;
       name?: string;
       /**
        * Format: double
        * @description -2 follows the category, then the global setting; -1 is unlimited.
        */
       ratioLimit?: number;
-      /** @description Moves the data there in the background; the state is moving until it's done. */
+      /** @description Moves the data there in the background; the state is moving until it's done. A torrent still in its incomplete folder moves there once complete. Turns automatic management off. */
       savePath?: string;
       /**
        * @description What happens when the torrent reaches its seeding goals; default follows the category, then the global setting.
@@ -3771,6 +3817,8 @@ export interface operations {
            * @description Alternative upload limit, used while altSpeedEnabled is on.
            */
           altUploadLimit?: number;
+          /** @description New torrents use automatic management, unless the request says otherwise: their save path and incomplete folder follow their category. */
+          autoManagement?: boolean;
           /** @description Peers to refuse: IP addresses or CIDR ranges, one per line. */
           bannedIPs?: string;
           /** @description Where torrents are saved when neither the request nor its category names a path. */
@@ -3794,6 +3842,10 @@ export interface operations {
            * @description Stop seeding after this many minutes without upload, -1 for unlimited.
            */
           inactiveSeedingTimeLimit?: number;
+          /** @description Where incomplete torrents are kept while incompletePathEnabled is on. */
+          incompletePath?: string;
+          /** @description Keep incomplete torrents in incompletePath; each moves to its save path once complete. A category or a torrent can choose otherwise. */
+          incompletePathEnabled?: boolean;
           /** @description Refuse peers in the ranges of the IP filter file. */
           ipFilterEnabled?: boolean;
           /** @description An IP filter file: eMule .dat, PeerGuardian .p2p, or one IP address or CIDR range per line. */
@@ -3842,6 +3894,12 @@ export interface operations {
            * @description Stop seeding at this upload ratio, -1 for unlimited.
            */
           ratioLimit?: number;
+          /** @description When an automatically managed torrent's category changes, move its data to the new category's paths. Off switches the torrent to manual management instead. */
+          relocateOnCategoryChange?: boolean;
+          /** @description When a category's save path or incomplete folder changes, move the data of its automatically managed torrents. Off switches them to manual management instead. */
+          relocateOnCategoryPathChange?: boolean;
+          /** @description When the default save path or the incomplete folder changes, move the data of automatically managed torrents that use it. Off switches them to manual management instead. */
+          relocateOnDefaultPathChange?: boolean;
           /** @description Add torrents from new articles that RSS rules match. */
           rssAutoDownload?: boolean;
           /** @description With the smart episode filter, also take a REPACK or PROPER of an episode already downloaded. */

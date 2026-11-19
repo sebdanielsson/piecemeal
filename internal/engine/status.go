@@ -60,7 +60,7 @@ type Torrent struct {
 	Seeds       int      `json:"seeds" doc:"Connected seeds."`
 	Peers       int      `json:"peers" doc:"Connected peers that are not seeds."`
 	SwarmPeers  int      `json:"swarmPeers" doc:"Peers known in the swarm."`
-	SavePath    string   `json:"savePath"`
+	SavePath    string   `json:"savePath" doc:"Where the torrent's data goes; while it's incomplete, it may be in incompletePath instead."`
 	ContentPath string   `json:"contentPath" doc:"The torrent's file, or its top folder, or the save path when its files share no folder."`
 	RootPath    string   `json:"rootPath" doc:"The torrent's top folder, empty when it has none."`
 	Layout      string   `json:"contentLayout" enum:"Original,Subfolder,NoSubfolder"`
@@ -93,6 +93,8 @@ type Torrent struct {
 	SeedGoalMode             string    `json:"seedGoalMode" enum:"default,any,all" doc:"Whether any goal or all of them must be met; default follows the category, then the global setting."`
 	SeedGoals                SeedGoals `json:"seedGoals" doc:"The seeding goals in effect, after following the defaults."`
 	QueuePosition            int64     `json:"queuePosition"`
+	IncompletePath           string    `json:"incompletePath" doc:"Where the data stays until the torrent completes, then it moves to savePath; empty for none."`
+	AutoManaged              bool      `json:"autoManaged" doc:"Automatic management: the save path and incomplete folder follow the category."`
 }
 
 // TransferStatus is the client-wide transfer state.
@@ -162,6 +164,9 @@ func (e *Engine) tick(now time.Time) {
 	for _, m := range e.torrents {
 		e.updateRates(m, now)
 		e.updateTimes(m, now)
+		// Before the status, so a torrent that just completed in its
+		// incomplete folder shows as moving, not as seeding from there.
+		e.moveCompletedLocked(m)
 		if m.rec.Sequential && m.t != nil {
 			e.applyPiecePrioritiesLocked(m)
 		}
@@ -340,7 +345,8 @@ func (e *Engine) statusLocked(m *managed, s settings.Settings) *Torrent {
 		Hash: r.InfoHash, Name: r.Name, HasMetadata: m.info != nil, Downloaded: r.Downloaded,
 		Uploaded: r.Uploaded, SessionDown: m.sessionDown, SessionUp: m.sessionUp,
 		DownRate: int64(m.rates.downR), UpRate: int64(m.rates.upR), ETA: -1, Trackers: m.meta.trackers,
-		SavePath: r.SavePath, Category: r.Category, Tags: m.tags, AddedAt: r.AddedAt,
+		SavePath: r.SavePath, IncompletePath: r.IncompletePath, AutoManaged: r.AutoManaged, Category: r.Category,
+		Tags: m.tags, AddedAt: r.AddedAt,
 		CompletedAt: r.CompletedAt, LastActive: r.LastActivityAt, SeedingTime: r.SeedingSeconds,
 		ActiveTime: r.ActiveSeconds, Stopped: r.Stopped, Forced: r.Forced, Sequential: r.Sequential,
 		FirstLast: r.FirstLastPiece, Magnet: r.Magnet, Error: r.Error, RatioLimit: r.RatioLimit,
@@ -358,7 +364,8 @@ func (e *Engine) statusLocked(m *managed, s settings.Settings) *Torrent {
 		st.PieceSize = m.info.PieceLength
 		st.Pieces = m.info.NumPieces()
 		st.Private = m.info.Private != nil && *m.info.Private
-		st.ContentPath, st.RootPath = contentAndRoot(r.SavePath, m.pathsOf().relativePaths(m.info))
+		paths := m.pathsOf()
+		st.ContentPath, st.RootPath = contentAndRoot(paths.savePath, paths.relativePaths(m.info))
 		st.Size, st.Completed = m.wanted()
 		st.Complete = m.complete()
 		if !st.Complete && st.Size > 0 && st.Completed >= st.Size {
@@ -377,7 +384,7 @@ func (e *Engine) statusLocked(m *managed, s settings.Settings) *Torrent {
 			st.PiecesHave = int(m.completed / st.PieceSize)
 		}
 	} else {
-		st.ContentPath = r.SavePath
+		st.ContentPath = m.dataDir()
 	}
 	st.Comment, st.CreatedBy, st.CreatedAt, st.Tracker = m.meta.comment, m.meta.createdBy, m.meta.createdAt, m.meta.tracker
 	if r.Comment.Valid {
@@ -398,7 +405,9 @@ func (e *Engine) statusLocked(m *managed, s settings.Settings) *Torrent {
 	}
 
 	switch {
-	case m.moving:
+	case m.moving, m.awaitingMove():
+		// A complete torrent still in its incomplete folder is about to
+		// move: the *arrs import only once it's in its save path.
 		st.State = StateMoving
 	case r.Error != "":
 		st.State = StateError

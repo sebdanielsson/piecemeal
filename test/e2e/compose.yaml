@@ -56,6 +56,10 @@ services:
       # qBittorrent refuses requests whose Host header names another port
       # than its own, so it listens on the published port.
       QBT_WEBUI_PORT: "18081"
+    # A /downloads qBittorrent can write, as piecemeal's is, so the
+    # contract cases that move torrents compare like with like.
+    tmpfs:
+      - /downloads
     ports:
       - 127.0.0.1:18081:18081
     networks:

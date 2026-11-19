@@ -177,6 +177,7 @@ func (m *managed) params() store.UpsertTorrentParams {
 		Comment:        r.Comment,
 		ContentLayout:  cmp.Or(r.ContentLayout, LayoutOriginal),
 		SeedGoalAction: cmp.Or(r.SeedGoalAction, ActionDefault), SeedGoalMode: cmp.Or(r.SeedGoalMode, ModeDefault),
+		IncompletePath: r.IncompletePath, InIncompletePath: r.InIncompletePath, AutoManaged: r.AutoManaged,
 	}
 }
 
@@ -211,8 +212,17 @@ type AddParams struct {
 	Metainfo []byte
 	// SavePath overrides the category's and the default save path.
 	SavePath string
-	Category string
-	Tags     []string
+	// IncompletePath is where the data stays until the torrent completes:
+	// "" for nowhere, nil to follow the category, then the global setting.
+	// A relative path is inside the global incomplete folder.
+	IncompletePath *string
+	// AutoManaged turns automatic management on or off; nil follows the
+	// autoManagement setting, or is off when SavePath is set. An
+	// automatically managed torrent takes its category's paths, whatever
+	// SavePath and IncompletePath say.
+	AutoManaged *bool
+	Category    string
+	Tags        []string
 	// Stopped adds the torrent without starting it; nil follows the
 	// addStopped setting.
 	Stopped        *bool
@@ -305,14 +315,13 @@ func (e *Engine) Add(ctx context.Context, p AddParams) (string, error) {
 			return "", fmt.Errorf("%w: category %q does not exist", ErrInvalid, p.Category)
 		}
 	}
-	savePath := p.SavePath
-	if savePath == "" && p.Category != "" {
-		savePath = e.cats[p.Category].SavePath
+	// A save path in the request means manual management, unless the
+	// request asks for automatic management, as in qBittorrent.
+	auto := s.AutoManagement && p.SavePath == ""
+	if p.AutoManaged != nil {
+		auto = *p.AutoManaged
 	}
-	if savePath == "" {
-		savePath = s.DefaultSavePath
-	}
-	savePath, err := e.confine(savePath)
+	savePath, incomplete, err := e.addPathsLocked(p, auto, s)
 	if err != nil {
 		return "", err
 	}
@@ -345,9 +354,10 @@ func (e *Engine) Add(ctx context.Context, p AddParams) (string, error) {
 			Category: p.Category, AddedAt: now, Stopped: stopped, Sequential: p.Sequential,
 			FirstLastPiece: p.FirstLastPiece, RatioLimit: -2, SeedingTimeLimit: -2,
 			InactiveSeedingTimeLimit: -2,
-			ContentLayout:            cmp.Or(p.ContentLayout, LayoutOriginal),
-			SeedGoalAction:           cmp.Or(p.SeedGoalAction, ActionDefault),
-			SeedGoalMode:             cmp.Or(p.SeedGoalMode, ModeDefault),
+			IncompletePath:           incomplete, InIncompletePath: incomplete != "", AutoManaged: auto,
+			ContentLayout:  cmp.Or(p.ContentLayout, LayoutOriginal),
+			SeedGoalAction: cmp.Or(p.SeedGoalAction, ActionDefault),
+			SeedGoalMode:   cmp.Or(p.SeedGoalMode, ModeDefault),
 		},
 	}
 	if mib != nil {
@@ -364,6 +374,8 @@ func (e *Engine) Add(ctx context.Context, p AddParams) (string, error) {
 	if p.InactiveSeedingTimeLimit != nil {
 		m.rec.InactiveSeedingTimeLimit = *p.InactiveSeedingTimeLimit
 	}
+
+	e.startInSavePathLocked(m, p.SkipChecking)
 
 	err = e.store.Tx(ctx, func(q *store.Queries) error {
 		for _, tag := range tags {
@@ -408,7 +420,8 @@ func (e *Engine) Add(ctx context.Context, p AddParams) (string, error) {
 	}
 	e.scheduleLocked(time.Now())
 	e.refreshLocked(m)
-	e.log.Info("torrent added", "hash", m.rec.InfoHash, "name", name, "savePath", savePath, "stopped", stopped)
+	e.log.Info("torrent added", "hash", m.rec.InfoHash, "name", name, "savePath", savePath, "incompletePath", incomplete,
+		"autoManaged", auto, "stopped", stopped)
 	if newTags {
 		e.bus.publish(Event{Type: EventTags})
 	}
@@ -526,6 +539,9 @@ func (e *Engine) awaitInfo(m *managed, t *torrent.Torrent) {
 	m.setMetainfo(buf.Bytes())
 	m.dirty = true
 	e.log.Info("metadata received", "hash", m.rec.InfoHash, "name", t.Name())
+	// Now that the files are known: data already in the save path stays
+	// there. The storage isn't open yet, so it opens there.
+	e.startInSavePathLocked(m, false)
 	if check, done := e.needsCheckLocked(m); check {
 		// Its data is already on disk: it waits for its turn to be checked,
 		// out of the client.
@@ -1014,8 +1030,9 @@ func (e *Engine) Remove(ctx context.Context, deleteData bool, hashes ...string) 
 		delete(e.torrents, m.hash)
 		r := removal{hash: m.hash}
 		if deleteData && m.info != nil {
-			r.root = m.rec.SavePath
-			r.paths = contentFiles(m.rec.SavePath, m.pathsOf().relativePaths(m.info))
+			paths := m.pathsOf()
+			r.root = paths.savePath
+			r.paths = contentFiles(paths.savePath, paths.relativePaths(m.info))
 			r.n = m.info.NumPieces()
 		}
 		removals = append(removals, r)

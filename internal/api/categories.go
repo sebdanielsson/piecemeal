@@ -18,7 +18,11 @@ type categoriesOutput struct {
 type putCategoryInput struct {
 	Name string `path:"name" maxLength:"200"`
 	Body struct {
-		SavePath string `json:"savePath" doc:"Where torrents in this category are saved; empty uses the default save path."`
+		SavePath string `json:"savePath" doc:"Where torrents in this category are saved. Empty uses the default save path, or for automatically managed torrents a folder named after the category in it."`
+		// The incomplete folder; absent stays as it is, or follows the
+		// global setting in a new category.
+		IncompletePathMode *string `json:"incompletePathMode,omitempty" enum:"default,off,on" doc:"default follows the global setting, off keeps the category's torrents in their save path, on uses incompletePath."`
+		IncompletePath     *string `json:"incompletePath,omitempty" doc:"With incompletePathMode on: where the category's incomplete torrents are kept."`
 		// Seeding goals for the category's torrents that follow the
 		// default. Absent ones stay as they are, or follow the global
 		// settings in a new category.
@@ -76,6 +80,12 @@ func (a *API) registerCategories() {
 			}
 			if b.SeedGoalMode != nil {
 				c.SeedGoalMode = *b.SeedGoalMode
+			}
+			if b.IncompletePathMode != nil {
+				c.IncompletePathMode = *b.IncompletePathMode
+			}
+			if b.IncompletePath != nil {
+				c.IncompletePath = *b.IncompletePath
 			}
 			if err := a.Engine.PutCategory(ctx, c, !exists); err != nil {
 				return nil, apiError(err)

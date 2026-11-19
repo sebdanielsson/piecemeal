@@ -24,7 +24,11 @@ A key with the **qBittorrent API** scope works only on the qBittorrent API, not 
 
 The \*arrs look for finished downloads at the path piecemeal reports. Mount the downloads at the same path in both containers, such as `/downloads`, and that path works for them as it is. If they must differ, add a **Remote Path Mapping** in the \*arr from piecemeal's path to its own.
 
-A category can have its own save path: set one under **Categories & tags**, such as `/downloads/movies` for `radarr`. Save paths must be inside `PIECEMEAL_ALLOWED_ROOTS`.
+A category can have its own save path: set one under **Categories & tags**, such as `/downloads/movies` for `radarr`. The \*arrs add torrents with their category and no save path, so they're saved there. Save paths must be inside `PIECEMEAL_ALLOWED_ROOTS`.
+
+To keep unfinished downloads apart, turn on **Keep incomplete torrents apart** in **Settings**, or give a category its own incomplete folder. Torrents download there and move to their save path once complete; piecemeal reports them as moving until the data is in place, and only then as complete. The \*arrs don't need to see the incomplete folder.
+
+With **Automatic management** on, in **Settings** for new torrents or per torrent, a torrent's paths follow its category: a category without a save path puts its torrents in a folder named after it in the default save path, such as `/downloads/radarr`. If the \*arr sets a **Post-Import Category**, the torrent's data then moves to that category's folder, unless **Move when the category changes** is off, which switches the torrent to manual management and leaves its data where the \*arr imported it from. Leave automatic management off if you don't want the \*arrs' category changes to move data. See [Save paths and the incomplete folder](../configuration.md#save-paths-and-the-incomplete-folder).
 
 ## Download links on private networks
 

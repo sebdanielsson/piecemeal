@@ -139,11 +139,12 @@ func ReadTransmission(dir string) ([]Imported, []error) {
 		case 2:
 			it.InactiveSeedingTimeLimit = -1
 		}
-		// Unfinished data may still be in the incomplete directory.
+		// Unfinished data may still be in the incomplete directory: it stays
+		// there until complete, then moves to the destination.
 		if inc := r.str("incomplete-dir"); !it.Complete && inc != "" && len(it.Paths) > 0 {
 			if _, err := os.Stat(filepath.Join(it.SavePath, filepath.FromSlash(it.Paths[0]))); errors.Is(err, os.ErrNotExist) {
 				if _, err := os.Stat(filepath.Join(inc, filepath.FromSlash(it.Paths[0]))); err == nil {
-					it.SavePath = inc
+					it.IncompletePath, it.InIncompletePath = inc, true
 				}
 			}
 		}
@@ -180,7 +181,13 @@ func ReadQBittorrent(dir string) ([]Imported, []error) {
 			errs = append(errs, err)
 			continue
 		}
+		// save_path is where the data is. qBittorrent 5 keeps a manually
+		// managed torrent's save path and download path in qBt-savePath and
+		// qBt-downloadPath, and neither for an automatically managed one,
+		// whose paths follow its category.
 		save := r.str("save_path")
+		_, hasSave := r["qBt-savePath"]
+		_, hasDownload := r["qBt-downloadPath"]
 		if save == "" {
 			save = r.str("qBt-savePath")
 		}
@@ -192,6 +199,17 @@ func ReadQBittorrent(dir string) ([]Imported, []error) {
 			SeedingTimeLimit: r.int("qBt-seedingTimeLimit"), InactiveSeedingTimeLimit: r.int("qBt-inactiveSeedingTimeLimit"),
 			Sequential: r.int("sequential_download") != 0, FirstLastPiece: r.int("qBt-firstLastPiecePriority") != 0,
 			Paths: r.strings("mapped_files"), Complete: r.int("completed_time") > 0 || r.int("qBt-seedStatus") != 0,
+		}
+		if hasSave || hasDownload {
+			if final := r.str("qBt-savePath"); final != "" {
+				it.SavePath = final
+			}
+			if dl := r.str("qBt-downloadPath"); dl != "" && dl != it.SavePath {
+				it.IncompletePath = dl
+				it.InIncompletePath = save == dl
+			}
+		} else {
+			it.AutoManaged = true
 		}
 		// qBittorrent stores the ratio limit times 1000.
 		switch rl := r.int("qBt-ratioLimit"); {

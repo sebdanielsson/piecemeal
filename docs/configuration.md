@@ -71,6 +71,12 @@ Change these in **Settings**, with `PATCH /api/piecemeal/v1/settings`, or throug
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | `defaultSavePath` | the download directory | Where torrents go when neither the request nor its category names a path. |
+| `incompletePathEnabled` | `false` | Keep incomplete torrents in `incompletePath`; each moves to its save path once complete. A category or a torrent can choose otherwise. |
+| `incompletePath` | `temp` in the download directory | The incomplete folder. |
+| `autoManagement` | `false` | New torrents use automatic management unless the request says otherwise: their save path and incomplete folder follow their category. |
+| `relocateOnCategoryChange` | `true` | When an automatically managed torrent's category changes, move its data to the new category's paths. Off switches it to manual management instead. |
+| `relocateOnCategoryPathChange` | `false` | When a category's paths change, move its automatically managed torrents. Off switches them to manual management instead. |
+| `relocateOnDefaultPathChange` | `false` | When `defaultSavePath` or the incomplete folder changes, move the automatically managed torrents that use them. Off switches them to manual management instead. |
 | `addStopped` | `false` | Add new torrents stopped. |
 | `downloadLimit`, `uploadLimit` | `0` | Global limits. |
 | `altDownloadLimit`, `altUploadLimit` | `0` | Alternative limits, used while `altSpeedEnabled` is on. |
@@ -107,6 +113,17 @@ Change these in **Settings**, with `PATCH /api/piecemeal/v1/settings`, or throug
 | `rssSmartEpisodeFilters` | `SxxEyy`, `NxNN` and dates | Regular expressions, one per line, that find the episode in a title. |
 
 The seeding goals above are the defaults. A category can set its own goals, mode and action, and so can a torrent; each one follows the next level only where it's left at the default (`-2` for a goal, `default` for the mode and action): first the torrent's own, then its category's, then the global setting.
+
+### Save paths and the incomplete folder
+
+Every torrent has a save path, where its data ends up, and may have an incomplete folder, where its data stays until it completes. Once complete, the data moves to the save path in the background, and the torrent shows as moving until it's there; the \*arrs import it only then. A torrent whose data is already in its save path when it's added, such as one added again after it was removed, is checked and completes there.
+
+A torrent is managed manually or automatically:
+
+- **Manually**, its paths are the ones it was added with. A torrent added without them gets its category's save path, else `defaultSavePath`, and its category's own incomplete folder (or none, if the category has it off), else `incompletePath` while `incompletePathEnabled` is on. Moving a torrent changes its save path; data still in the incomplete folder stays there and moves to the new save path once complete. Changing the incomplete folder moves data that's still in it.
+- **Automatically** (qBittorrent's Automatic Torrent Management), its paths follow its category. The save path is the category's, or a folder named after the category in `defaultSavePath` when the category has none; the incomplete folder is the category's own, or one named after the category in `incompletePath` while that is on. When the torrent's category, the category's paths or the defaults change, its data moves to the new paths, or the torrent switches to manual management and stays where it is, as `relocateOnCategoryChange`, `relocateOnCategoryPathChange` and `relocateOnDefaultPathChange` say. Turning `incompletePathEnabled` on or off always applies. Moving the torrent or changing its incomplete folder by hand switches it to manual management.
+
+New torrents are managed automatically when `autoManagement` is on, unless they're added with a save path of their own. A category's save path and incomplete folder may be relative: the save path to `defaultSavePath`, the incomplete folder to `incompletePath`. Every path must end up inside `PIECEMEAL_ALLOWED_ROOTS`.
 
 ### Pinning settings
 
