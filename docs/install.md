@@ -106,7 +106,7 @@ The binary is also the tool for everything around the daemon:
 | `piecemeal healthcheck` | Check `/healthz`, for container health checks. |
 | `piecemeal version` | Print the version. |
 
-In a container, run them with `docker exec piecemeal piecemeal <command>`, or for `restore` and `import`, which need piecemeal stopped, with `docker run --rm` on the same volumes.
+In a container, run them with `docker exec piecemeal /piecemeal <command>` (the image has no shell or `PATH` entry for it), or for `restore` and `import`, which need piecemeal stopped, with `docker run --rm` on the same volumes.
 
 ## Upgrading
 
