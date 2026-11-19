@@ -10,7 +10,7 @@ require (
 	github.com/anacrolix/generics v0.2.0
 	github.com/anacrolix/torrent v1.63.0
 	github.com/coreos/go-oidc/v3 v3.21.0
-	github.com/danielgtaylor/huma/v2 v2.40.0
+	github.com/danielgtaylor/huma/v2 v2.41.0
 	github.com/dlclark/regexp2/v2 v2.13.0
 	github.com/go-jose/go-jose/v4 v4.1.9
 	github.com/jackpal/go-nat-pmp v1.1.0
@@ -64,7 +64,7 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
 	github.com/huandu/xstrings v1.3.2 // indirect
-	github.com/klauspost/cpuid/v2 v2.4.1 // indirect
+	github.com/klauspost/cpuid/v2 v2.4.2 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/mfridman/interpolate v0.2.0 // indirect
