@@ -41,6 +41,7 @@ piecemeal builds with `CGO_ENABLED=0`: SQLite is the pure-Go modernc driver, so 
 - **Fuzzing**: the parsers of untrusted input have fuzz targets, run weekly in CI and locally with `go test -fuzz=FuzzParse ./internal/rss/`.
 - **End-to-end**: `test/e2e/run.sh` starts piecemeal, a seeder, qBittorrent, Radarr, Sonarr and Prowlarr in Docker. The \*arrs test their download client against piecemeal, Radarr grabs and imports a release, and the same qBittorrent API calls go to piecemeal and a real qBittorrent 5.3 to compare status codes and response shapes.
 - **Load**: `test/load/run.sh` measures piecemeal with 1,000 torrents; see [Performance](../reference/performance.md).
+- **A real SOCKS5 proxy**: the proxy tests use piecemeal's own test proxy. `TestRealSOCKS5` in `internal/proxy` checks CONNECT and the UDP relay against one you run, such as Dante, when `PIECEMEAL_TEST_SOCKS5` names it and `PIECEMEAL_TEST_REACH` is an address it reaches this machine at; `PIECEMEAL_TEST_SOCKS5_USER` and `PIECEMEAL_TEST_SOCKS5_PASSWORD` add credentials.
 
 ## Conventions
 
