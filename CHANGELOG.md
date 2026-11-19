@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.2.0](https://github.com/sebdanielsson/piecemeal/compare/v1.1.1...v1.2.0) (2026-11-19)
+
+
+### Features
+
+* proxy support for trackers, peers, torrent files and RSS ([453ea50](https://github.com/sebdanielsson/piecemeal/commit/453ea507c7ff2430faf03f1fc3c64777cff4e351))
+
+
+### Bug Fixes
+
+* **deps:** update dependency lucide-react to ^1.75.0 ([#67](https://github.com/sebdanielsson/piecemeal/issues/67)) ([be90e7f](https://github.com/sebdanielsson/piecemeal/commit/be90e7f6981470167e7b9c2568406fca08e2e910))
+* **deps:** update module github.com/dlclark/regexp2/v2 to v2.13.1 ([#65](https://github.com/sebdanielsson/piecemeal/issues/65)) ([82456f2](https://github.com/sebdanielsson/piecemeal/commit/82456f2e157a834930ada4edc70209078c87a616))
+* the bannedIPs setting's environment variable is PIECEMEAL_BANNED_IPS, as documented, not PIECEMEAL_BANNED_I_PS ([453ea50](https://github.com/sebdanielsson/piecemeal/commit/453ea507c7ff2430faf03f1fc3c64777cff4e351))
+
 ## [1.1.1](https://github.com/sebdanielsson/piecemeal/compare/v1.1.0...v1.1.1) (2026-11-19)
 
 
