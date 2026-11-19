@@ -10,8 +10,8 @@ If something here is wrong or out of date, [open an issue](https://github.com/se
 
 ## Which one should you pick?
 
-- **piecemeal** if Radarr, Sonarr and Prowlarr drive your downloads on a server, several people use it, and you want SSO, scoped API keys, metrics and VPN port forwarding built in. Not if you need per-torrent speed limits, a proxy, a search engine, or a private tracker that only allows clients on its list.
-- **qBittorrent** if you want the most features: search, proxies, I2P, per-torrent limits, super seeding and SSL torrents, a desktop app, and a client private trackers widely allow. The \*arrs support it best, which is why piecemeal speaks its API.
+- **piecemeal** if Radarr, Sonarr and Prowlarr drive your downloads on a server, several people use it, and you want SSO, scoped API keys, metrics and VPN port forwarding built in. Not if you need per-torrent speed limits, a search engine, or a private tracker that only allows clients on its list.
+- **qBittorrent** if you want the most features: search, I2P, per-torrent limits, super seeding and SSL torrents, a desktop app, and a client private trackers widely allow. The \*arrs support it best, which is why piecemeal speaks its API.
 - **Transmission** if you want something small and simple with a web UI that works well on a phone. It has no RSS, no search and no categories, and the \*arrs use its labels instead.
 - **Deluge** if you want plugins or the desktop thin client against a daemon. It has had no release since April 2025.
 
@@ -79,7 +79,7 @@ If something here is wrong or out of date, [open an issue](https://github.com/se
 | Local service discovery | No ([#57](https://github.com/sebdanielsson/piecemeal/issues/57)) | Yes | Yes | Yes |
 | UPnP and NAT-PMP | UPnP; NAT-PMP to a gateway you set | Yes | Yes | Yes |
 | Port forwarding through a VPN's NAT-PMP gateway, such as ProtonVPN's | Built in; follows the port when it changes | With an external script or tool | With an external script or tool | With an external script or tool |
-| Peer proxy | No ([#45](https://github.com/sebdanielsson/piecemeal/issues/45)) | HTTP, SOCKS4, SOCKS5 | No; an HTTP proxy for trackers and web seeds only | HTTP, SOCKS4, SOCKS5, I2P |
+| Peer proxy | HTTP, SOCKS5; the DHT and uTP are off while peers go through it ([Proxy](../guides/proxy.md)) | HTTP, SOCKS4, SOCKS5 | No; an HTTP proxy for trackers and web seeds only | HTTP, SOCKS4, SOCKS5, I2P |
 | I2P | No ([#47](https://github.com/sebdanielsson/piecemeal/issues/47)) | Yes (experimental) | No | As a proxy |
 | IP filter | A filter file and banned addresses | A filter file and banned addresses | A blocklist URL, updated automatically | Blocklist plugin, from a URL, updated automatically |
 | Super seeding | No ([#46](https://github.com/sebdanielsson/piecemeal/issues/46)) | Yes | No | Yes |

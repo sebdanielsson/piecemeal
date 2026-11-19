@@ -5,7 +5,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import type { Principal, Settings, SettingsResponse } from "@/api/types";
 import { keys } from "@/lib/queries";
 import { transfer } from "@/test/fixtures";
-import { altSpeedGroup, speedGroup } from "./groups";
+import { altSpeedGroup, proxyGroup, speedGroup } from "./groups";
 import { SettingsForm } from "./settings-form";
 
 afterEach(() => {
@@ -33,7 +33,11 @@ test("unsaved edits sit on top of settings changed elsewhere, and saving sends o
   const qc = new QueryClient();
   const viewer = { userId: 2, username: "viewer", isAdmin: false } as Principal;
   qc.setQueryData(keys.me, viewer);
-  qc.setQueryData<SettingsResponse>(keys.settings, { settings, locked: {} });
+  qc.setQueryData<SettingsResponse>(keys.settings, {
+    settings,
+    locked: {},
+    proxyPasswordSet: false,
+  });
   const user = userEvent.setup();
   render(
     <QueryClientProvider client={qc}>
@@ -50,6 +54,7 @@ test("unsaved edits sit on top of settings changed elsewhere, and saving sends o
     qc.setQueryData<SettingsResponse>(keys.settings, {
       settings: { ...settings, altSpeedEnabled: true },
       locked: {},
+      proxyPasswordSet: false,
     });
   });
   const altSwitch = screen.getByRole("switch", { name: "Use the alternative limits" });
@@ -63,4 +68,73 @@ test("unsaved edits sit on top of settings changed elsewhere, and saving sends o
     { method: "PATCH", path: "/api/piecemeal/v1/transfer", body: { downloadLimit: 512_000 } },
   ]);
   expect(altSwitch.getAttribute("aria-checked")).toBe("true");
+});
+
+test("the proxy password is write-only, and proxy fields show once a proxy is chosen", async () => {
+  const requests: { method: string; body: unknown }[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (req: Request) => {
+      const body = await req.json();
+      requests.push({ method: req.method, body });
+      return new Response(
+        JSON.stringify({
+          settings: { ...configured, ...(body as object), proxyPassword: "" },
+          locked: {},
+          proxyPasswordSet: true,
+        }),
+        { status: 200 },
+      );
+    }),
+  );
+  const proxySettings = {
+    proxyType: "none",
+    proxyHost: "",
+    proxyPort: 1080,
+    proxyUsername: "",
+    proxyPassword: "",
+    proxyBitTorrent: true,
+    proxyPeerConnections: true,
+    proxyHostnameLookup: true,
+    proxyRSS: true,
+    proxyTorrentFiles: true,
+  } as Settings;
+  const configured = {
+    ...proxySettings,
+    proxyType: "socks5",
+    proxyHost: "10.64.0.1",
+    proxyUsername: "user",
+  } as Settings;
+  const qc = new QueryClient();
+  qc.setQueryData(keys.me, { userId: 1, username: "admin", isAdmin: true } as Principal);
+  qc.setQueryData<SettingsResponse>(keys.settings, {
+    settings: proxySettings,
+    locked: {},
+    proxyPasswordSet: false,
+  });
+  const user = userEvent.setup();
+  render(
+    <QueryClientProvider client={qc}>
+      <SettingsForm groups={[proxyGroup]} />
+    </QueryClientProvider>,
+  );
+
+  expect(screen.queryByLabelText("Host")).toBeNull();
+  act(() => {
+    qc.setQueryData<SettingsResponse>(keys.settings, {
+      settings: configured,
+      locked: {},
+      proxyPasswordSet: true,
+    });
+  });
+  const password = (await screen.findByLabelText("Password")) as HTMLInputElement;
+  expect(password.type).toBe("password");
+  expect(password.value).toBe("");
+  expect(password.placeholder).toMatch(/Saved/);
+
+  await user.type(password, "new-secret");
+  await user.click(screen.getByRole("button", { name: "Save" }));
+  await vi.waitFor(() => expect(screen.getByText("All changes saved")).toBeTruthy());
+  expect(requests).toEqual([{ method: "PATCH", body: { proxyPassword: "new-secret" } }]);
+  expect((screen.getByLabelText("Password") as HTMLInputElement).value).toBe("");
 });

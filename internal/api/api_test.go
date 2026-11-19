@@ -484,3 +484,63 @@ func TestPaths(t *testing.T) {
 	}
 	s.do(http.MethodPatch, "/settings", map[string]any{"incompletePath": "/etc"}, http.StatusUnprocessableEntity, nil, csrf...)
 }
+
+// TestProxyPasswordNotShown checks that the proxy password doesn't come
+// back in settings, settings events or the audit log.
+func TestProxyPasswordNotShown(t *testing.T) {
+	const secret = "hunter2-proxy-secret"
+	s := newTestServer(t)
+	s.login()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, s.URL+Prefix+"/events", nil)
+	resp, err := s.client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	sc := bufio.NewScanner(resp.Body)
+	sc.Buffer(nil, 1<<20)
+	// The snapshot comes first.
+	for sc.Scan() {
+		if strings.HasPrefix(sc.Text(), "data: ") {
+			break
+		}
+	}
+
+	var raw json.RawMessage
+	s.do(http.MethodPatch, "/settings", map[string]any{
+		"proxyType": "socks5", "proxyHost": "127.0.0.1", "proxyPort": 1080, "proxyUsername": "user", "proxyPassword": secret,
+	}, http.StatusOK, &raw, csrf...)
+	check := func(what string, b []byte) {
+		t.Helper()
+		if strings.Contains(string(b), secret) {
+			t.Fatalf("%s shows the password: %s", what, b)
+		}
+	}
+	check("the PATCH response", raw)
+	var got SettingsResponse
+	if err := json.Unmarshal(raw, &got); err != nil || !got.ProxyPasswordSet || got.Settings.ProxyUsername != "user" {
+		t.Fatalf("response %+v, %v", got, err)
+	}
+	s.do(http.MethodGet, "/settings", nil, http.StatusOK, &raw)
+	check("GET /settings", raw)
+
+	event := ""
+	for sc.Scan() {
+		if v, ok := strings.CutPrefix(sc.Text(), "event: "); ok {
+			event = v
+		} else if v, ok := strings.CutPrefix(sc.Text(), "data: "); ok && event == "settings" {
+			check("the settings event", []byte(v))
+			if !strings.Contains(v, `"proxyPasswordSet":true`) {
+				t.Fatalf("settings event: %s", v)
+			}
+			break
+		}
+	}
+	s.do(http.MethodGet, "/audit", nil, http.StatusOK, &raw)
+	check("the audit log", raw)
+	if !strings.Contains(string(raw), "proxyPassword") {
+		t.Fatalf("the audit log doesn't record the change: %s", raw)
+	}
+}

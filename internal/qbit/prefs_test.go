@@ -382,3 +382,43 @@ func TestAdminEndpointsNeedFullScope(t *testing.T) {
 		t.Fatal("a qbittorrent key changed DHT")
 	}
 }
+
+func TestProxyPreferences(t *testing.T) {
+	e := newEnv(t)
+	e.login()
+	expect(t, "set", e.setPreferences(map[string]any{
+		"proxy_type": "SOCKS5", "proxy_ip": "10.64.0.1", "proxy_port": 1080, "proxy_auth_enabled": true,
+		"proxy_username": "user", "proxy_password": "secret", "proxy_peer_connections": false, "proxy_misc": false,
+	}), http.StatusOK)
+	st := e.settings.Get()
+	if st.ProxyType != "socks5" || st.ProxyHost != "10.64.0.1" || st.ProxyPort != 1080 || st.ProxyUsername != "user" ||
+		st.ProxyPassword != "secret" || st.ProxyPeerConnections || st.ProxyTorrentFiles || !st.ProxyRSS {
+		t.Fatalf("settings %+v", st)
+	}
+	p := e.preferences()
+	if p["proxy_type"] != "SOCKS5" || p["proxy_auth_enabled"] != true || p["proxy_username"] != "user" || p["proxy_password"] != "" {
+		t.Fatalf("preferences: type %v auth %v user %v password %q", p["proxy_type"], p["proxy_auth_enabled"],
+			p["proxy_username"], p["proxy_password"])
+	}
+
+	// Writing back what was read keeps the password it doesn't show.
+	expect(t, "read-back", e.setPreferences(p), http.StatusOK)
+	if e.settings.Get().ProxyPassword != "secret" {
+		t.Fatal("writing back the preferences cleared the password")
+	}
+
+	// Older clients send a number.
+	expect(t, "legacy type", e.setPreferences(map[string]any{"proxy_type": 1}), http.StatusOK)
+	if e.settings.Get().ProxyType != "http" {
+		t.Fatalf("proxy_type 1 is %q", e.settings.Get().ProxyType)
+	}
+	for _, v := range []any{"SOCKS4", 5, "socks9", true} {
+		expect(t, "unsupported type", e.setPreferences(map[string]any{"proxy_type": v}), http.StatusBadRequest)
+	}
+
+	// Turning authentication off clears the username and password.
+	expect(t, "auth off", e.setPreferences(map[string]any{"proxy_auth_enabled": false, "proxy_username": "user"}), http.StatusOK)
+	if st := e.settings.Get(); st.ProxyUsername != "" || st.ProxyPassword != "" {
+		t.Fatalf("after auth off: %+v", st)
+	}
+}

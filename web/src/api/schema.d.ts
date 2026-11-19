@@ -1552,6 +1552,32 @@ export interface components {
       peerPort: number;
       /** @description Exchange peers with other peers. */
       pex: boolean;
+      /** @description Announce to trackers and download from web seeds through the proxy. UDP trackers need a SOCKS5 proxy that relays UDP, and aren't used otherwise. */
+      proxyBitTorrent: boolean;
+      /** @description The proxy server's hostname or IP address. */
+      proxyHost: string;
+      /** @description Let the proxy look up the hostnames of trackers and web seeds, so they aren't looked up locally. UDP trackers are always looked up locally. */
+      proxyHostnameLookup: boolean;
+      /** @description The password for the proxy. Write-only: reads return an empty string, and an empty value leaves the password as it is. Clearing proxyUsername clears it. */
+      proxyPassword: string;
+      /** @description With proxyBitTorrent, connect to peers through the proxy too. The DHT, uTP and WebRTC peers can't go through it, so they are off meanwhile. */
+      proxyPeerConnections: boolean;
+      /**
+       * Format: int64
+       * @description The proxy server's port.
+       */
+      proxyPort: number;
+      /** @description Fetch RSS feeds through the proxy. */
+      proxyRSS: boolean;
+      /** @description Download torrent files from URLs through the proxy, whether added by URL or by an RSS rule. Addresses on PIECEMEAL_FETCH_ALLOWED_NETWORKS are reached directly. */
+      proxyTorrentFiles: boolean;
+      /**
+       * @description The proxy server's type: none, socks5, or http (an HTTP proxy that allows CONNECT to any port).
+       * @enum {string}
+       */
+      proxyType: "none" | "socks5" | "http";
+      /** @description The username for the proxy, empty for none. */
+      proxyUsername: string;
       /** @description Run only a limited number of torrents at a time; the rest wait in the queue. */
       queueingEnabled: boolean;
       /**
@@ -1627,10 +1653,12 @@ export interface components {
       utp: boolean;
     };
     SettingsEvent: {
-      /** @description Settings set by environment variables, mapped to the variable. */
+      /** @description Settings set by environment variables, which can't be changed here, mapped to the variable. */
       locked: {
         [key: string]: string;
       };
+      /** @description Whether a proxy password is stored. The password itself is never returned. */
+      proxyPasswordSet: boolean;
       settings: components["schemas"]["Settings"];
     };
     SettingsResponse: {
@@ -1638,6 +1666,8 @@ export interface components {
       locked: {
         [key: string]: string;
       };
+      /** @description Whether a proxy password is stored. The password itself is never returned. */
+      proxyPasswordSet: boolean;
       settings: components["schemas"]["Settings"];
     };
     SnapshotEvent: {
@@ -3887,6 +3917,32 @@ export interface operations {
           peerPort?: number;
           /** @description Exchange peers with other peers. */
           pex?: boolean;
+          /** @description Announce to trackers and download from web seeds through the proxy. UDP trackers need a SOCKS5 proxy that relays UDP, and aren't used otherwise. */
+          proxyBitTorrent?: boolean;
+          /** @description The proxy server's hostname or IP address. */
+          proxyHost?: string;
+          /** @description Let the proxy look up the hostnames of trackers and web seeds, so they aren't looked up locally. UDP trackers are always looked up locally. */
+          proxyHostnameLookup?: boolean;
+          /** @description The password for the proxy. Write-only: reads return an empty string, and an empty value leaves the password as it is. Clearing proxyUsername clears it. */
+          proxyPassword?: string;
+          /** @description With proxyBitTorrent, connect to peers through the proxy too. The DHT, uTP and WebRTC peers can't go through it, so they are off meanwhile. */
+          proxyPeerConnections?: boolean;
+          /**
+           * Format: int64
+           * @description The proxy server's port.
+           */
+          proxyPort?: number;
+          /** @description Fetch RSS feeds through the proxy. */
+          proxyRSS?: boolean;
+          /** @description Download torrent files from URLs through the proxy, whether added by URL or by an RSS rule. Addresses on PIECEMEAL_FETCH_ALLOWED_NETWORKS are reached directly. */
+          proxyTorrentFiles?: boolean;
+          /**
+           * @description The proxy server's type: none, socks5, or http (an HTTP proxy that allows CONNECT to any port).
+           * @enum {string}
+           */
+          proxyType?: "none" | "socks5" | "http";
+          /** @description The username for the proxy, empty for none. */
+          proxyUsername?: string;
           /** @description Run only a limited number of torrents at a time; the rest wait in the queue. */
           queueingEnabled?: boolean;
           /**

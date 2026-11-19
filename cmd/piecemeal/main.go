@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -250,6 +251,12 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, logs *logbuf.
 	// One fetcher for torrent URLs and feeds, so both send the download
 	// cookies.
 	fetcher := fetch.New(cfg.FetchAllowedNetworks)
+	fetcher.SetProxy(fetchProxy(sm.Get()))
+	sm.Subscribe(func(old, cur settings.Settings) {
+		if p := fetchProxy(cur); !reflect.DeepEqual(p, fetchProxy(old)) {
+			fetcher.SetProxy(p)
+		}
+	})
 	feeds, err := rss.New(ctx, rss.Deps{Store: st, Settings: sm, Fetcher: fetcher, Engine: e, Log: log.With("component", "rss")})
 	if err != nil {
 		return err
@@ -292,6 +299,11 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, logs *logbuf.
 		log.Warn("http shutdown", "error", err)
 	}
 	return nil
+}
+
+// fetchProxy is the proxy for torrent files and feeds.
+func fetchProxy(s settings.Settings) fetch.Proxy {
+	return fetch.Proxy{Server: s.ProxyServer(), TorrentFiles: s.ProxyTorrentFiles, Feeds: s.ProxyRSS}
 }
 
 type routeDeps struct {

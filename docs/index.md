@@ -30,7 +30,6 @@ The torrent engine is [anacrolix/torrent](https://github.com/anacrolix/torrent),
 Some things piecemeal doesn't have, so you know before you move:
 
 - **Per-torrent speed limits.** anacrolix/torrent only limits the whole client, so piecemeal has global and alternative limits but none per torrent ([#43](https://github.com/sebdanielsson/piecemeal/issues/43)).
-- **Proxies.** Peer and tracker connections don't go through a SOCKS or HTTP proxy ([#45](https://github.com/sebdanielsson/piecemeal/issues/45)). Use a VPN instead; see [VPN and port forwarding](guides/vpn.md).
 - **Super seeding, I2P and SSL torrents** aren't supported ([#46](https://github.com/sebdanielsson/piecemeal/issues/46), [#47](https://github.com/sebdanielsson/piecemeal/issues/47), [#48](https://github.com/sebdanielsson/piecemeal/issues/48)). Their qBittorrent API endpoints answer that they aren't.
 - **Tracker status.** Trackers show as "not contacted", because anacrolix/torrent doesn't report announce results ([#44](https://github.com/sebdanielsson/piecemeal/issues/44)).
 

@@ -285,7 +285,7 @@ func host(u string) string {
 func (m *Manager) fetch(ctx context.Context, uid, u string) {
 	fctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
-	res, err := m.d.Fetcher.Get(fctx, u)
+	res, err := m.d.Fetcher.GetFeed(fctx, u)
 	var parsed Feed
 	switch {
 	case err != nil:

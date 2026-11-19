@@ -1,4 +1,5 @@
 import { seedGoalActions, seedGoalModes } from "@/components/form/seed-goal-options";
+import type { Settings } from "@/api/types";
 import type { FieldGroupDef } from "./settings-form";
 
 export const speedGroup: FieldGroupDef = {
@@ -86,6 +87,76 @@ export const rssGroup: FieldGroupDef = {
         "Regular expressions, one per line, that find the episode in a title: two groups for season and episode, or one for a date.",
       kind: "lines",
     },
+  ],
+};
+
+const proxyOn = (s: Settings) => s.proxyType !== "none";
+const btProxied = (s: Settings) => proxyOn(s) && s.proxyBitTorrent;
+
+export const proxyGroup: FieldGroupDef = {
+  title: "Proxy",
+  description:
+    "Sends traffic through a SOCKS5 or HTTP proxy, for when piecemeal can't run inside a VPN. Nothing set to use the proxy goes around it: what the proxy can't carry is turned off or fails.",
+  fields: [
+    {
+      key: "proxyType",
+      label: "Proxy",
+      kind: "select",
+      options: [
+        { value: "none", label: "None" },
+        { value: "socks5", label: "SOCKS5" },
+        { value: "http", label: "HTTP" },
+      ],
+    },
+    { key: "proxyHost", label: "Host", kind: "text", shownWhen: proxyOn },
+    { key: "proxyPort", label: "Port", kind: "int", min: 1, max: 65535, shownWhen: proxyOn },
+    {
+      key: "proxyUsername",
+      label: "Username",
+      description: "Empty if the proxy doesn't ask for one.",
+      kind: "text",
+      shownWhen: proxyOn,
+    },
+    {
+      key: "proxyPassword",
+      label: "Password",
+      description: "Never shown again once saved. Clearing the username removes it.",
+      kind: "password",
+      shownWhen: (s) => proxyOn(s) && s.proxyUsername !== "",
+    },
+    {
+      key: "proxyBitTorrent",
+      label: "Trackers and web seeds",
+      description:
+        "UDP trackers need a SOCKS5 proxy that relays UDP; through an HTTP proxy they aren't used.",
+      kind: "bool",
+      shownWhen: proxyOn,
+    },
+    {
+      key: "proxyPeerConnections",
+      label: "Peer connections",
+      description:
+        "The DHT, µTP and WebRTC peers can't go through a proxy, so they're off while this is on.",
+      kind: "bool",
+      shownWhen: btProxied,
+    },
+    {
+      key: "proxyHostnameLookup",
+      label: "Let the proxy look up hostnames",
+      description:
+        "Of trackers and web seeds. UDP trackers, torrent files and feeds are looked up by piecemeal.",
+      kind: "bool",
+      shownWhen: btProxied,
+    },
+    {
+      key: "proxyTorrentFiles",
+      label: "Torrent files from URLs",
+      description:
+        "Added by URL, by the *arrs or by RSS rules. Addresses on PIECEMEAL_FETCH_ALLOWED_NETWORKS, such as Prowlarr's, are reached directly.",
+      kind: "bool",
+      shownWhen: proxyOn,
+    },
+    { key: "proxyRSS", label: "RSS feeds", kind: "bool", shownWhen: proxyOn },
   ],
 };
 
@@ -271,6 +342,7 @@ export const settingsGroups: FieldGroupDef[] = [
       },
     ],
   },
+  proxyGroup,
   {
     title: "Seeding goals",
     description: "For torrents that follow the default and whose category doesn't set its own.",
