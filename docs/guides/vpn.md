@@ -60,7 +60,8 @@ Running in the VPN container's network keeps piecemeal's traffic in the tunnel w
 - piecemeal won't start while the interface doesn't exist; a restart policy brings it back once it does.
 - While it's down, the status bar says so, `/readyz` answers 503, and the qBittorrent API reports `disconnected`.
 - When it comes back as a new interface, as WireGuard's does after `wg-quick up`, piecemeal restarts its torrent client on it. Torrents carry on.
-- Addresses on `PIECEMEAL_FETCH_ALLOWED_NETWORKS`, such as Prowlarr's, are reached directly, and so is a name server on loopback, such as Docker's. NAT-PMP to the VPN's gateway and sign-in with SSO aren't bound either. With a [proxy](proxy.md), the connections to the proxy are bound.
+- Addresses on `PIECEMEAL_FETCH_ALLOWED_NETWORKS`, such as Prowlarr's, are reached directly. NAT-PMP to the VPN's gateway and the connections of SSO sign-in aren't bound either. With a [proxy](proxy.md), the connections to the proxy are bound.
+- Every name lookup goes through the interface, SSO's and those for hosts on the allowed networks included, so no tracker's name leaves another way. Only a name server on loopback, such as Docker's, is asked directly. Use the VPN's name server, which wg-quick's `DNS =` sets: one on your LAN can't be reached through the tunnel, and lookups would fail.
 - The WebRTC peers of WebTorrent and UPnP are off: they open sockets piecemeal can't bind.
 
 ### In the VPN container: a firewall

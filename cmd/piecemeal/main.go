@@ -186,8 +186,10 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, logs *logbuf.
 		if bind.State().Index == 0 {
 			return fmt.Errorf("PIECEMEAL_BIND_INTERFACE: there is no network interface %q", bind.Name())
 		}
-		// Name lookups for trackers, the DHT and fetches go through it
-		// too.
+		// Every name lookup goes through it too, SSO's and those for
+		// hosts on PIECEMEAL_FETCH_ALLOWED_NETWORKS included, so no
+		// tracker's name leaves another way. Only a name server on
+		// loopback is asked directly.
 		net.DefaultResolver = bind.Resolver()
 	}
 	ecfg := engine.Config{

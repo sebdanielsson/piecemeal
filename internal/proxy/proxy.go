@@ -71,6 +71,11 @@ func (s *Server) DialContext(ctx context.Context, network, addr string) (net.Con
 	default:
 		return nil, fmt.Errorf("proxy: can't dial %s", network)
 	}
+	// As net.Dialer does, an address of the other family fails tcp4 and
+	// tcp6: callers such as anacrolix keep a family out that way.
+	if err := checkFamily(network, addr); err != nil {
+		return nil, err
+	}
 	conn, err := s.connect(ctx)
 	if err != nil {
 		return nil, err
@@ -121,6 +126,22 @@ func (s *Server) DialResolved(ctx context.Context, network, addr string) (net.Co
 		}
 	}
 	return nil, errors.Join(errs...)
+}
+
+// checkFamily fails an IP address that network's family excludes.
+func checkFamily(network, addr string) error {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return err
+	}
+	ip, err := netip.ParseAddr(host)
+	if err != nil {
+		return nil // a hostname, which the proxy looks up
+	}
+	if (network == "tcp4" && !ip.Unmap().Is4()) || (network == "tcp6" && ip.Unmap().Is4()) {
+		return fmt.Errorf("proxy: %s isn't a %s address", host, network)
+	}
+	return nil
 }
 
 func ipNetwork(network string) string {

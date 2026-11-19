@@ -57,5 +57,5 @@ Releases are built in GitHub Actions. Images are signed with cosign and carry an
 
 - An SSO user removed from an admin group stays an admin until their next sign-in. Remove them under **Users** to cut them off at once.
 - API keys don't expire.
-- `PIECEMEAL_BIND_INTERFACE` binds the sockets piecemeal opens for BitTorrent and public fetches. The TCP listener isn't bound, since it only accepts connections, and neither are NAT-PMP, SSO sign-in, or a name server on loopback. A firewall in the VPN container covers everything; see [VPN and port forwarding](../guides/vpn.md#kill-switch).
+- `PIECEMEAL_BIND_INTERFACE` binds the sockets piecemeal opens for BitTorrent, public fetches and name lookups. The TCP listener isn't bound, since it only accepts connections, and neither are NAT-PMP, the connections of SSO sign-in, or lookups from a name server on loopback. A firewall in the VPN container covers everything; see [VPN and port forwarding](../guides/vpn.md#kill-switch).
 - Trackers, web seeds and peers you add by hand aren't checked against the private-address filter: anyone who can add a torrent can make piecemeal connect to an address on your network.

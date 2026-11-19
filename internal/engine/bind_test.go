@@ -5,14 +5,17 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/anacrolix/torrent"
 	"github.com/anacrolix/torrent/bencode"
 
 	"github.com/sebdanielsson/piecemeal/internal/netbind"
+	"github.com/sebdanielsson/piecemeal/internal/proxy/proxytest"
 )
 
 // netInterfaces returns the loopback interface's name and an up interface
@@ -65,13 +68,21 @@ func TestBindDownloads(t *testing.T) {
 			if _, err := h.settings.Set(context.Background(), map[string]any{"utp": utp}); err != nil {
 				t.Fatal(err)
 			}
+			if utp {
+				// Without TCP, the download has to use the uTP dialers.
+				h.clientConfig = func(tc *torrent.ClientConfig) {
+					offline(tc)
+					tc.DisableTrackers = false
+					tc.DisableTCP = true
+				}
+			}
 		})
 		hash := addViaTracker(t, h, s, tracker.URL+"/announce")
 		h.waitFor(hash, "download", func(st Torrent) bool { return st.Complete })
 		if announces.Load() == 0 {
 			t.Fatal("no announce")
 		}
-		if tr := h.engine.Transfer(); tr.Interface == nil || tr.Interface.Name != loopback || !tr.Interface.Up ||
+		if tr := h.engine.Transfer(); tr.Interface.Name != loopback || !tr.Interface.Up ||
 			tr.Connection == "disconnected" {
 			t.Fatalf("transfer status: %+v %+v", tr, tr.Interface)
 		}
@@ -161,5 +172,68 @@ func TestBindInterfaceGoesAway(t *testing.T) {
 	}
 	if _, up := h.engine.BoundInterface(); !up {
 		t.Fatal("still down")
+	}
+}
+
+// TestBindKeepsIPv6Out checks that with IPv6 off, IPv6 peers aren't
+// dialled, bound or through a proxy: the dialers are per address family.
+func TestBindKeepsIPv6Out(t *testing.T) {
+	loopback, _ := netInterfaces(t)
+	ln, err := net.Listen("tcp6", "[::1]:0")
+	if err != nil {
+		t.Skip("no IPv6 loopback:", err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	var accepted atomic.Int32
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			accepted.Add(1)
+			_ = c.Close()
+		}
+	}()
+	p := proxytest.Start(t, "socks5")
+	ctx := context.Background()
+	s := newSeeder(t, map[string]int{"x.bin": 16 << 10})
+	for name, opts := range map[string][]func(*harness){
+		"bound":               {withBind(loopback)},
+		"through proxy":       {withProxy(p, nil)},
+		"bound through proxy": {withBind(loopback), withProxy(p, nil)},
+	} {
+		// offline turns IPv6 off.
+		h := newHarness(t, opts...)
+		hash, err := h.engine.Add(ctx, AddParams{Metainfo: s.Metainfo})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := h.engine.AddPeers(ctx, []string{ln.Addr().String()}, hash); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(500 * time.Millisecond)
+		if n := accepted.Load(); n > 0 {
+			t.Fatalf("%s: %d IPv6 connections with IPv6 off", name, n)
+		}
+		for _, r := range p.Requests() {
+			if strings.Contains(r, "::1") {
+				t.Fatalf("%s: IPv6 peer through the proxy: %v", name, p.Requests())
+			}
+		}
+	}
+}
+
+// TestTransferStatusComparable checks that two statuses without changes
+// compare equal, so tick publishes only changes.
+func TestTransferStatusComparable(t *testing.T) {
+	loopback, _ := netInterfaces(t)
+	h := newHarness(t, withBind(loopback))
+	h.engine.mu.Lock()
+	a, b := h.engine.transferLocked(0, 0, 0), h.engine.transferLocked(0, 0, 0)
+	h.engine.mu.Unlock()
+	a.FreeSpace, b.FreeSpace = 0, 0
+	if a != b {
+		t.Fatalf("unchanged statuses differ:\n%+v\n%+v", a, b)
 	}
 }

@@ -518,7 +518,7 @@ func (e *Engine) startClient(port int, s settings.Settings) error {
 	proxiedPeers := p != (btProxy{}) && p.peers
 	if proxiedPeers {
 		srv := p.withBind(e.cfg.Bind)
-		cl.AddDialer(dialer.WithNetwork{Network: "tcp", Dialer: &srv})
+		addTCPDialers(cl, &srv)
 	}
 	if p != (btProxy{}) {
 		e.log.Info("BitTorrent goes through the proxy", "type", p.server.Type, "proxy", p.server.Addr,
@@ -526,7 +526,7 @@ func (e *Engine) startClient(port int, s settings.Settings) error {
 	}
 	if b := e.cfg.Bind; b != nil {
 		if !proxiedPeers {
-			cl.AddDialer(dialer.WithNetwork{Network: "tcp", Dialer: b})
+			addTCPDialers(cl, b)
 			// uTP dials go out of the client's own uTP sockets, which are
 			// bound; turning DialForPeerConns off left them out.
 			for _, l := range cl.Listeners() {
@@ -679,6 +679,18 @@ func (e *Engine) ListenAddrs() []net.Addr {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.client.ListenAddrs()
+}
+
+// addTCPDialers adds d as the client's dialer for TCP peers, once for each
+// TCP network it listens on. anacrolix leaves out peers of a family it has
+// no dialer for, which is how PIECEMEAL_DISABLE_IPV6 keeps IPv6 peers out:
+// one dialer for "tcp" would reach them all.
+func addTCPDialers(cl *torrent.Client, d dialer.WithContext) {
+	for _, l := range cl.Listeners() {
+		if ld, ok := l.(torrent.Dialer); ok && strings.HasPrefix(ld.DialerNetwork(), "tcp") {
+			cl.AddDialer(dialer.WithNetwork{Network: ld.DialerNetwork(), Dialer: d})
+		}
+	}
 }
 
 // interfaceCheckInterval is how often the bound interface is checked.

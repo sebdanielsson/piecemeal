@@ -1211,7 +1211,9 @@ export interface components {
       items: components["schemas"]["File"][] | null;
     };
     InterfaceStatus: {
+      /** @description The interface's name, such as wg0. */
       name: string;
+      /** @description False while the interface is down or gone: nothing goes out until it's back. */
       up: boolean;
     };
     LogEntry: {
@@ -1936,6 +1938,7 @@ export interface components {
        * @description Free bytes on the default save path's filesystem, -1 if unknown.
        */
       freeSpace: number;
+      /** @description The network interface connections are bound to (PIECEMEAL_BIND_INTERFACE), when set. */
       interface?: components["schemas"]["InterfaceStatus"];
       /**
        * Format: int64
@@ -2002,6 +2005,7 @@ export interface components {
        * @description Free bytes on the default save path's filesystem, -1 if unknown.
        */
       freeSpace: number;
+      /** @description The network interface connections are bound to (PIECEMEAL_BIND_INTERFACE), when set. */
       interface?: components["schemas"]["InterfaceStatus"];
       /**
        * Format: int64

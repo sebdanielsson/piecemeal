@@ -886,9 +886,11 @@
         "additionalProperties": false,
         "properties": {
           "name": {
+            "description": "The interface's name, such as wg0.",
             "type": "string"
           },
           "up": {
+            "description": "False while the interface is down or gone: nothing goes out until it's back.",
             "type": "boolean"
           }
         },
@@ -2619,7 +2621,8 @@
             "type": "integer"
           },
           "interface": {
-            "$ref": "#/components/schemas/InterfaceStatus"
+            "$ref": "#/components/schemas/InterfaceStatus",
+            "description": "The network interface connections are bound to (PIECEMEAL_BIND_INTERFACE), when set."
           },
           "peers": {
             "description": "Connected peers across all torrents.",
@@ -2736,7 +2739,8 @@
             "type": "integer"
           },
           "interface": {
-            "$ref": "#/components/schemas/InterfaceStatus"
+            "$ref": "#/components/schemas/InterfaceStatus",
+            "description": "The network interface connections are bound to (PIECEMEAL_BIND_INTERFACE), when set."
           },
           "peers": {
             "description": "Connected peers across all torrents.",

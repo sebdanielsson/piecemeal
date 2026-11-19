@@ -107,6 +107,7 @@ func (s *Server) preferences(w http.ResponseWriter, r *http.Request) {
 // settings and state.
 func (s *Server) mappedPreferences() map[string]any {
 	st := s.settings.Get()
+	boundInterface, _ := s.engine.BoundInterface()
 	limit := func(v int64) int64 {
 		if v <= 0 {
 			return 0
@@ -166,6 +167,11 @@ func (s *Server) mappedPreferences() map[string]any {
 		"proxy_peer_connections": st.ProxyPeerConnections,
 		"proxy_rss":              st.ProxyRSS,
 		"proxy_misc":             st.ProxyTorrentFiles,
+
+		// The interface PIECEMEAL_BIND_INTERFACE binds to; setting it
+		// here has no effect.
+		"current_network_interface": boundInterface,
+		"current_interface_name":    boundInterface,
 
 		// BitTorrent
 		"dht":                            st.DHT,
