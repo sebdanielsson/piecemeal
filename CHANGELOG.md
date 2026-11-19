@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.3.0](https://github.com/sebdanielsson/piecemeal/compare/v1.2.0...v1.3.0) (2026-11-19)
+
+
+### Features
+
+* bind every BitTorrent connection to a network interface (PIECEMEAL_BIND_INTERFACE), a kill switch for VPNs ([9a43bed](https://github.com/sebdanielsson/piecemeal/commit/9a43bed81fc411517422c470caad53e027078520))
+
+
+### Bug Fixes
+
+* through a proxy, IPv6 peers were dialled even with PIECEMEAL_DISABLE_IPV6 ([9a43bed](https://github.com/sebdanielsson/piecemeal/commit/9a43bed81fc411517422c470caad53e027078520))
+
 ## [1.2.0](https://github.com/sebdanielsson/piecemeal/compare/v1.1.1...v1.2.0) (2026-11-19)
 
 
