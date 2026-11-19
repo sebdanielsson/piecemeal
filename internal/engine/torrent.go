@@ -471,7 +471,8 @@ func (e *Engine) attachLocked(m *managed, opts ...attachOpts) error {
 	// Storage opens once the torrent may hash: for a check, after transfers
 	// are disallowed; for a magnet, once awaitInfo knows whether its data
 	// needs a check.
-	spec.DeferStorageOpen = checking || m.rec.Metainfo == nil
+	magnet := m.rec.Metainfo == nil
+	spec.DeferStorageOpen = checking || magnet
 	// A recheck: completion read from the database counts only once the
 	// piece has been hashed again.
 	spec.IgnoreUnverifiedPieceCompletion = checking && m.checkAll
@@ -506,7 +507,9 @@ func (e *Engine) attachLocked(m *managed, opts ...attachOpts) error {
 	m.boosted, m.seqFrom = nil, 0
 	m.rec.Error = ""
 	t.SetMaxEstablishedConns(e.settings.Get().MaxConnectionsPerTorrent)
-	if t.Info() != nil {
+	// A magnet's storage opens in awaitInfo, even when the metadata is
+	// already here: a fast peer can send it before this line.
+	if t.Info() != nil && !magnet {
 		e.onInfoLocked(m)
 	} else {
 		go e.awaitInfo(m, t)
