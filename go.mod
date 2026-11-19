@@ -11,7 +11,7 @@ require (
 	github.com/anacrolix/torrent v1.63.0
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/danielgtaylor/huma/v2 v2.41.0
-	github.com/dlclark/regexp2/v2 v2.13.0
+	github.com/dlclark/regexp2/v2 v2.13.1
 	github.com/go-jose/go-jose/v4 v4.1.9
 	github.com/jackpal/go-nat-pmp v1.1.0
 	github.com/microcosm-cc/bluemonday v1.0.27
