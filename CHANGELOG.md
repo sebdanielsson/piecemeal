@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.3.1](https://github.com/sebdanielsson/piecemeal/compare/v1.3.0...v1.3.1) (2026-11-21)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @tanstack/react-query to ^5.108.1 ([#76](https://github.com/sebdanielsson/piecemeal/issues/76)) ([684d21f](https://github.com/sebdanielsson/piecemeal/commit/684d21fbd71131ba4c0c07310da23386c9540ca7))
+* **deps:** update dependency lucide-react to ^1.76.0 ([#74](https://github.com/sebdanielsson/piecemeal/issues/74)) ([d5e526e](https://github.com/sebdanielsson/piecemeal/commit/d5e526edafa2622779d719db5bd579b9c3f36c3c))
+* **deps:** update dependency lucide-react to ^1.77.0 ([#77](https://github.com/sebdanielsson/piecemeal/issues/77)) ([1f4b09b](https://github.com/sebdanielsson/piecemeal/commit/1f4b09b0171cc985a717e413eb293dfaff7bd933))
+
 ## [1.3.0](https://github.com/sebdanielsson/piecemeal/compare/v1.2.0...v1.3.0) (2026-11-19)
 
 
