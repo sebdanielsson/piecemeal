@@ -15,7 +15,7 @@ require (
 	github.com/go-jose/go-jose/v4 v4.1.9
 	github.com/jackpal/go-nat-pmp v1.1.0
 	github.com/microcosm-cc/bluemonday v1.0.27
-	github.com/pressly/goose/v3 v3.30.1
+	github.com/pressly/goose/v3 v3.30.2
 	github.com/prometheus/client_golang v1.25.0
 	golang.org/x/crypto v0.59.0
 	golang.org/x/net v0.63.0
@@ -100,7 +100,6 @@ require (
 	github.com/protolambda/ctxlock v0.1.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rs/dnscache v0.0.0-20211102005908-e0241e321417 // indirect
-	github.com/sethvargo/go-retry v0.5.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/tidwall/btree v1.8.1 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
