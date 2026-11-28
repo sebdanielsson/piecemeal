@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.3.1](https://github.com/sebdanielsson/piecemeal/compare/v1.3.0...v1.3.1) (2026-11-28)
+
+
+### Bug Fixes
+
+* **deps:** update dependency @tanstack/react-query to ^5.108.1 ([#76](https://github.com/sebdanielsson/piecemeal/issues/76)) ([684d21f](https://github.com/sebdanielsson/piecemeal/commit/684d21fbd71131ba4c0c07310da23386c9540ca7))
+* **deps:** update dependency @tanstack/react-query to ^5.108.2 ([#78](https://github.com/sebdanielsson/piecemeal/issues/78)) ([c83d65d](https://github.com/sebdanielsson/piecemeal/commit/c83d65d23deb2684557af349d71cb4fb54e209d6))
+* **deps:** update dependency @tanstack/react-query to ^5.108.3 ([#84](https://github.com/sebdanielsson/piecemeal/issues/84)) ([7fefeed](https://github.com/sebdanielsson/piecemeal/commit/7fefeedfcd258fc89ce8dea595aa4c09c14d2e05))
+* **deps:** update dependency @tanstack/react-query to ^5.108.4 ([#89](https://github.com/sebdanielsson/piecemeal/issues/89)) ([1125c4f](https://github.com/sebdanielsson/piecemeal/commit/1125c4f8e2c82bff3ab197b735405d3f61653194))
+* **deps:** update dependency @tanstack/react-virtual to ^3.14.27 ([#82](https://github.com/sebdanielsson/piecemeal/issues/82)) ([3ac7e5c](https://github.com/sebdanielsson/piecemeal/commit/3ac7e5c8dbbb9643ae25edc7d63e30eb4dbf1303))
+* **deps:** update dependency @tanstack/react-virtual to ^3.14.28 ([#85](https://github.com/sebdanielsson/piecemeal/issues/85)) ([459e278](https://github.com/sebdanielsson/piecemeal/commit/459e27876317723b2e4e4b28fe94545a881a3e4a))
+* **deps:** update dependency lucide-react to ^1.76.0 ([#74](https://github.com/sebdanielsson/piecemeal/issues/74)) ([d5e526e](https://github.com/sebdanielsson/piecemeal/commit/d5e526edafa2622779d719db5bd579b9c3f36c3c))
+* **deps:** update dependency lucide-react to ^1.77.0 ([#77](https://github.com/sebdanielsson/piecemeal/issues/77)) ([1f4b09b](https://github.com/sebdanielsson/piecemeal/commit/1f4b09b0171cc985a717e413eb293dfaff7bd933))
+* **deps:** update dependency lucide-react to ^1.78.0 ([#88](https://github.com/sebdanielsson/piecemeal/issues/88)) ([eb36cd0](https://github.com/sebdanielsson/piecemeal/commit/eb36cd08a1282d413fe656b27f70f4b2a932ceb3))
+* **deps:** update dependency lucide-react to ^1.79.0 ([#93](https://github.com/sebdanielsson/piecemeal/issues/93)) ([4af0931](https://github.com/sebdanielsson/piecemeal/commit/4af093139f36bda7b0bd13861d6dadd3627ba4e7))
+* **deps:** update dependency lucide-react to ^1.82.0 ([#102](https://github.com/sebdanielsson/piecemeal/issues/102)) ([66fefd9](https://github.com/sebdanielsson/piecemeal/commit/66fefd9b87715b69c1afb2a779fb695b15422435))
+* **deps:** update dependency shadcn to ^4.23.1 ([#98](https://github.com/sebdanielsson/piecemeal/issues/98)) ([7c15111](https://github.com/sebdanielsson/piecemeal/commit/7c15111fd001982ea275cbda2e672569cce5d8ac))
+* **deps:** update module github.com/dlclark/regexp2/v2 to v2.13.2 ([#80](https://github.com/sebdanielsson/piecemeal/issues/80)) ([c7bbbec](https://github.com/sebdanielsson/piecemeal/commit/c7bbbec113d7f7298fe30b4c9f1d5b19e580b554))
+* **deps:** update module github.com/dlclark/regexp2/v2 to v2.13.3 ([#101](https://github.com/sebdanielsson/piecemeal/issues/101)) ([6db07e8](https://github.com/sebdanielsson/piecemeal/commit/6db07e86e366c647568fc103dd3527af1d501aba))
+* **deps:** update module github.com/pressly/goose/v3 to v3.30.2 ([#99](https://github.com/sebdanielsson/piecemeal/issues/99)) ([8406994](https://github.com/sebdanielsson/piecemeal/commit/84069941a79cdddac8f0b0315adabfee122b79f5))
+* **deps:** update module modernc.org/sqlite to v1.63.0 ([#87](https://github.com/sebdanielsson/piecemeal/issues/87)) ([9988912](https://github.com/sebdanielsson/piecemeal/commit/99889121e74089180b3ae75143ecc8458c17c020))
+
 ## [1.3.0](https://github.com/sebdanielsson/piecemeal/compare/v1.2.0...v1.3.0) (2026-11-19)
 
 
